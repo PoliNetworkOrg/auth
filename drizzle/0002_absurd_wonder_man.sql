@@ -1,0 +1,1 @@
+ALTER TABLE "identity_evidence" ADD COLUMN "external_id" text;

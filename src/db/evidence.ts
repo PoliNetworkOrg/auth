@@ -16,6 +16,7 @@ export const identityEvidence = pgTable(
     issuer: text().notNull(),
     subject: text().notNull(),
     providerId: text("provider_id").notNull(),
+    externalId: text("external_id"),
     state: text(),
     validUntil: timestamp("valid_until", { withTimezone: true }).notNull(),
     telegramId: text("telegram_id"),

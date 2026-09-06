@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Button } from "./ui/button";
 
 type LinkedAccount = { id: string; accountId: string };
 
@@ -6,18 +7,18 @@ type Props = {
   configured: boolean;
   signedIn: boolean;
   linkedAccount?: LinkedAccount;
-  canDisconnect: boolean;
+  canUnlink: boolean;
   onChanged: () => void;
-  onDisconnect: (accountId: string) => Promise<void>;
+  onUnlink: (accountId: string) => Promise<void>;
 };
 
 export function StudentVerificationForm({
   configured,
   signedIn,
   linkedAccount,
-  canDisconnect,
+  canUnlink,
   onChanged,
-  onDisconnect,
+  onUnlink,
 }: Props) {
   const [email, setEmail] = useState(linkedAccount?.accountId ?? "");
   const [code, setCode] = useState("");
@@ -125,13 +126,14 @@ export function StudentVerificationForm({
               </button>
             )}
             {linkedAccount && (
-              <button
-                disabled={busy || !canDisconnect}
-                onClick={() => void onDisconnect(linkedAccount.id)}
-                className="ml-4 underline disabled:opacity-40"
+              <Button
+                variant="destructive"
+                disabled={busy || !canUnlink}
+                onClick={() => void onUnlink(linkedAccount.id)}
+                className="ml-4"
               >
-                Disconnect
-              </button>
+                Unlink
+              </Button>
             )}
           </div>
         </div>

@@ -38,17 +38,17 @@ Email delivery uses the same Microsoft Graph client-credential setup as the curr
 
 ## States and permissions
 
-| Evidence                                     | State              | Permission                         |
-| -------------------------------------------- | ------------------ | ---------------------------------- |
-| PN tenant plus configured Microsoft app role | `socio`            | `membership:read`                  |
-| Code sent to an `@mail.polimi.it` address    | `student`          | `student:verified`                 |
-| Telegram identity                            | Linked Telegram ID | No automatic moderation permission |
+| Evidence                                        | State              | Permission                         |
+| ----------------------------------------------- | ------------------ | ---------------------------------- |
+| PN Entra account in the configured `Soci` group | `socio`            | `membership:read`                  |
+| Code sent to an `@mail.polimi.it` address       | `student`          | `student:verified`                 |
+| Telegram identity                               | Linked Telegram ID | No automatic moderation permission |
 
 States accumulate independently. A socio is not automatically a student. Signature, issuer, audience, expiration, and Entra tenant are checked before recording evidence. Evidence contributes only when joined to an account owned by the user.
 
-`PN_ENTRA_REQUIRED_ROLE` names the value expected in Microsoft's signed `roles` claim. Without it, PoliNetwork Entra login works but grants no membership state. Confirm with the tenant administrator whether every PN account is a member or whether the app role is required.
+`PN_ENTRA_MEMBER_GROUP_ID` identifies the Microsoft Entra `Soci` group used by the backend. Membership is checked through Microsoft Graph using `PN_ENTRA_TENANT_ID`, `PN_ENTRA_CLIENT_ID`, and `PN_ENTRA_CLIENT_SECRET`. Grant Microsoft Graph **application** permission `GroupMember.Read.All` and admin consent on that PN app registration. `AZURE_*` credentials are only used for email delivery. The check reads direct group members across all result pages, matching the backend's membership rule. A Graph failure is logged and grants no new membership evidence; it is never cached as a confirmed nonmember or replaced by a token group claim.
 
-Microsoft membership expires at the upstream ID token's expiration. Polimi student verification lasts for `STUDENT_VERIFICATION_TTL_DAYS`, which defaults to 365 days. The user must verify the address again after that. The Telegram ownership link persists until disconnected. Already issued OIDC tokens expire after five minutes, so consumers must account for that revocation delay; `/api/identity` and UserInfo compute current evidence on each request.
+Microsoft membership is rechecked on login and on the first identity request after `PN_ENTRA_MEMBER_REFRESH_HOURS`, which defaults to 24 hours. This is a cache interval, not the duration of someone's membership. Expired evidence grants no state if Graph cannot verify it, and the next request retries. Polimi student verification lasts for `STUDENT_VERIFICATION_TTL_DAYS`, which defaults to 365 days. The user must verify the address again after that. The Telegram ownership link persists until disconnected. Already issued OIDC tokens expire after five minutes, so consumers must account for that revocation delay; `/api/identity` and UserInfo compute current evidence on each request.
 
 OIDC client administrators are explicitly listed by local user ID in `IDP_ADMIN_USER_IDS`. They can manage application registrations; being a socio does not confer this administrative permission. Existing backend Telegram roles and group assignments remain authoritative and are not copied or queried by this prototype.
 

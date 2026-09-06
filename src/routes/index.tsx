@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { authClient } from "@/auth/client";
 import { type identityClaims, isLoginProvider } from "@/auth/policy";
 import { StudentVerificationForm } from "@/components/student-verification-form";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/")({ component: Home });
 const signInOptions = [
@@ -87,10 +88,10 @@ function Home() {
         body: JSON.stringify({ accountId }),
       });
       const result: { error?: string } = await response.json();
-      if (!response.ok) setError(result.error ?? "Unable to disconnect account.");
+      if (!response.ok) setError(result.error ?? "Unable to unlink account.");
       else setRevision((value) => value + 1);
     } catch {
-      setError("Unable to disconnect account.");
+      setError("Unable to unlink account.");
     } finally {
       setBusy(false);
     }
@@ -121,7 +122,7 @@ function Home() {
           <p className="mt-2">Verified states: {identity?.states.join(", ") || "None"}</p>
           {identity?.telegramId && <p>Telegram ID: {identity.telegramId}</p>}
           <p className="mt-2 text-sm text-slate-600">
-            Membership and student verification expire. Connect or verify again to refresh them.
+            PoliNetwork membership is checked automatically.
           </p>
           <button
             className="mt-4 underline"
@@ -141,29 +142,37 @@ function Home() {
             <section key={option.id} className="rounded-xl border border-slate-200 p-6">
               <h2 className="text-xl font-semibold">{option.name}</h2>
               <p className="mt-2 text-slate-600">{option.description}</p>
-              <button
-                disabled={busy || isPending || !providers.signIn.includes(option.id)}
-                onClick={() => void connect(option.id)}
-                className="mt-4 rounded-lg bg-blue-700 px-4 py-2 text-white disabled:opacity-40"
-              >
-                {!providers.signIn.includes(option.id)
-                  ? "Not configured"
-                  : linked.length
-                    ? "Verify again"
-                    : session
-                      ? "Connect account"
-                      : "Continue"}
-              </button>
-              {linked.map((account) => (
+              {linked.length === 0 ? (
                 <button
+                  disabled={busy || isPending || !providers.signIn.includes(option.id)}
+                  onClick={() => void connect(option.id)}
+                  className="mt-4 rounded-lg bg-blue-700 px-4 py-2 text-white disabled:opacity-40"
+                >
+                  {!providers.signIn.includes(option.id)
+                    ? "Not configured"
+                    : session
+                      ? "Link account"
+                      : "Continue"}
+                </button>
+              ) : (
+                <p className="mt-4 text-sm text-slate-600">Linked</p>
+              )}
+              {linked.map((account) => (
+                <Button
+                  variant="destructive"
                   key={account.accountId}
                   disabled={busy || loginAccountCount < 2}
                   onClick={() => void unlink(account.id)}
-                  className="ml-4 underline disabled:opacity-40"
+                  className="mt-3"
                 >
-                  Disconnect
-                </button>
+                  Unlink
+                </Button>
               ))}
+              {linked.length > 0 && loginAccountCount < 2 && (
+                <p className="mt-2 text-sm text-slate-600">
+                  Link another login account before unlinking this one.
+                </p>
+              )}
             </section>
           );
         })}
@@ -178,39 +187,39 @@ function Home() {
               Sign in with Google or PoliNetwork before connecting Telegram.
             </p>
           )}
-          {session && (
+          {session && !accounts.some((account) => account.providerId === "telegram") && (
             <button
               disabled={busy || isPending || !providers.link.includes("telegram")}
               onClick={() => void connect("telegram")}
               className="mt-4 rounded-lg bg-blue-700 px-4 py-2 text-white disabled:opacity-40"
             >
-              {!providers.link.includes("telegram")
-                ? "Not configured"
-                : accounts.some((account) => account.providerId === "telegram")
-                  ? "Connect again"
-                  : "Connect account"}
+              {!providers.link.includes("telegram") ? "Not configured" : "Link account"}
             </button>
           )}
           {accounts
             .filter((account) => account.providerId === "telegram")
             .map((account) => (
-              <button
-                key={account.id}
-                disabled={busy}
-                onClick={() => void unlink(account.id)}
-                className="ml-4 underline disabled:opacity-40"
-              >
-                Disconnect
-              </button>
+              <div key={account.id}>
+                <p className="mt-4 text-sm text-slate-600">Linked</p>
+                <Button
+                  variant="destructive"
+                  key={account.id}
+                  disabled={busy}
+                  onClick={() => void unlink(account.id)}
+                  className="mt-3"
+                >
+                  Unlink
+                </Button>
+              </div>
             ))}
         </section>
         <StudentVerificationForm
           configured={providers.link.includes("polimi-email")}
           signedIn={!!session}
           linkedAccount={accounts.find((account) => account.providerId === "polimi-email")}
-          canDisconnect={!!session}
+          canUnlink={!!session}
           onChanged={() => setRevision((value) => value + 1)}
-          onDisconnect={unlink}
+          onUnlink={unlink}
         />
       </div>
       <p className="mt-6 text-sm text-slate-600">

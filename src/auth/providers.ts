@@ -1,15 +1,14 @@
-import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { GenericOAuthConfig } from "better-auth/plugins/generic-oauth";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import { identityEvidence } from "../db/evidence";
 import { db } from "../db/index";
 import { env } from "../env";
-import { hasAppRole } from "./policy";
+import { checkPnMemberGroup, membershipEvidence } from "./membership";
 
 type ProviderSettings = {
   clientId: string;
   clientSecret: string;
   tenantId?: string;
-  requiredRole?: string;
 };
 
 function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfig {
@@ -52,16 +51,17 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
           ? String(payload.id)
           : null;
       if (telegram && !/^[1-9]\d*$/.test(telegramId!)) throw new Error("Missing Telegram user ID");
-      const state =
-        !telegram && settings.requiredRole && hasAppRole(payload.roles, settings.requiredRole)
-          ? "socio"
-          : null;
+      if (!telegram && typeof payload.oid !== "string")
+        throw new Error("Missing Entra object ID for membership verification");
+      const membership = telegram
+        ? { state: null, validUntil: new Date(payload.exp * 1000) }
+        : membershipEvidence(await checkPnMemberGroup(payload.oid as string));
       const proof = {
         issuer,
         subject: payload.sub,
         providerId: id,
-        state,
-        validUntil: new Date(payload.exp * 1000),
+        externalId: typeof payload.oid === "string" ? payload.oid : null,
+        ...membership,
         telegramId,
       };
       await db
@@ -89,7 +89,6 @@ const pnEntra =
         clientId: env.PN_ENTRA_CLIENT_ID,
         clientSecret: env.PN_ENTRA_CLIENT_SECRET,
         tenantId: env.PN_ENTRA_TENANT_ID,
-        requiredRole: env.PN_ENTRA_REQUIRED_ROLE,
       })
     : undefined;
 

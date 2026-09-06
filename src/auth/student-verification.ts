@@ -151,7 +151,7 @@ export async function confirmStudentVerification(
     if (currentStudentAccount && currentStudentAccount.accountId !== email) {
       throw new StudentVerificationError(
         409,
-        "Disconnect your current Polimi email before connecting another one.",
+        "Unlink your current Polimi email before linking another one.",
       );
     }
     const [existingAccount] = await transaction
