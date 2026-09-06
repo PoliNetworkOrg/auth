@@ -1,247 +1,101 @@
-Welcome to your new TanStack Start app!
+# PoliNetwork Identity prototype
 
-# Getting Started
+A standalone TanStack Start and Better Auth identity provider. The backend remains the active authentication provider for all existing PoliNetwork applications. This repository does not change backend authentication, migrate production data, or grant Telegram moderation access.
 
-To run this application:
+## Run locally
 
-```bash
-pnpm install
-pnpm dev
-```
+Use Node and pnpm through Vite+.
 
-# Building For Production
+1. Run `vp install`.
+2. Copy `.env.example` to `.env.local`, set a random secret, and point `DATABASE_URL` at a **new, separate PostgreSQL database**.
+3. Set `BETTER_AUTH_URL=http://localhost:3000` for local development.
+4. Run `vp run db:migrate` to apply the checked-in migration to that database.
+5. Run `vp run dev` and open the origin set in `BETTER_AUTH_URL`.
 
-To build this application for production:
+Providers are disabled until their credentials are configured. The page shows which methods are available. Production uses `vp run build` and `vp run start`, with environment variables supplied by the host. Use HTTPS in production.
 
-```bash
-pnpm build
-```
+Google and PoliNetwork Entra are the only login providers. A user must have an active session from one of them before connecting Telegram or verifying a Polimi email. The server rejects direct Telegram sign-in requests. It also protects the last Google or PoliNetwork Entra account from being disconnected, even when verifier accounts remain linked.
 
-## Styling
+## Connect identities
 
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
+Sign in with Google or PoliNetwork Entra, then connect Telegram and a Polimi student email from the account page. Accounts are keyed by verified issuer and subject, with a database uniqueness constraint. Matching emails never merge users. Account links can have different email addresses. The last login method cannot be disconnected.
 
-### Removing Tailwind CSS
+The prototype uses synthetic, unverified addresses under `identity.invalid` when an OAuth provider does not provide a usable login email. Email login is disabled. Email delivery is only used to prove ownership of a `@mail.polimi.it` address. If two accounts already belong to separate local users, they cannot be combined through linking; a future ownership-verified merge process is needed.
 
-If you prefer not to use Tailwind CSS:
+Register these callback URLs, replacing the origin with your deployment:
 
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Remove `@tailwindcss/vite` and `tailwindcss` from `package.json`
+| Provider          | Callback                                                  |
+| ----------------- | --------------------------------------------------------- |
+| Google            | `https://auth.polinetwork.org/api/auth/callback/google`   |
+| PoliNetwork Entra | `https://auth.polinetwork.org/api/auth/callback/pn-entra` |
+| Telegram          | `https://auth.polinetwork.org/api/auth/callback/telegram` |
 
-## Deploy with Nitro
+PoliNetwork Entra uses a tenant-specific registration, not the `common` tenant. Google and PoliNetwork Entra are login providers. Telegram uses the official OIDC authorization-code flow with PKCE and RS256 ID tokens, but the server only permits it through the account-linking flow. Configure its allowed origin and callback in BotFather. Its bot user ID comes from the signed `id` claim, separately from its OIDC `sub`.
 
-This project uses Nitro as a generic server adapter, so it can run on any Node-compatible host.
+Polimi verification accepts only the exact `mail.polimi.it` domain. Codes contain six digits, expire after 10 minutes, allow five attempts, and cannot be resent for 60 seconds. The database stores only an HMAC of each code. Successful verification creates a `polimi-email` account link and grants student status for `STUDENT_VERIFICATION_TTL_DAYS`.
 
-```bash
-npm run build
-node dist/server/index.mjs
-```
+Email delivery uses the same Microsoft Graph client-credential setup as the current backend. The Azure application needs the Graph `Mail.Send` application permission and permission to send as `AZURE_EMAIL_SENDER`. These Azure credentials belong to the mail sender; they do not require access to Polimi Entra.
 
-The build output is a self-contained Node server. To deploy, push the `dist/` directory to your host (Render, Fly.io, your own VPS, etc.) and run the server command above.
+## States and permissions
 
-For host-specific presets (Vercel, Netlify, Cloudflare, AWS Lambda, etc.) and tuning, see https://v3.nitro.build/deploy.
+| Evidence                                     | State              | Permission                         |
+| -------------------------------------------- | ------------------ | ---------------------------------- |
+| PN tenant plus configured Microsoft app role | `socio`            | `membership:read`                  |
+| Code sent to an `@mail.polimi.it` address    | `student`          | `student:verified`                 |
+| Telegram identity                            | Linked Telegram ID | No automatic moderation permission |
 
-## T3Env
+States accumulate independently. A socio is not automatically a student. Signature, issuer, audience, expiration, and Entra tenant are checked before recording evidence. Evidence contributes only when joined to an account owned by the user.
 
-- You can use T3Env to add type safety to your environment variables.
-- Add Environment variables to the `src/env.mjs` file.
-- Use the environment variables in your code.
+`PN_ENTRA_REQUIRED_ROLE` names the value expected in Microsoft's signed `roles` claim. Without it, PoliNetwork Entra login works but grants no membership state. Confirm with the tenant administrator whether every PN account is a member or whether the app role is required.
 
-### Usage
+Microsoft membership expires at the upstream ID token's expiration. Polimi student verification lasts for `STUDENT_VERIFICATION_TTL_DAYS`, which defaults to 365 days. The user must verify the address again after that. The Telegram ownership link persists until disconnected. Already issued OIDC tokens expire after five minutes, so consumers must account for that revocation delay; `/api/identity` and UserInfo compute current evidence on each request.
 
-```ts
-import { env } from "@/env";
+OIDC client administrators are explicitly listed by local user ID in `IDP_ADMIN_USER_IDS`. They can manage application registrations; being a socio does not confer this administrative permission. Existing backend Telegram roles and group assignments remain authoritative and are not copied or queried by this prototype.
 
-console.log(env.VITE_APP_TITLE);
-```
+## OIDC clients
 
-## Setting up Better Auth
+The production issuer is `https://auth.polinetwork.org/api/auth`. Discovery is available at `https://auth.polinetwork.org/api/auth/.well-known/openid-configuration`.
 
-1. Generate and set the `BETTER_AUTH_SECRET` environment variable in your `.env.local`:
+Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_access`. The custom scope adds `https://polinetwork.org/identity` to ID tokens, access tokens, and UserInfo:
 
-   ```bash
-   pnpm dlx @better-auth/cli secret
-   ```
-
-2. Visit the [Better Auth documentation](https://www.better-auth.com) to unlock the full potential of authentication in your app.
-
-### Adding a Database (Optional)
-
-Better Auth can work in stateless mode, but to persist user data, add a database:
-
-```typescript
-// src/lib/auth.ts
-import { betterAuth } from "better-auth";
-import { Pool } from "pg";
-
-export const auth = betterAuth({
-  database: new Pool({
-    connectionString: process.env.DATABASE_URL,
-  }),
-  // ... rest of config
-});
-```
-
-Then run migrations:
-
-```bash
-pnpm dlx @better-auth/cli migrate
-```
-
-## Shadcn
-
-Add components using the latest version of [Shadcn](https://ui.shadcn.com/).
-
-```bash
-pnpm dlx shadcn@latest add button
-```
-
-## Routing
-
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
-
-### Adding A Route
-
-To add a new route to your application just add a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from "@tanstack/react-router";
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "My App" },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-});
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from "@tanstack/react-start";
-
-const getServerTime = createServerFn({
-  method: "GET",
-}).handler(async () => {
-  return new Date().toISOString();
-});
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState("");
-
-  useEffect(() => {
-    getServerTime().then(setTime);
-  }, []);
-
-  return <div>Server time: {time}</div>;
+```json
+{
+  "states": ["socio", "student"],
+  "permissions": ["membership:read", "student:verified"],
+  "telegramId": "123456789"
 }
 ```
 
-## API Routes
+Dynamic registration and client-credentials grants are disabled. An allowlisted administrator can register a client from a signed-in browser using `authClient.oauth2.createClient({ redirect_uris: ["https://app.example/callback"] })`. Use `token_endpoint_auth_method: "none"` for a public client. Keep confidential client secrets on its server. The consent page displays requested scopes and profile fields and supports allow and deny.
 
-You can create API routes by using the `server` property in your route definitions:
+Future consumers should use authorization code with PKCE, validate token signatures, issuer, audience, and expiration, and request `polinetwork:identity` only when needed. APIs must check their own permissions. An ID token or a linked Telegram ID alone is not permission to moderate a group.
 
-```tsx
-import { createFileRoute } from "@tanstack/react-router";
-import { json } from "@tanstack/react-start";
+## Migration work before cutover
 
-export const Route = createFileRoute("/api/hello")({
-  server: {
-    handlers: {
-      GET: () => json({ message: "Hello, World!" }),
-    },
-  },
-});
+Inspection found backend auth in `../backend/src/auth/index.ts`, with custom email OTP, passkeys, shared subdomain cookies, and custom Telegram linking. `../admin` reads `user.telegramId` and calls backend Telegram permission routes. `../group-bot` also uses those backend assignments.
+
+Keep these integrations running while testing this service. A later migration needs:
+
+1. Back up and inventory backend users, accounts, passkeys, Telegram links, roles, and foreign keys. Preserve user IDs or define a reviewed mapping. This prototype's schema is not a replacement migration for the backend's prefixed tables.
+2. Implement a bridge that proves ownership of the existing backend session before connecting an existing user here. The prototype does not yet preserve email OTP or passkey login. Never import Telegram usernames as ownership proof or manufacture OIDC accounts from old links.
+3. Require official Telegram re-verification and reconcile the verified numeric ID with existing moderation assignments. Review conflicts instead of merging automatically.
+4. Confirm the PN membership rule and choose how often students must reverify their Polimi email.
+5. Test a downstream application in staging, including authorization code, consent, refresh, logout, account conflicts, and revoked permissions. The current shared-cookie clients cannot be pointed at this issuer without integration changes.
+6. Schedule a separate cutover and rollback plan. Retain the backend login until those checks pass.
+
+## Validation
+
+`vp check`, `vp test`, and `vp run build` check the code. Integration tests are opt-in and create/delete fixed test fixtures. Run them only with a disposable, migrated database and a running build that uses the same test secret:
+
+```sh
+IDENTITY_TEST_URL=http://localhost:35439 \
+IDENTITY_TEST_DATABASE_URL=postgresql://postgres:test@localhost:55439/identity \
+IDENTITY_TEST_SECRET=your-test-server-secret \
+vp test
 ```
 
-## Data Fetching
+The integration suite covers discovery, anonymous rejection, current identity claims, denied client registration, unique account ownership, unlink revocation, and last-account protection. Live Google, Entra, Telegram, and Microsoft Graph email delivery require actual app registrations and have not been validated here.
 
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
+The auth schema was generated with the Better Auth CLI and includes the `account.issuer` field and issuer/subject unique index required by installed Better Auth 1.7.2. Review regeneration diffs: older CLI core schemas omit that field. Generate Drizzle SQL with `vp run db:generate` after any schema change.
 
-For example:
-
-```tsx
-import { createFileRoute } from "@tanstack/react-router";
-
-export const Route = createFileRoute("/people")({
-  loader: async () => {
-    const response = await fetch("https://swapi.dev/api/people");
-    return response.json();
-  },
-  component: PeopleComponent,
-});
-
-function PeopleComponent() {
-  const data = Route.useLoaderData();
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  );
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+References: [Better Auth OAuth provider](https://better-auth.com/docs/plugins/oauth-provider), [Generic OAuth](https://better-auth.com/docs/plugins/generic-oauth), [Telegram OIDC](https://core.telegram.org/bots/telegram-login).

@@ -19,14 +19,18 @@ const config = defineConfig({
     options: { typeAware: true, typeCheck: true },
   },
   resolve: { tsconfigPaths: true },
-  plugins: lazyPlugins(() => [
-    devtools(),
-    nitro({ rollupConfig: { external: [/^@sentry\//] } }),
-    tailwindcss(),
-    tanstackStart(),
-    viteReact(),
-    babel({ presets: [reactCompilerPreset()] }),
-  ]),
+  plugins: lazyPlugins(() =>
+    process.env.VITEST
+      ? []
+      : [
+          devtools(),
+          nitro({ rollupConfig: { external: [/^@sentry\//] } }),
+          tailwindcss(),
+          tanstackStart(),
+          viteReact(),
+          babel({ presets: [reactCompilerPreset()] }),
+        ],
+  ),
 });
 
 export default config;

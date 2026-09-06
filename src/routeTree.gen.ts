@@ -10,11 +10,41 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ConsentRouteImport } from './routes/consent'
+import { Route as ApiIdentityRouteImport } from './routes/api/identity'
+import { Route as ApiProvidersRouteImport } from './routes/api/providers'
+import { Route as ApiStudentVerificationRouteImport } from './routes/api/student-verification'
+import { Route as ApiAccountsUnlinkRouteImport } from './routes/api/accounts/unlink'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConsentRoute = ConsentRouteImport.update({
+  id: '/consent',
+  path: '/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIdentityRoute = ApiIdentityRouteImport.update({
+  id: '/api/identity',
+  path: '/api/identity',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProvidersRoute = ApiProvidersRouteImport.update({
+  id: '/api/providers',
+  path: '/api/providers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiStudentVerificationRoute = ApiStudentVerificationRouteImport.update({
+  id: '/api/student-verification',
+  path: '/api/student-verification',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAccountsUnlinkRoute = ApiAccountsUnlinkRouteImport.update({
+  id: '/api/accounts/unlink',
+  path: '/api/accounts/unlink',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -25,27 +55,69 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/consent': typeof ConsentRoute
+  '/api/identity': typeof ApiIdentityRoute
+  '/api/providers': typeof ApiProvidersRoute
+  '/api/student-verification': typeof ApiStudentVerificationRoute
+  '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/consent': typeof ConsentRoute
+  '/api/identity': typeof ApiIdentityRoute
+  '/api/providers': typeof ApiProvidersRoute
+  '/api/student-verification': typeof ApiStudentVerificationRoute
+  '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/consent': typeof ConsentRoute
+  '/api/identity': typeof ApiIdentityRoute
+  '/api/providers': typeof ApiProvidersRoute
+  '/api/student-verification': typeof ApiStudentVerificationRoute
+  '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/auth/$'
+  fullPaths:
+    | '/'
+    | '/consent'
+    | '/api/identity'
+    | '/api/providers'
+    | '/api/student-verification'
+    | '/api/accounts/unlink'
+    | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/auth/$'
-  id: '__root__' | '/' | '/api/auth/$'
+  to:
+    | '/'
+    | '/consent'
+    | '/api/identity'
+    | '/api/providers'
+    | '/api/student-verification'
+    | '/api/accounts/unlink'
+    | '/api/auth/$'
+  id:
+    | '__root__'
+    | '/'
+    | '/consent'
+    | '/api/identity'
+    | '/api/providers'
+    | '/api/student-verification'
+    | '/api/accounts/unlink'
+    | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ConsentRoute: typeof ConsentRoute
+  ApiIdentityRoute: typeof ApiIdentityRoute
+  ApiProvidersRoute: typeof ApiProvidersRoute
+  ApiStudentVerificationRoute: typeof ApiStudentVerificationRoute
+  ApiAccountsUnlinkRoute: typeof ApiAccountsUnlinkRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -56,6 +128,41 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/consent': {
+      id: '/consent'
+      path: '/consent'
+      fullPath: '/consent'
+      preLoaderRoute: typeof ConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/identity': {
+      id: '/api/identity'
+      path: '/api/identity'
+      fullPath: '/api/identity'
+      preLoaderRoute: typeof ApiIdentityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/providers': {
+      id: '/api/providers'
+      path: '/api/providers'
+      fullPath: '/api/providers'
+      preLoaderRoute: typeof ApiProvidersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/student-verification': {
+      id: '/api/student-verification'
+      path: '/api/student-verification'
+      fullPath: '/api/student-verification'
+      preLoaderRoute: typeof ApiStudentVerificationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/accounts/unlink': {
+      id: '/api/accounts/unlink'
+      path: '/api/accounts/unlink'
+      fullPath: '/api/accounts/unlink'
+      preLoaderRoute: typeof ApiAccountsUnlinkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -70,6 +177,11 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ConsentRoute: ConsentRoute,
+  ApiIdentityRoute: ApiIdentityRoute,
+  ApiProvidersRoute: ApiProvidersRoute,
+  ApiStudentVerificationRoute: ApiStudentVerificationRoute,
+  ApiAccountsUnlinkRoute: ApiAccountsUnlinkRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport
