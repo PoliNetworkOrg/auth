@@ -1,10 +1,14 @@
 import { useState } from "react";
+import { Check, GraduationCap, Unlink } from "lucide-react";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
 import { Button } from "./ui/button";
 
 type LinkedAccount = { id: string; accountId: string };
 
 type Props = {
   configured: boolean;
+  verified: boolean;
   signedIn: boolean;
   linkedAccount?: LinkedAccount;
   canUnlink: boolean;
@@ -14,6 +18,7 @@ type Props = {
 
 export function StudentVerificationForm({
   configured,
+  verified,
   signedIn,
   linkedAccount,
   canUnlink,
@@ -56,21 +61,47 @@ export function StudentVerificationForm({
   }
 
   return (
-    <section className="rounded-xl border border-slate-200 p-6">
-      <h2 className="text-xl font-semibold">Politecnico di Milano</h2>
-      <p className="mt-2 text-slate-600">
-        Verify your student status with a code sent to your @mail.polimi.it address.
-      </p>
+    <section>
+      <div className="mb-4 flex items-start gap-4">
+        <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border bg-background text-primary">
+          <GraduationCap className="size-5" aria-hidden="true" />
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold">Politecnico di Milano</h3>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            Verify your student status with a code sent to your @mail.polimi.it address.
+          </p>
+        </div>
+      </div>
       {!signedIn ? (
-        <p className="mt-4 text-sm text-slate-600">
+        <p className="mt-4 text-sm text-muted-foreground">
           Sign in with Google or PoliNetwork before connecting your student email.
         </p>
+      ) : linkedAccount && verified ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 p-4">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-primary">
+              <Check className="size-3.5" />
+              Student verified
+            </p>
+            <p className="mt-1 break-all text-sm">{linkedAccount.accountId}</p>
+          </div>
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={busy || !canUnlink}
+            onClick={() => void onUnlink(linkedAccount.id)}
+          >
+            <Unlink />
+            Unlink
+          </Button>
+        </div>
       ) : (
-        <div className="mt-4 grid max-w-md gap-3">
-          <label htmlFor="student-email" className="text-sm font-medium">
+        <div className="grid gap-3 rounded-xl bg-muted/50 p-4">
+          <Label htmlFor="student-email" className="text-sm font-medium">
             University email
-          </label>
-          <input
+          </Label>
+          <Input
             id="student-email"
             type="email"
             autoComplete="email"
@@ -78,14 +109,14 @@ export function StudentVerificationForm({
             onChange={(event) => setEmail(event.target.value)}
             placeholder="name@mail.polimi.it"
             disabled={busy}
-            className="rounded-lg border border-slate-300 px-3 py-2"
+            className="bg-card"
           />
           {codeSent && (
             <>
-              <label htmlFor="student-code" className="text-sm font-medium">
+              <Label htmlFor="student-code" className="text-sm font-medium">
                 Verification code
-              </label>
-              <input
+              </Label>
+              <Input
                 id="student-code"
                 inputMode="numeric"
                 autoComplete="one-time-code"
@@ -94,43 +125,40 @@ export function StudentVerificationForm({
                 onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
                 placeholder="123456"
                 disabled={busy}
-                className="rounded-lg border border-slate-300 px-3 py-2 tracking-widest"
+                className="bg-card tracking-widest"
               />
             </>
           )}
           {message && (
-            <p role="status" className="text-sm text-green-700">
+            <p role="status" className="text-sm text-primary">
               {message}
             </p>
           )}
           {error && (
-            <p role="alert" className="text-sm text-red-700">
+            <p
+              role="alert"
+              className="text-sm text-destructive-foreground bg-destructive rounded-lg p-3"
+            >
               {error}
             </p>
           )}
-          <div>
-            <button
+          <div className="flex flex-wrap gap-2">
+            <Button
               disabled={busy || !configured || !email || (codeSent && code.length !== 6)}
               onClick={() => void submit(codeSent ? "confirm" : "request")}
-              className="rounded-lg bg-blue-700 px-4 py-2 text-white disabled:opacity-40"
             >
               {!configured ? "Not configured" : codeSent ? "Verify code" : "Send code"}
-            </button>
+            </Button>
             {codeSent && (
-              <button
-                disabled={busy}
-                onClick={() => void submit("request")}
-                className="ml-4 underline disabled:opacity-40"
-              >
+              <Button disabled={busy} onClick={() => void submit("request")} variant="ghost">
                 Send another code
-              </button>
+              </Button>
             )}
             {linkedAccount && (
               <Button
                 variant="destructive"
                 disabled={busy || !canUnlink}
                 onClick={() => void onUnlink(linkedAccount.id)}
-                className="ml-4"
               >
                 Unlink
               </Button>

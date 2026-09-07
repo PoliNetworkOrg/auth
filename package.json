@@ -20,6 +20,7 @@
   "dependencies": {
     "@azure/identity": "^4.13.2",
     "@better-auth/oauth-provider": "^1.7.2",
+    "@better-auth/passkey": "1.7.2",
     "@faker-js/faker": "^10.3.0",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@sentry/tanstackstart-react": "^10.67.0",

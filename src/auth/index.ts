@@ -1,4 +1,6 @@
 import { oauthProvider } from "@better-auth/oauth-provider";
+import { getAuthenticatorName, passkey } from "@better-auth/passkey";
+import { eq } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -11,9 +13,15 @@ import { env } from "../env";
 import { getOidcClaims } from "./identity";
 import { isLinkOnlyProvider } from "./policy";
 import { providers } from "./providers";
+import {
+  passkeyLabel,
+  passkeyListSchema,
+  passkeyUsername,
+  registrationOptionsSchema,
+} from "./passkeys";
 
 export const auth = betterAuth({
-  appName: "PoliNetwork Identity",
+  appName: "PoliNetwork Auth",
   baseURL: env.BETTER_AUTH_URL,
   secret: env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, { provider: "pg", schema }),
@@ -37,6 +45,27 @@ export const auth = betterAuth({
         });
       }
     }),
+    after: createAuthMiddleware(async (context) => {
+      if (context.path === "/passkey/generate-register-options" && context.context.session) {
+        const options = registrationOptionsSchema.safeParse(context.context.returned);
+        if (!options.success) return;
+        const { user } = context.context.session;
+        const accounts = await db
+          .select({ providerId: schema.account.providerId, idToken: schema.account.idToken })
+          .from(schema.account)
+          .where(eq(schema.account.userId, user.id));
+        const username = passkeyUsername(user, accounts);
+        return context.json({
+          ...options.data,
+          user: { ...options.data.user, name: username, displayName: username },
+        });
+      }
+      if (context.path === "/passkey/list-user-passkeys" && context.context.session) {
+        const passkeys = passkeyListSchema.safeParse(context.context.returned);
+        if (!passkeys.success) return;
+        return context.json(passkeys.data.map((item) => ({ ...item, name: passkeyLabel(item) })));
+      }
+    }),
   },
   account: {
     accountLinking: {
@@ -50,6 +79,17 @@ export const auth = betterAuth({
   session: { cookieCache: { enabled: false } },
   rateLimit: { enabled: true, storage: "database" },
   plugins: [
+    passkey({
+      rpName: "PoliNetwork Auth",
+      rpID: new URL(env.BETTER_AUTH_URL).hostname,
+      origin: new URL(env.BETTER_AUTH_URL).origin,
+      authenticatorSelection: { residentKey: "required", userVerification: "required" },
+      registration: {
+        afterVerification: async ({ verification }) => ({
+          name: getAuthenticatorName(verification.registrationInfo?.aaguid),
+        }),
+      },
+    }),
     genericOAuth({ config: providers }),
     jwt(),
     oauthProvider({

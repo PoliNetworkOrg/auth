@@ -28,6 +28,8 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
     clientId: settings.clientId,
     clientSecret: settings.clientSecret,
     discoveryUrl: `${issuer}/.well-known/openid-configuration`,
+    // Signing out of PoliNetwork must preserve the upstream provider session.
+    disableProviderLogout: true,
     requireIdTokenVerification: true,
     scopes: telegram ? ["openid", "profile"] : ["openid", "profile", "email"],
     pkce: true,

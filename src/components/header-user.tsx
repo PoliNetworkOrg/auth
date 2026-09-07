@@ -1,4 +1,5 @@
 import { authClient } from "@/auth/client";
+import { UserAvatar } from "./user-avatar";
 
 export default function BetterAuthHeader() {
   const { data: session, isPending } = authClient.useSession();
@@ -11,15 +12,11 @@ export default function BetterAuthHeader() {
 
   return (
     <div className="flex items-center gap-2">
-      {session.user.image ? (
-        <img src={session.user.image} alt="" className="h-8 w-8" />
-      ) : (
-        <div className="flex h-8 w-8 items-center justify-center bg-neutral-100 dark:bg-neutral-800">
-          <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
-            {session.user.name?.charAt(0).toUpperCase() || "U"}
-          </span>
-        </div>
-      )}
+      <UserAvatar
+        name={session.user.name}
+        image={session.user.image}
+        className="size-8 rounded-md bg-muted text-xs font-medium text-muted-foreground"
+      />
       <button
         onClick={() => {
           void authClient.signOut();

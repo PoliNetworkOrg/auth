@@ -14,7 +14,11 @@ Use Node and pnpm through Vite+.
 
 Providers are disabled until their credentials are configured. The page shows which methods are available. Production uses `vp run build` and `vp run start`, with environment variables supplied by the host. Use HTTPS in production.
 
-Google and PoliNetwork Entra are the only login providers. A user must have an active session from one of them before connecting Telegram or verifying a Polimi email. The server rejects direct Telegram sign-in requests. It also protects the last Google or PoliNetwork Entra account from being disconnected, even when verifier accounts remain linked.
+Google and PoliNetwork Entra create accounts. Once signed in, users can add a passkey from the account page and use it for future logins. Signed-out visitors see a login form with configured providers and passkey sign-in. Email/password login is disabled. The server rejects direct Telegram sign-in requests and protects the last Google or PoliNetwork Entra account from being disconnected, including when passkeys or verifier accounts remain linked.
+
+Passkeys require the checked-in `0003` database migration. Run `vp run db:migrate` before using them. Their relying-party ID and origin come from `BETTER_AUTH_URL`; use that exact origin in your browser, with HTTPS in production or localhost in development. Register a passkey after signing in with Google or PoliNetwork Entra. The account page lists and removes registered passkeys.
+
+New registrations send `PoliNetwork Auth` as the relying-party name. The username uses the user's real email, then an email from stored Google or Microsoft ID-token claims, and falls back to the user's name if neither is available. These claims are display metadata only. Passkey labels use the authenticator's AAGUID to recognize password managers such as 1Password; unknown authenticators display `Passkey`. Existing default labels are resolved when listed, while custom names are preserved. Password managers control their own vault item titles and may still show `localhost` during development. Previously saved vault metadata is not updated by the app.
 
 ## Connect identities
 
@@ -77,7 +81,7 @@ Inspection found backend auth in `../backend/src/auth/index.ts`, with custom ema
 Keep these integrations running while testing this service. A later migration needs:
 
 1. Back up and inventory backend users, accounts, passkeys, Telegram links, roles, and foreign keys. Preserve user IDs or define a reviewed mapping. This prototype's schema is not a replacement migration for the backend's prefixed tables.
-2. Implement a bridge that proves ownership of the existing backend session before connecting an existing user here. The prototype does not yet preserve email OTP or passkey login. Never import Telegram usernames as ownership proof or manufacture OIDC accounts from old links.
+2. Implement a bridge that proves ownership of the existing backend session before connecting an existing user here. Existing backend passkeys are not imported; users register new passkeys in this service. The prototype does not preserve email OTP login. Never import Telegram usernames as ownership proof or manufacture OIDC accounts from old links.
 3. Require official Telegram re-verification and reconcile the verified numeric ID with existing moderation assignments. Review conflicts instead of merging automatically.
 4. Confirm the PN membership rule and choose how often students must reverify their Polimi email.
 5. Test a downstream application in staging, including authorization code, consent, refresh, logout, account conflicts, and revoked permissions. The current shared-cookie clients cannot be pointed at this issuer without integration changes.

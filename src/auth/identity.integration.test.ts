@@ -52,6 +52,51 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: "Unauthorized" });
   });
+  it("requires a session to register or list passkeys", async () => {
+    for (const path of ["generate-register-options", "list-user-passkeys"]) {
+      const response = await fetch(`${baseURL}/api/auth/passkey/${path}`);
+      expect(response.status).toBe(401);
+    }
+  });
+  it("offers discoverable passkey authentication without an email", async () => {
+    const response = await fetch(`${baseURL}/api/auth/passkey/generate-authenticate-options`);
+    expect(response.status).toBe(200);
+    const options = await response.json();
+    expect(options).toMatchObject({
+      rpId: new URL(baseURL!).hostname,
+      challenge: expect.any(String),
+    });
+    expect(options.allowCredentials ?? []).toEqual([]);
+  });
+  it("registers discoverable passkeys for the signed-in user", async () => {
+    const token = `${Buffer.from('{"alg":"RS256"}').toString("base64url")}.${Buffer.from(JSON.stringify({ preferred_username: "test@polinetwork.org" })).toString("base64url")}.fixture`;
+    await pool.query("UPDATE account SET id_token = $1 WHERE id = 'integration-pn'", [token]);
+    const response = await fetch(`${baseURL}/api/auth/passkey/generate-register-options`, {
+      headers,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      rp: { id: new URL(baseURL!).hostname, name: "PoliNetwork Auth" },
+      user: { name: "test@polinetwork.org", displayName: "test@polinetwork.org" },
+      authenticatorSelection: { residentKey: "required", userVerification: "required" },
+    });
+  });
+  it("labels existing passkeys by authenticator without changing their credentials", async () => {
+    await pool.query(
+      `INSERT INTO passkey (id, name, public_key, user_id, credential_id, counter, device_type, backed_up, aaguid) VALUES ('integration-passkey', 'PoliNetwork passkey', 'fixture', 'integration-user', 'integration-credential', 0, 'multiDevice', true, 'bada5566-a7aa-401f-bd96-45619a55120d')`,
+    );
+    const response = await fetch(`${baseURL}/api/auth/passkey/list-user-passkeys`, { headers });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "integration-passkey",
+          name: "1Password",
+          credentialID: "integration-credential",
+        }),
+      ]),
+    );
+  });
   it("serves discovery with authorization-code grants", async () => {
     const response = await fetch(`${baseURL}/api/auth/.well-known/openid-configuration`);
     expect(response.status).toBe(200);
