@@ -65,5 +65,6 @@ export async function getIdentity(userId: string) {
 
 export async function getOidcClaims(userId: string, scopes: string[]) {
   if (!scopes.includes("polinetwork:identity")) return {};
-  return { "https://polinetwork.org/identity": await getIdentity(userId) };
+  const claimName = new URL("/api/identity", env.BETTER_AUTH_URL).href;
+  return { [claimName]: await getIdentity(userId) };
 }

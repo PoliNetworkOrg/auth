@@ -60,7 +60,7 @@ OIDC client administration is a separate permission from membership. Anyone sign
 
 The production issuer is `https://auth.polinetwork.org/api/auth`. Discovery is available at `https://auth.polinetwork.org/api/auth/.well-known/openid-configuration`.
 
-Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_access`. The custom scope adds `https://polinetwork.org/identity` to ID tokens, access tokens, and UserInfo:
+Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_access`. The custom scope adds the identity endpoint URL from `BETTER_AUTH_URL` to ID tokens, access tokens, and UserInfo. With the default public origin, the claim is `https://auth.polinetwork.org/api/identity`:
 
 ```json
 {
