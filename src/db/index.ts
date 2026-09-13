@@ -3,4 +3,14 @@ import { env } from "../env";
 
 import * as schema from "./schema.ts";
 
-export const db = drizzle(env.DATABASE_URL, { schema });
+export const db = drizzle({ 
+  connection: {
+    database: env.DB_NAME,
+    host: env.DB_HOST,
+    port: env.DB_PORT,
+    user: env.DB_USER,
+    password: env.DB_PASS,
+    ssl: false,
+  },
+  schema 
+});

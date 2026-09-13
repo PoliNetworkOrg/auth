@@ -3,7 +3,12 @@ import { z } from "zod";
 
 export const env = createEnv({
   server: {
-    DATABASE_URL: z.url(),
+    DB_HOST: z.string().min(1).default("localhost"),
+    DB_PORT: z.coerce.number().min(1).max(65535).default(5432),
+    DB_USER: z.string().min(1),
+    DB_PASS: z.string().min(1),
+    DB_NAME: z.string().min(3).default("polinetwork_auth"),
+
     BETTER_AUTH_URL: z.url().default("https://auth.polinetwork.org"),
     BETTER_AUTH_SECRET: z.string().min(32),
 
