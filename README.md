@@ -7,12 +7,14 @@ A standalone TanStack Start and Better Auth identity provider. The backend remai
 Use Node and pnpm through Vite+.
 
 1. Run `vp install`.
-2. Copy `.env.example` to `.env.local`, set a random secret, and point `DATABASE_URL` at a **new, separate PostgreSQL database**.
+2. Copy `.env.example` to `.env.local`, set a random secret, and point the `DB_*` variables at a **new, separate PostgreSQL database**.
 3. Set `BETTER_AUTH_URL=http://localhost:3000` for local development.
 4. Run `vp run db:migrate` to apply the checked-in migration to that database.
 5. Run `vp run dev` and open the origin set in `BETTER_AUTH_URL`.
 
-Providers are disabled until their credentials are configured. The page shows which methods are available. Production uses `vp run build` and `vp run start`, with environment variables supplied by the host. Use HTTPS in production.
+Providers are disabled until their credentials are configured. The page shows which methods are available. Production uses `vp run build` and `vp run start`, with environment variables supplied by the host. The start command takes a PostgreSQL advisory lock, applies the checked-in Drizzle migrations, and starts the web server only after they succeed. This keeps simultaneous container replicas from applying the same migration. A migration failure stops the process instead of serving against an outdated schema. Use HTTPS in production.
+
+The included `Dockerfile` builds the app and runs the same migration-first startup command as an unprivileged user. Supply the `DB_*` variables and the other production variables at runtime; do not bake an environment file into the image. The migration connection must go directly to PostgreSQL or through a session-pooling endpoint because PostgreSQL advisory locks belong to a database session. If the deployment platform supports a single migration job before rollout, running this bootstrap there is preferable to making every replica wait for the lock.
 
 Google and PoliNetwork Entra create accounts. Once signed in, users can add a passkey from the account page and use it for future logins. Signed-out visitors see a login form with configured providers and passkey sign-in. Email/password login is disabled. The server rejects direct Telegram sign-in requests and protects the last Google or PoliNetwork Entra account from being disconnected, including when passkeys or verifier accounts remain linked.
 

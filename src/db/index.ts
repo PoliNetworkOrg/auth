@@ -3,7 +3,7 @@ import { env } from "../env";
 
 import * as schema from "./schema.ts";
 
-export const db = drizzle({ 
+export const db = drizzle({
   connection: {
     database: env.DB_NAME,
     host: env.DB_HOST,
@@ -12,5 +12,5 @@ export const db = drizzle({
     password: env.DB_PASS,
     ssl: false,
   },
-  schema 
+  schema,
 });

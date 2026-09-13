@@ -4,7 +4,7 @@ import { z } from "zod";
 export const env = createEnv({
   server: {
     DB_HOST: z.string().min(1).default("localhost"),
-    DB_PORT: z.coerce.number().min(1).max(65535).default(5432),
+    DB_PORT: z.coerce.number().int().min(1).max(65535).default(5432),
     DB_USER: z.string().min(1),
     DB_PASS: z.string().min(1),
     DB_NAME: z.string().min(3).default("polinetwork_auth"),
