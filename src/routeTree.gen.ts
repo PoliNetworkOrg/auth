@@ -10,16 +10,28 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApplicationsRouteRouteImport } from './routes/applications/route'
 import { Route as ConsentRouteImport } from './routes/consent'
 import { Route as ApiIdentityRouteImport } from './routes/api/identity'
 import { Route as ApiProvidersRouteImport } from './routes/api/providers'
 import { Route as ApiStudentVerificationRouteImport } from './routes/api/student-verification'
+import { Route as ApplicationsIndexRouteImport } from './routes/applications/index'
+import { Route as ApplicationsClientIdRouteImport } from './routes/applications/$clientId'
+import { Route as ApplicationsNewRouteImport } from './routes/applications/new'
 import { Route as ApiAccountsUnlinkRouteImport } from './routes/api/accounts/unlink'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiOidcAccessRouteImport } from './routes/api/oidc/access'
+import { Route as ApiOidcClientUpdateRouteImport } from './routes/api/oidc/client-update'
+import { Route as ApiOidcClientsRouteImport } from './routes/api/oidc/clients'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApplicationsRouteRoute = ApplicationsRouteRouteImport.update({
+  id: '/applications',
+  path: '/applications',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConsentRoute = ConsentRouteImport.update({
@@ -42,6 +54,21 @@ const ApiStudentVerificationRoute = ApiStudentVerificationRouteImport.update({
   path: '/api/student-verification',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApplicationsIndexRoute = ApplicationsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ApplicationsRouteRoute,
+} as any)
+const ApplicationsClientIdRoute = ApplicationsClientIdRouteImport.update({
+  id: '/$clientId',
+  path: '/$clientId',
+  getParentRoute: () => ApplicationsRouteRoute,
+} as any)
+const ApplicationsNewRoute = ApplicationsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ApplicationsRouteRoute,
+} as any)
 const ApiAccountsUnlinkRoute = ApiAccountsUnlinkRouteImport.update({
   id: '/api/accounts/unlink',
   path: '/api/accounts/unlink',
@@ -52,15 +79,37 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiOidcAccessRoute = ApiOidcAccessRouteImport.update({
+  id: '/api/oidc/access',
+  path: '/api/oidc/access',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOidcClientUpdateRoute = ApiOidcClientUpdateRouteImport.update({
+  id: '/api/oidc/client-update',
+  path: '/api/oidc/client-update',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOidcClientsRoute = ApiOidcClientsRouteImport.update({
+  id: '/api/oidc/clients',
+  path: '/api/oidc/clients',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/applications': typeof ApplicationsRouteRouteWithChildren
   '/consent': typeof ConsentRoute
   '/api/identity': typeof ApiIdentityRoute
   '/api/providers': typeof ApiProvidersRoute
   '/api/student-verification': typeof ApiStudentVerificationRoute
+  '/applications/$clientId': typeof ApplicationsClientIdRoute
+  '/applications/new': typeof ApplicationsNewRoute
+  '/applications/': typeof ApplicationsIndexRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/oidc/access': typeof ApiOidcAccessRoute
+  '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
+  '/api/oidc/clients': typeof ApiOidcClientsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -68,29 +117,49 @@ export interface FileRoutesByTo {
   '/api/identity': typeof ApiIdentityRoute
   '/api/providers': typeof ApiProvidersRoute
   '/api/student-verification': typeof ApiStudentVerificationRoute
+  '/applications/$clientId': typeof ApplicationsClientIdRoute
+  '/applications/new': typeof ApplicationsNewRoute
+  '/applications': typeof ApplicationsIndexRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/oidc/access': typeof ApiOidcAccessRoute
+  '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
+  '/api/oidc/clients': typeof ApiOidcClientsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/applications': typeof ApplicationsRouteRouteWithChildren
   '/consent': typeof ConsentRoute
   '/api/identity': typeof ApiIdentityRoute
   '/api/providers': typeof ApiProvidersRoute
   '/api/student-verification': typeof ApiStudentVerificationRoute
+  '/applications/$clientId': typeof ApplicationsClientIdRoute
+  '/applications/new': typeof ApplicationsNewRoute
+  '/applications/': typeof ApplicationsIndexRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/oidc/access': typeof ApiOidcAccessRoute
+  '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
+  '/api/oidc/clients': typeof ApiOidcClientsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/applications'
     | '/consent'
     | '/api/identity'
     | '/api/providers'
     | '/api/student-verification'
+    | '/applications/$clientId'
+    | '/applications/new'
+    | '/applications/'
     | '/api/accounts/unlink'
     | '/api/auth/$'
+    | '/api/oidc/access'
+    | '/api/oidc/client-update'
+    | '/api/oidc/clients'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -98,27 +167,44 @@ export interface FileRouteTypes {
     | '/api/identity'
     | '/api/providers'
     | '/api/student-verification'
+    | '/applications/$clientId'
+    | '/applications/new'
+    | '/applications'
     | '/api/accounts/unlink'
     | '/api/auth/$'
+    | '/api/oidc/access'
+    | '/api/oidc/client-update'
+    | '/api/oidc/clients'
   id:
     | '__root__'
     | '/'
+    | '/applications'
     | '/consent'
     | '/api/identity'
     | '/api/providers'
     | '/api/student-verification'
+    | '/applications/$clientId'
+    | '/applications/new'
+    | '/applications/'
     | '/api/accounts/unlink'
     | '/api/auth/$'
+    | '/api/oidc/access'
+    | '/api/oidc/client-update'
+    | '/api/oidc/clients'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApplicationsRouteRoute: typeof ApplicationsRouteRouteWithChildren
   ConsentRoute: typeof ConsentRoute
   ApiIdentityRoute: typeof ApiIdentityRoute
   ApiProvidersRoute: typeof ApiProvidersRoute
   ApiStudentVerificationRoute: typeof ApiStudentVerificationRoute
   ApiAccountsUnlinkRoute: typeof ApiAccountsUnlinkRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiOidcAccessRoute: typeof ApiOidcAccessRoute
+  ApiOidcClientUpdateRoute: typeof ApiOidcClientUpdateRoute
+  ApiOidcClientsRoute: typeof ApiOidcClientsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -128,6 +214,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/applications': {
+      id: '/applications'
+      path: '/applications'
+      fullPath: '/applications'
+      preLoaderRoute: typeof ApplicationsRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/consent': {
@@ -158,6 +251,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiStudentVerificationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/applications/': {
+      id: '/applications/'
+      path: '/'
+      fullPath: '/applications/'
+      preLoaderRoute: typeof ApplicationsIndexRouteImport
+      parentRoute: typeof ApplicationsRouteRoute
+    }
+    '/applications/$clientId': {
+      id: '/applications/$clientId'
+      path: '/$clientId'
+      fullPath: '/applications/$clientId'
+      preLoaderRoute: typeof ApplicationsClientIdRouteImport
+      parentRoute: typeof ApplicationsRouteRoute
+    }
+    '/applications/new': {
+      id: '/applications/new'
+      path: '/new'
+      fullPath: '/applications/new'
+      preLoaderRoute: typeof ApplicationsNewRouteImport
+      parentRoute: typeof ApplicationsRouteRoute
+    }
     '/api/accounts/unlink': {
       id: '/api/accounts/unlink'
       path: '/api/accounts/unlink'
@@ -172,17 +286,57 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/oidc/access': {
+      id: '/api/oidc/access'
+      path: '/api/oidc/access'
+      fullPath: '/api/oidc/access'
+      preLoaderRoute: typeof ApiOidcAccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/oidc/client-update': {
+      id: '/api/oidc/client-update'
+      path: '/api/oidc/client-update'
+      fullPath: '/api/oidc/client-update'
+      preLoaderRoute: typeof ApiOidcClientUpdateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/oidc/clients': {
+      id: '/api/oidc/clients'
+      path: '/api/oidc/clients'
+      fullPath: '/api/oidc/clients'
+      preLoaderRoute: typeof ApiOidcClientsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
+interface ApplicationsRouteRouteChildren {
+  ApplicationsClientIdRoute: typeof ApplicationsClientIdRoute
+  ApplicationsNewRoute: typeof ApplicationsNewRoute
+  ApplicationsIndexRoute: typeof ApplicationsIndexRoute
+}
+
+const ApplicationsRouteRouteChildren: ApplicationsRouteRouteChildren = {
+  ApplicationsClientIdRoute: ApplicationsClientIdRoute,
+  ApplicationsNewRoute: ApplicationsNewRoute,
+  ApplicationsIndexRoute: ApplicationsIndexRoute,
+}
+
+const ApplicationsRouteRouteWithChildren =
+  ApplicationsRouteRoute._addFileChildren(ApplicationsRouteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApplicationsRouteRoute: ApplicationsRouteRouteWithChildren,
   ConsentRoute: ConsentRoute,
   ApiIdentityRoute: ApiIdentityRoute,
   ApiProvidersRoute: ApiProvidersRoute,
   ApiStudentVerificationRoute: ApiStudentVerificationRoute,
   ApiAccountsUnlinkRoute: ApiAccountsUnlinkRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiOidcAccessRoute: ApiOidcAccessRoute,
+  ApiOidcClientUpdateRoute: ApiOidcClientUpdateRoute,
+  ApiOidcClientsRoute: ApiOidcClientsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

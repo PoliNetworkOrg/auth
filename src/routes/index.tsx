@@ -18,7 +18,7 @@ import {
   Unlink,
   UserRound,
 } from "lucide-react";
-import { ThemeSwitch } from "@/components/theme-switch";
+import { AppHeader } from "@/components/app-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -143,21 +143,7 @@ function AccountPage() {
   const telegramAccounts = accounts.filter((account) => account.providerId === "telegram");
   return (
     <div className="min-h-screen">
-      <header className="border-b bg-card">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-5 sm:px-8">
-          <a
-            href="/"
-            className="flex items-center gap-3 text-foreground"
-            aria-label="PoliNetwork Identity home"
-          >
-            <img src="/polinetwork-logo.svg" width={40} height={40} alt="" className="size-10" />
-            <span className="font-bold tracking-tight">
-              PoliNetwork <span className="ml-1 font-normal text-muted-foreground">Identity</span>
-            </span>
-          </a>
-          <ThemeSwitch />
-        </div>
-      </header>
+      <AppHeader active="account" />
       <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
         <div className="mb-9 flex flex-wrap items-end justify-between gap-4">
           <div>

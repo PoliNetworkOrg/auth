@@ -54,7 +54,7 @@ States accumulate independently. A socio is not automatically a student. Signatu
 
 Microsoft membership is rechecked on login and on the first identity request after `PN_ENTRA_MEMBER_REFRESH_HOURS`, which defaults to 24 hours. This is a cache interval, not the duration of someone's membership. Expired evidence grants no state if Graph cannot verify it, and the next request retries. Polimi student verification lasts for `STUDENT_VERIFICATION_TTL_DAYS`, which defaults to 365 days. The user must verify the address again after that. The Telegram ownership link persists until disconnected. Already issued OIDC tokens expire after five minutes, so consumers must account for that revocation delay; `/api/identity` and UserInfo compute current evidence on each request.
 
-OIDC client administrators are explicitly listed by local user ID in `IDP_ADMIN_USER_IDS`. They can manage application registrations; being a socio does not confer this administrative permission. Existing backend Telegram roles and group assignments remain authoritative and are not copied or queried by this prototype.
+OIDC client administration is a separate permission from membership. Anyone signed in with a PoliNetwork Entra account (the `pn-entra` provider, verified against `PN_ENTRA_TENANT_ID`) can currently manage applications. To restrict it to a stricter Microsoft 365 group than Soci, set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to that group's object ID: only its direct members, checked through the same Graph credentials, keep access. Graph answers are cached for 15 minutes per user; a failed check denies access instead of caching. `IDP_ADMIN_USER_IDS` remains a break-glass allowlist of local user IDs that always pass. Being a socio never confers this permission by itself. Existing backend Telegram roles and group assignments remain authoritative and are not copied or queried by this prototype.
 
 ## OIDC clients
 
@@ -70,7 +70,9 @@ Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_a
 }
 ```
 
-Dynamic registration and client-credentials grants are disabled. An allowlisted administrator can register a client from a signed-in browser using `authClient.oauth2.createClient({ redirect_uris: ["https://app.example/callback"] })`. Use `token_endpoint_auth_method: "none"` for a public client. Keep confidential client secrets on its server. The consent page displays requested scopes and profile fields and supports allow and deny.
+Dynamic registration and client-credentials grants are disabled. Administrators manage clients at `/applications`: create web or native apps as confidential (secret shown once) or public (PKCE only) clients, edit redirect URIs and allowed scopes, rotate secrets, pause sign-ins by disabling an app, skip the consent screen for first-party apps, and delete apps. All administrators share one client pool (the plugin's `clientReference` is a fixed value), so clients are not tied to whoever created them. Redirect URIs follow the provider's rules: web apps need `https` on a public host, native apps may use `http://localhost`, `http://127.0.0.1`, `http://[::1]`, or a reverse-domain custom scheme. Custom routes under `/api/oidc/` back the pages; creation, deletion, and secret rotation go through the Better Auth client endpoints, which enforce the same administrator check.
+
+During a sign-in the login page names the requesting application. The consent page at `/consent` shows the app, who is signed in (with a switch-account option), each requested scope in plain language, any requested profile claims, and where the browser will be sent; it supports allow and deny and explains expired or disabled requests.
 
 Future consumers should use authorization code with PKCE, validate token signatures, issuer, audience, and expiration, and request `polinetwork:identity` only when needed. APIs must check their own permissions. An ID token or a linked Telegram ID alone is not permission to moderate a group.
 
