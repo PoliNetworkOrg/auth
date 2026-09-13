@@ -11,6 +11,8 @@ import { db } from "../db";
 import * as schema from "../db/schema";
 import { env } from "../env";
 import { getOidcClaims } from "./identity";
+import { canManageOidcClients } from "./oidc-admin";
+import { OIDC_CLIENT_REFERENCE } from "./oidc-clients";
 import { isLinkOnlyProvider } from "./policy";
 import { providers } from "./providers";
 import {
@@ -98,7 +100,11 @@ export const auth = betterAuth({
       scopes: ["openid", "profile", "polinetwork:identity", "offline_access"],
       grantTypes: ["authorization_code", "refresh_token"],
       allowDynamicClientRegistration: false,
-      clientPrivileges: ({ user }) => !!user && env.IDP_ADMIN_USER_IDS.includes(user.id),
+      // Lets the login page name the requesting app before the user signs in.
+      allowPublicClientPrelogin: true,
+      // Administrators share one client pool instead of owning clients individually.
+      clientReference: () => OIDC_CLIENT_REFERENCE,
+      clientPrivileges: ({ user }) => (user ? canManageOidcClients(user.id) : false),
       accessTokenExpiresIn: 300,
       idTokenExpiresIn: 300,
       customIdTokenClaims: ({ user, scopes }) => getOidcClaims(user.id, scopes),

@@ -1,8 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Building2, Fingerprint, LoaderCircle } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useLocation } from "@tanstack/react-router";
+import { cn } from "cn";
+import { Building2, Fingerprint, Link2, LoaderCircle } from "lucide-react";
 import { authClient } from "@/auth/client";
-import { ThemeSwitch } from "@/components/theme-switch";
 import { GoogleIcon } from "@/components/google-icon";
+import { AppLogo } from "@/components/oidc/app-logo";
+import { ThemeSwitch } from "@/components/theme-switch";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 
@@ -11,14 +14,14 @@ const providers = [
   { id: "pn-entra", name: "PoliNetwork APS" },
 ];
 
-export function LoginLayout({ children }: { children: ReactNode }) {
+export function LoginLayout({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
     <div className="flex min-h-svh flex-col bg-muted">
       <header className="flex justify-end p-5 sm:p-6">
         <ThemeSwitch />
       </header>
       <main className="flex flex-1 items-center justify-center px-5 pb-20 pt-6 sm:px-6">
-        <div className="flex w-full max-w-sm flex-col gap-6">
+        <div className={cn("flex w-full flex-col gap-6", wide ? "max-w-md" : "max-w-sm")}>
           <a
             href="/"
             className="flex items-center gap-3 self-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -37,17 +40,66 @@ export function LoginLayout({ children }: { children: ReactNode }) {
   );
 }
 
-export function LoginPage() {
+/** The app that started an OpenID Connect sign-in, when the page was reached from one. */
+type RequestingApp = { name: string; logo: string | null };
+
+/** Two logos joined by a link glyph: the requesting app and PoliNetwork. */
+export function AppHandshake({ app }: { app: RequestingApp | null }) {
+  return (
+    <div className="flex items-center justify-center gap-3" aria-hidden="true">
+      <AppLogo name={app?.name ?? "?"} logo={app?.logo} className="size-14 rounded-2xl text-lg" />
+      <span className="flex items-center text-muted-foreground">
+        <span className="h-px w-4 bg-border" />
+        <Link2 className="size-4" />
+        <span className="h-px w-4 bg-border" />
+      </span>
+      <div className="flex size-14 items-center justify-center rounded-2xl border bg-background">
+        <img src="/polinetwork-logo.svg" width={36} height={36} alt="" className="size-9" />
+      </div>
+    </div>
+  );
+}
+
+export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
   const [available, setAvailable] = useState<string[] | null>(null);
   const [providerError, setProviderError] = useState(false);
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [passkeySupported, setPasskeySupported] = useState(false);
+  const [requestingApp, setRequestingApp] = useState<RequestingApp | null>(null);
+  // Read the signed OAuth query from the router so the server renders the same heading.
+  const { searchStr } = useLocation();
+  const oauthClientId = useMemo(() => {
+    const params = new URLSearchParams(searchStr);
+    return params.has("sig") ? params.get("client_id") : null;
+  }, [searchStr]);
+  const oauthFlow = oauthClientId !== null;
 
   useEffect(() => {
     setPasskeySupported(window.isSecureContext && !!window.PublicKeyCredential);
   }, []);
+
+  useEffect(() => {
+    if (!oauthClientId) return;
+    let active = true;
+    // The auth client attaches the signed OAuth query, which authorizes this lookup.
+    void authClient.oauth2
+      .publicClientPrelogin({ client_id: oauthClientId })
+      .then((result) => {
+        if (active && result.data)
+          setRequestingApp({
+            name: result.data.client_name ?? "the application",
+            logo: result.data.logo_uri ?? null,
+          });
+      })
+      .catch(() => {
+        /* Fall back to a generic heading; the flow still works. */
+      });
+    return () => {
+      active = false;
+    };
+  }, [oauthClientId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -71,7 +123,7 @@ export function LoginPage() {
       const result =
         method === "passkey"
           ? await authClient.signIn.passkey()
-          : await authClient.signIn.social({ provider: method, callbackURL: "/" });
+          : await authClient.signIn.social({ provider: method, callbackURL });
       if (result.error) {
         setError(
           method === "passkey"
@@ -90,8 +142,26 @@ export function LoginPage() {
     <LoginLayout>
       <Card>
         <CardHeader className="pb-6 pt-8 text-center">
-          <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
-          <CardDescription>Sign in to your PoliNetwork account</CardDescription>
+          {oauthFlow ? (
+            <>
+              <div className="mb-5">
+                <AppHandshake app={requestingApp} />
+              </div>
+              <h1 className="text-2xl font-bold tracking-tight">Sign in to continue</h1>
+              <CardDescription>
+                to{" "}
+                <span className="font-medium text-foreground">
+                  {requestingApp?.name ?? "the application that sent you here"}
+                </span>{" "}
+                with your PoliNetwork account
+              </CardDescription>
+            </>
+          ) : (
+            <>
+              <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
+              <CardDescription>Sign in to your PoliNetwork account</CardDescription>
+            </>
+          )}
         </CardHeader>
         <CardContent className="space-y-6 pb-8">
           <form
@@ -180,8 +250,9 @@ export function LoginPage() {
             </p>
           )}
           <p className="text-center text-xs leading-5 text-muted-foreground">
-            New here? Continue with an account to get started. You can add a passkey once you're
-            signed in.
+            {oauthFlow
+              ? "After signing in you'll review what the application can access before anything is shared."
+              : "New here? Continue with an account to get started. You can add a passkey once you're signed in."}
           </p>
         </CardContent>
       </Card>

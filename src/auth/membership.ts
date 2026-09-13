@@ -4,7 +4,7 @@ import { env } from "../env";
 
 type MembersPage = { value: { id: string }[]; "@odata.nextLink"?: string };
 
-// Match the backend's direct Soci membership, including members beyond the first page.
+// Match the backend's direct group membership, including members beyond the first page.
 export async function readGroupMembership(
   getPage: (path: string) => Promise<MembersPage>,
   groupId: string,
@@ -21,9 +21,17 @@ export async function readGroupMembership(
 
 let graphClient: Client | undefined;
 
-export async function checkPnMemberGroup(objectId: string): Promise<boolean | null> {
+/**
+ * Checks whether an Entra object is a direct member of a group through Microsoft Graph.
+ * Returns null when the check could not be performed; callers must not treat that as
+ * confirmed nonmembership.
+ */
+export async function checkEntraGroupMember(
+  groupId: string,
+  objectId: string,
+): Promise<boolean | null> {
   if (!env.PN_ENTRA_TENANT_ID || !env.PN_ENTRA_CLIENT_ID || !env.PN_ENTRA_CLIENT_SECRET) {
-    console.warn("PN membership check unavailable: configure PN_ENTRA credentials.");
+    console.warn("Entra group check unavailable: configure PN_ENTRA credentials.");
     return null;
   }
   try {
@@ -41,23 +49,23 @@ export async function checkPnMemberGroup(objectId: string): Promise<boolean | nu
       });
     }
     const client = graphClient;
-    return await readGroupMembership(
-      (path) => client.api(path).get(),
-      env.PN_ENTRA_MEMBER_GROUP_ID,
-      objectId,
-    );
+    return await readGroupMembership((path) => client.api(path).get(), groupId, objectId);
   } catch (error) {
     // Do not log Graph errors wholesale: they may contain tokens or personal data.
     const status = error instanceof Error && "statusCode" in error ? error.statusCode : null;
     console.warn(
-      "PN membership check failed.",
+      "Entra group check failed.",
       typeof status === "number"
         ? `Graph HTTP ${status}.`
         : "Check PN Entra credentials/connectivity.",
-      "The PN_ENTRA_CLIENT_ID app needs Graph application GroupMember.Read.All with admin consent; check PN_ENTRA_MEMBER_GROUP_ID too.",
+      "The PN_ENTRA_CLIENT_ID app needs Graph application GroupMember.Read.All with admin consent; check the group ID too.",
     );
     return null;
   }
+}
+
+export function checkPnMemberGroup(objectId: string): Promise<boolean | null> {
+  return checkEntraGroupMember(env.PN_ENTRA_MEMBER_GROUP_ID, objectId);
 }
 
 export function membershipEvidence(member: boolean | null, now = new Date()) {
