@@ -27,6 +27,15 @@ export function identityClaims(evidence: IdentityEvidence[], now = new Date()) {
   };
 }
 
+export function oidcIdentityClaims(claimName: string, claims: ReturnType<typeof identityClaims>) {
+  return {
+    [claimName]: claims,
+    polinetwork_states: claims.states.join(" "),
+    polinetwork_permissions: claims.permissions.join(" "),
+    polinetwork_telegram_id: claims.telegramId ?? "",
+  };
+}
+
 export function hasAppRole(roles: unknown, required: string) {
   return (
     Array.isArray(roles) &&
