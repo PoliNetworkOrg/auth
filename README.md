@@ -62,15 +62,22 @@ OIDC client administration is a separate permission from membership. Anyone sign
 
 The production issuer is `https://auth.polinetwork.org/api/auth`. Discovery is available at `https://auth.polinetwork.org/api/auth/.well-known/openid-configuration`.
 
-Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_access`. The custom scope adds the identity endpoint URL from `BETTER_AUTH_URL` to ID tokens, access tokens, and UserInfo. With the default public origin, the claim is `https://auth.polinetwork.org/api/identity`:
+Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_access`. The custom scope adds the identity endpoint URL from `BETTER_AUTH_URL` to ID tokens, access tokens, and UserInfo. It also adds top-level string claims for consumers that cannot read arrays. With the default public origin, the claims are:
 
 ```json
 {
-  "states": ["socio", "student"],
-  "permissions": ["membership:read", "student:verified"],
-  "telegramId": "123456789"
+  "https://auth.polinetwork.org/api/identity": {
+    "states": ["socio", "student"],
+    "permissions": ["membership:read", "student:verified"],
+    "telegramId": "123456789"
+  },
+  "polinetwork_states": "socio student",
+  "polinetwork_permissions": "membership:read student:verified",
+  "polinetwork_telegram_id": "123456789"
 }
 ```
+
+The string `polinetwork_states` and `polinetwork_permissions` claims use spaces between values. They are empty strings when no values apply, as is `polinetwork_telegram_id` when no Telegram account is linked. The `/api/identity` response keeps the object format shown inside the URL-named claim.
 
 Dynamic registration and client-credentials grants are disabled. Administrators manage clients at `/applications`: create web or native apps as confidential (secret shown once) or public (PKCE only) clients, edit redirect URIs and allowed scopes, rotate secrets, pause sign-ins by disabling an app, skip the consent screen for first-party apps, and delete apps. All administrators share one client pool (the plugin's `clientReference` is a fixed value), so clients are not tied to whoever created them. Redirect URIs follow the provider's rules: web apps need `https` on a public host, native apps may use `http://localhost`, `http://127.0.0.1`, `http://[::1]`, or a reverse-domain custom scheme. Custom routes under `/api/oidc/` back the pages; creation, deletion, and secret rotation go through the Better Auth client endpoints, which enforce the same administrator check.
 

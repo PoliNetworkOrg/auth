@@ -5,6 +5,7 @@ import {
   identityClaims,
   isLinkOnlyProvider,
   isLoginProvider,
+  oidcIdentityClaims,
 } from "./policy";
 const now = new Date("2026-01-01T00:00:00Z");
 const future = new Date("2026-01-01T01:00:00Z");
@@ -51,6 +52,25 @@ describe("identity permissions", () => {
   });
   it("removes all permissions without linked evidence", () => {
     expect(identityClaims([], now)).toEqual({ states: [], permissions: [], telegramId: null });
+  });
+  it("adds string-only OIDC claims without changing the identity claim", () => {
+    const identity = {
+      states: ["socio", "student"],
+      permissions: ["membership:read", "student:verified"],
+      telegramId: "123456789",
+    };
+    expect(oidcIdentityClaims("https://auth.polinetwork.org/api/identity", identity)).toEqual({
+      "https://auth.polinetwork.org/api/identity": identity,
+      polinetwork_states: "socio student",
+      polinetwork_permissions: "membership:read student:verified",
+      polinetwork_telegram_id: "123456789",
+    });
+    expect(oidcIdentityClaims("identity", identityClaims([], now))).toEqual({
+      identity: { states: [], permissions: [], telegramId: null },
+      polinetwork_states: "",
+      polinetwork_permissions: "",
+      polinetwork_telegram_id: "",
+    });
   });
   it("accepts only the exact Polimi student email domain", () => {
     expect(hasPolimiStudentDomain("name@mail.polimi.it")).toBe(true);
