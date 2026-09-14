@@ -17,6 +17,12 @@ export const oidcScopes = [
     required: false,
   },
   {
+    id: "email",
+    label: "Email address",
+    description: "Your email address and whether it has been verified.",
+    required: false,
+  },
+  {
     id: "polinetwork:identity",
     label: "PoliNetwork identity",
     description:

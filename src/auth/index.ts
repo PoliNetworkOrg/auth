@@ -97,7 +97,7 @@ export const auth = betterAuth({
     oauthProvider({
       loginPage: "/",
       consentPage: "/consent",
-      scopes: ["openid", "profile", "polinetwork:identity", "offline_access"],
+      scopes: ["openid", "profile", "email", "polinetwork:identity", "offline_access"],
       grantTypes: ["authorization_code", "refresh_token"],
       allowDynamicClientRegistration: false,
       // Lets the login page name the requesting app before the user signs in.
