@@ -3,8 +3,9 @@ import { identityEvidence } from "../db/evidence";
 import { db } from "../db/index";
 import { account } from "../db/schema";
 import { env } from "../env";
-import { identityClaims, oidcIdentityClaims } from "./policy";
-import { checkPnMemberGroup, membershipEvidence } from "./membership";
+import { type IdentityClaims, identityStates, oidcIdentityClaims } from "./policy";
+import { checkPnGroupStates, membershipEvidence } from "./membership";
+import { resolveUserAccess } from "./rbac-store";
 
 async function refreshExpiredMembership(userId: string) {
   const now = new Date();
@@ -14,7 +15,6 @@ async function refreshExpiredMembership(userId: string) {
       subject: identityEvidence.subject,
       externalId: identityEvidence.externalId,
       validUntil: identityEvidence.validUntil,
-      state: identityEvidence.state,
     })
     .from(account)
     .innerJoin(
@@ -30,24 +30,24 @@ async function refreshExpiredMembership(userId: string) {
     if (proof.issuer !== `https://login.microsoftonline.com/${env.PN_ENTRA_TENANT_ID}/v2.0`)
       continue;
     if (proof.validUntil > now || !proof.externalId) continue;
-    const member = await checkPnMemberGroup(proof.externalId);
-    if (member === null) continue;
+    const states = await checkPnGroupStates(proof.externalId);
+    if (states === null) continue;
     await db
       .update(identityEvidence)
-      .set(membershipEvidence(member))
+      .set(membershipEvidence(states))
       .where(
         and(eq(identityEvidence.issuer, proof.issuer), eq(identityEvidence.subject, proof.subject)),
       );
   }
 }
 
-export async function getIdentity(userId: string) {
+export async function getIdentity(userId: string): Promise<IdentityClaims> {
   await refreshExpiredMembership(userId);
   const proofs = await db
     .select({
       providerId: identityEvidence.providerId,
       externalId: identityEvidence.externalId,
-      state: identityEvidence.state,
+      states: identityEvidence.states,
       validUntil: identityEvidence.validUntil,
       telegramId: identityEvidence.telegramId,
     })
@@ -60,7 +60,9 @@ export async function getIdentity(userId: string) {
       ),
     )
     .where(eq(account.userId, userId));
-  return identityClaims(proofs);
+  const { states, telegramId } = identityStates(proofs);
+  const access = await resolveUserAccess(userId, states);
+  return { states, roles: access.roles, permissions: access.permissions, telegramId };
 }
 
 export async function getOidcClaims(userId: string, scopes: string[]) {
