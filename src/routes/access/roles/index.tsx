@@ -1,15 +1,23 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronRight, KeyRound, Plus, ShieldCheck, Sparkles, Users } from "lucide-react";
-import { type RoleSummary, effectiveRolePermissions, staticRole } from "@/auth/rbac";
+import {
+  type RoleSummary,
+  effectiveRolePermissions,
+  staticRole,
+  staticRoleOrder,
+} from "@/auth/rbac";
+import { useIdpAccessContext } from "@/components/idp-access";
 import { KeyChip } from "@/components/rbac/fields";
+import { RequirePermission } from "@/components/rbac/require-permission";
 import { useCatalog } from "@/components/rbac/use-catalog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export const Route = createFileRoute("/access/roles/")({ component: RolesIndex });
+export const Route = createFileRoute("/access/roles/")({ component: GuardedRolesIndex });
 
-function RoleRow({ role, effective }: { role: RoleSummary; effective: number }) {
+/** `effective` is null for a role that holds every permission there is. */
+function RoleRow({ role, effective }: { role: RoleSummary; effective: number | null }) {
   const inferred = role.managed ? staticRole(role.key) : undefined;
   return (
     <li>
@@ -45,7 +53,9 @@ function RoleRow({ role, effective }: { role: RoleSummary; effective: number }) 
         <div className="hidden shrink-0 items-center gap-4 text-xs text-muted-foreground sm:flex">
           <span className="flex items-center gap-1.5">
             <KeyRound className="size-3.5" aria-hidden="true" />
-            {effective} {effective === 1 ? "permission" : "permissions"}
+            {effective === null
+              ? "every permission"
+              : `${effective} ${effective === 1 ? "permission" : "permissions"}`}
           </span>
           {!role.managed && (
             <span className="flex items-center gap-1.5">
@@ -61,9 +71,16 @@ function RoleRow({ role, effective }: { role: RoleSummary; effective: number }) 
 }
 
 function RolesIndex() {
+  const { can } = useIdpAccessContext();
   const { catalog, loading, error, reload } = useCatalog();
-  const managed = catalog.roles.filter((role) => role.managed);
+  const managed = catalog.roles
+    .filter((role) => role.managed)
+    .sort((a, b) => staticRoleOrder(a.key) - staticRoleOrder(b.key));
   const custom = catalog.roles.filter((role) => !role.managed);
+  const countFor = (role: RoleSummary) =>
+    staticRole(role.key)?.grantsAllPermissions
+      ? null
+      : effectiveRolePermissions(catalog, role.key).length;
 
   return (
     <div className="space-y-8">
@@ -75,12 +92,14 @@ function RolesIndex() {
             <code className="font-mono text-xs">polinetwork:identity</code> scope.
           </p>
         </div>
-        <Button asChild>
-          <Link to="/access/roles/new">
-            <Plus aria-hidden="true" />
-            New role
-          </Link>
-        </Button>
+        {can("idp:roles:write") && (
+          <Button asChild>
+            <Link to="/access/roles/new">
+              <Plus aria-hidden="true" />
+              New role
+            </Link>
+          </Button>
+        )}
       </div>
 
       {error && (
@@ -108,18 +127,15 @@ function RolesIndex() {
               <CardTitle>Built into the identity provider</CardTitle>
               <CardDescription>
                 These roles always exist and nobody hands them out: they follow the evidence the
-                identity provider already collects. You can still choose what they grant and where
-                they sit in the hierarchy.
+                identity provider already collects, and Master Admin follows the administrator
+                allowlist configured for this deployment. You can still choose what they grant and
+                where they sit in the hierarchy.
               </CardDescription>
             </CardHeader>
             <CardContent className="px-0 pb-0">
               <ul className="divide-y border-t" aria-label="Built-in roles">
                 {managed.map((role) => (
-                  <RoleRow
-                    key={role.id}
-                    role={role}
-                    effective={effectiveRolePermissions(catalog, role.key).length}
-                  />
+                  <RoleRow key={role.id} role={role} effective={countFor(role)} />
                 ))}
               </ul>
             </CardContent>
@@ -139,23 +155,21 @@ function RolesIndex() {
                       Create a role to bundle permissions and give them to specific people.
                     </p>
                   </div>
-                  <Button asChild>
-                    <Link to="/access/roles/new">
-                      <Plus aria-hidden="true" />
-                      New role
-                    </Link>
-                  </Button>
+                  {can("idp:roles:write") && (
+                    <Button asChild>
+                      <Link to="/access/roles/new">
+                        <Plus aria-hidden="true" />
+                        New role
+                      </Link>
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             ) : (
               <Card>
                 <ul className="divide-y" aria-label="Your roles">
                   {custom.map((role) => (
-                    <RoleRow
-                      key={role.id}
-                      role={role}
-                      effective={effectiveRolePermissions(catalog, role.key).length}
-                    />
+                    <RoleRow key={role.id} role={role} effective={countFor(role)} />
                   ))}
                 </ul>
               </Card>
@@ -164,5 +178,13 @@ function RolesIndex() {
         </div>
       )}
     </div>
+  );
+}
+
+function GuardedRolesIndex() {
+  return (
+    <RequirePermission permission="idp:roles:read">
+      <RolesIndex />
+    </RequirePermission>
   );
 }

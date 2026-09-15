@@ -5,7 +5,9 @@ import { account } from "../db/schema";
 import { env } from "../env";
 import { type IdentityClaims, identityStates, oidcIdentityClaims } from "./policy";
 import { checkPnGroupStates, membershipEvidence } from "./membership";
+import { MASTER_ADMIN_ROLE_KEY } from "./rbac";
 import { resolveUserAccess } from "./rbac-store";
+import { canAdministerIdp } from "./oidc-admin";
 
 async function refreshExpiredMembership(userId: string) {
   const now = new Date();
@@ -61,7 +63,10 @@ export async function getIdentity(userId: string): Promise<IdentityClaims> {
     )
     .where(eq(account.userId, userId));
   const { states, telegramId } = identityStates(proofs);
-  const access = await resolveUserAccess(userId, states);
+  // Master Admin is configured outside the database, so it is conferred here rather than
+  // proven by evidence, and never appears among the states.
+  const conferred = (await canAdministerIdp(userId)) ? [MASTER_ADMIN_ROLE_KEY] : [];
+  const access = await resolveUserAccess(userId, states, conferred);
   return { states, roles: access.roles, permissions: access.permissions, telegramId };
 }
 

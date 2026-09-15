@@ -4,13 +4,14 @@ import { ArrowLeft } from "lucide-react";
 import { type PermissionDraft, type RbacDraftErrors, emptyPermissionDraft } from "@/auth/rbac";
 import { RbacApiError, errorMessage, savePermission } from "@/components/rbac/api";
 import { PermissionForm } from "@/components/rbac/permission-form";
+import { RequirePermission } from "@/components/rbac/require-permission";
 import { useCatalog } from "@/components/rbac/use-catalog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 export const Route = createFileRoute("/access/permissions/new")({
   head: () => ({ meta: [{ title: "New permission · PoliNetwork Auth" }] }),
-  component: NewPermission,
+  component: GuardedNewPermission,
 });
 
 function NewPermission() {
@@ -79,5 +80,13 @@ function NewPermission() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function GuardedNewPermission() {
+  return (
+    <RequirePermission permission="idp:permissions:write">
+      <NewPermission />
+    </RequirePermission>
   );
 }

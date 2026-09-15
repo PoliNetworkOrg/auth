@@ -5,7 +5,7 @@ import type { OidcAdminPolicy } from "@/auth/oidc-admin";
 import { authClient } from "@/auth/client";
 import { AppHeader } from "@/components/app-header";
 import { LoginLayout, LoginPage } from "@/components/login-page";
-import { useOidcAccess } from "@/components/oidc/use-oidc-access";
+import { IdpAccessProvider, useIdpAccess } from "@/components/idp-access";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/access")({
@@ -14,8 +14,8 @@ export const Route = createFileRoute("/access")({
 });
 
 const tabs = [
-  { to: "/access/roles", label: "Roles" },
-  { to: "/access/permissions", label: "Permissions" },
+  { to: "/access/roles", label: "Roles", permission: "idp:roles:read" },
+  { to: "/access/permissions", label: "Permissions", permission: "idp:permissions:read" },
 ] as const;
 
 function NoAccess({ policy }: { policy: OidcAdminPolicy | null }) {
@@ -46,7 +46,7 @@ function NoAccess({ policy }: { policy: OidcAdminPolicy | null }) {
 
 function AccessLayout() {
   const { data: session, isPending, error, refetch } = authClient.useSession();
-  const access = useOidcAccess(!!session);
+  const access = useIdpAccess(!!session);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   if (isPending) {
@@ -74,31 +74,35 @@ function AccessLayout() {
     <div className="min-h-screen">
       <AppHeader active="access" access={access} />
       <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
-        {access.status === "allowed" ? (
+        {access.status === "ready" && access.can("idp:permissions:read") ? (
           <div className="space-y-8">
             <nav aria-label="Access administration" className="flex gap-1 border-b">
-              {tabs.map((tab) => {
-                const current = pathname.startsWith(tab.to);
-                return (
-                  <Link
-                    key={tab.to}
-                    to={tab.to}
-                    aria-current={current ? "page" : undefined}
-                    className={cn(
-                      "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      current
-                        ? "border-primary text-foreground"
-                        : "border-transparent text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {tab.label}
-                  </Link>
-                );
-              })}
+              {tabs
+                .filter((tab) => access.can(tab.permission))
+                .map((tab) => {
+                  const current = pathname.startsWith(tab.to);
+                  return (
+                    <Link
+                      key={tab.to}
+                      to={tab.to}
+                      aria-current={current ? "page" : undefined}
+                      className={cn(
+                        "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        current
+                          ? "border-primary text-foreground"
+                          : "border-transparent text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {tab.label}
+                    </Link>
+                  );
+                })}
             </nav>
-            <Outlet />
+            <IdpAccessProvider access={access}>
+              <Outlet />
+            </IdpAccessProvider>
           </div>
-        ) : access.status === "denied" ? (
+        ) : access.status === "ready" ? (
           <NoAccess policy={access.policy} />
         ) : access.status === "error" ? (
           <div className="mx-auto max-w-lg space-y-4 py-10 text-center">

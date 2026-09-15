@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { type PermissionDraft, type RbacDraftErrors, permissionDraftFrom } from "@/auth/rbac";
+import { useIdpAccessContext } from "@/components/idp-access";
 import {
   RbacApiError,
   deletePermission,
@@ -21,6 +22,8 @@ export const Route = createFileRoute("/access/permissions/$permissionId")({
 function PermissionDetail() {
   const { permissionId } = Route.useParams();
   const navigate = useNavigate();
+  const { can } = useIdpAccessContext();
+  const canWrite = can("idp:permissions:write");
   const { catalog, loading, error: loadError, reload } = useCatalog();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -104,6 +107,12 @@ function PermissionDetail() {
         </h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
           <KeyChip>{permission.key}</KeyChip>
+          {permission.managed && (
+            <span className="ml-2">
+              Built into the identity provider: it controls this service itself and cannot be
+              deleted.
+            </span>
+          )}
         </p>
       </div>
 
@@ -129,6 +138,8 @@ function PermissionDetail() {
             initial={permissionDraftFrom(permission)}
             catalog={catalog}
             currentKey={permission.key}
+            managed={permission.managed}
+            readOnly={!canWrite}
             busy={busy}
             serverErrors={fields}
             submitLabel="Save permission"
@@ -147,7 +158,9 @@ function PermissionDetail() {
         <CardContent>
           {grantedBy.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No role grants this permission yet, so nobody holds it.
+              No role grants this permission yet, so nobody holds it.{" "}
+              {permission.managed &&
+                "Whoever the deployment configures as an administrator holds it anyway, through Master Admin."}
             </p>
           ) : (
             <ul className="divide-y rounded-xl border">
@@ -168,21 +181,23 @@ function PermissionDetail() {
         </CardContent>
       </Card>
 
-      <Card className="border-destructive/40">
-        <CardHeader>
-          <CardTitle>Delete this permission</CardTitle>
-          <CardDescription>
-            It is removed from every role that grants it and from every permission that grants it in
-            turn. Applications checking for this key stop seeing it. This cannot be undone.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button variant="destructive" disabled={busy} onClick={() => void remove()}>
-            <Trash2 aria-hidden="true" />
-            Delete permission
-          </Button>
-        </CardContent>
-      </Card>
+      {!permission.managed && canWrite && (
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle>Delete this permission</CardTitle>
+            <CardDescription>
+              It is removed from every role that grants it and from every permission that grants it
+              in turn. Applications checking for this key stop seeing it. This cannot be undone.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="destructive" disabled={busy} onClick={() => void remove()}>
+              <Trash2 aria-hidden="true" />
+              Delete permission
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

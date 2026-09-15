@@ -2,16 +2,28 @@
 
 /**
  * Roles the identity provider always defines itself. They exist without being created,
- * cannot be deleted or assigned by hand, and are granted by the evidence the rest of the
- * IdP already collects: `state` is the identity state that confers the role.
+ * cannot be deleted or assigned by hand, and are conferred by the rest of the identity
+ * provider rather than by an administrator: `state` names the identity state that proves
+ * the role, and is null for a role conferred some other way.
  *
  * Administrators can still rename them, describe them, give them permissions, and place
  * them in the role hierarchy — only their membership is out of their hands.
  */
 export const STATIC_ROLES = [
   {
+    key: "master-admin",
+    state: null,
+    /** Holds every permission that exists, including ones created later. */
+    grantsAllPermissions: true,
+    name: "Master Admin",
+    description: "Complete control of this identity provider.",
+    evidence:
+      "Configured outside the database, through IDP_ADMIN_USER_IDS or the PoliNetwork Entra administrators group, so the service can never be locked out of its own administration.",
+  },
+  {
     key: "socio",
     state: "socio",
+    grantsAllPermissions: false,
     name: "Socio",
     description: "Member of PoliNetwork APS.",
     evidence: "Direct membership of the Soci group in PoliNetwork Entra ID, rechecked on sign-in.",
@@ -19,6 +31,7 @@ export const STATIC_ROLES = [
   {
     key: "direttivo",
     state: "direttivo",
+    grantsAllPermissions: false,
     name: "Direttivo",
     description: "Member of the PoliNetwork APS board.",
     evidence:
@@ -27,6 +40,7 @@ export const STATIC_ROLES = [
   {
     key: "student",
     state: "student",
+    grantsAllPermissions: false,
     name: "Student",
     description: "Verified Politecnico di Milano student.",
     evidence: "A verification code delivered to the person's @mail.polimi.it address.",
@@ -35,6 +49,8 @@ export const STATIC_ROLES = [
 
 export type StaticRole = (typeof STATIC_ROLES)[number];
 export type StaticRoleKey = StaticRole["key"];
+
+export const MASTER_ADMIN_ROLE_KEY = "master-admin";
 
 export const STATIC_ROLE_KEYS: string[] = STATIC_ROLES.map((entry) => entry.key);
 
@@ -46,9 +62,81 @@ export function staticRole(key: string): StaticRole | undefined {
   return STATIC_ROLES.find((entry) => entry.key === key);
 }
 
+/** Static roles first, in the order they are defined above, then everything else by key. */
+export function staticRoleOrder(key: string) {
+  const index = STATIC_ROLES.findIndex((entry) => entry.key === key);
+  return index === -1 ? STATIC_ROLES.length : index;
+}
+
 /** The managed roles proven by a set of identity states, in catalog order. */
 export function staticRolesForStates(states: readonly string[]): string[] {
-  return STATIC_ROLES.filter((entry) => states.includes(entry.state)).map((entry) => entry.key);
+  return STATIC_ROLES.filter((entry) => entry.state !== null && states.includes(entry.state)).map(
+    (entry) => entry.key,
+  );
+}
+
+/**
+ * Permissions the identity provider defines itself, covering its own administration. They
+ * cannot be created, deleted, or rekeyed, because the code checks for these exact keys.
+ * Which roles carry them is entirely up to the administrator.
+ */
+export const MANAGED_PERMISSIONS = [
+  {
+    key: "idp:people:read",
+    name: "Find people",
+    description: "Search the people registered with this identity provider.",
+    implies: [],
+  },
+  {
+    key: "idp:permissions:read",
+    name: "View permissions",
+    description: "See the permissions this identity provider defines.",
+    implies: [],
+  },
+  {
+    key: "idp:permissions:write",
+    name: "Manage permissions",
+    description: "Create, change, and delete permissions, and choose what each one also grants.",
+    implies: ["idp:permissions:read"],
+  },
+  {
+    key: "idp:roles:read",
+    name: "View roles",
+    description: "See roles, what they grant, and who holds them.",
+    implies: ["idp:permissions:read"],
+  },
+  {
+    key: "idp:roles:write",
+    name: "Manage roles",
+    description: "Create, change, and delete roles, and give them to people.",
+    implies: ["idp:roles:read", "idp:people:read"],
+  },
+  {
+    key: "idp:applications:read",
+    name: "View applications",
+    description: "See the applications that sign people in with PoliNetwork Identity.",
+    implies: [],
+  },
+  {
+    key: "idp:applications:write",
+    name: "Manage applications",
+    description:
+      "Register applications, edit their redirect URIs and scopes, rotate secrets, and delete them.",
+    implies: ["idp:applications:read"],
+  },
+] as const;
+
+export type ManagedPermission = (typeof MANAGED_PERMISSIONS)[number];
+export type ManagedPermissionKey = ManagedPermission["key"];
+
+export const MANAGED_PERMISSION_KEYS: string[] = MANAGED_PERMISSIONS.map((entry) => entry.key);
+
+export function isManagedPermissionKey(key: string) {
+  return MANAGED_PERMISSION_KEYS.includes(key);
+}
+
+export function managedPermission(key: string): ManagedPermission | undefined {
+  return MANAGED_PERMISSIONS.find((entry) => entry.key === key);
 }
 
 export type PermissionSummary = {
@@ -56,6 +144,8 @@ export type PermissionSummary = {
   key: string;
   name: string;
   description: string | null;
+  /** Managed permissions are defined by the identity provider and cannot be added or removed. */
+  managed: boolean;
   /** Keys of the permissions this one also grants. */
   implies: string[];
   roleCount: number;
@@ -133,14 +223,25 @@ export function expandPermissionKeys(
 
 export type ResolvedAccess = { roles: string[]; permissions: string[] };
 
+/** Whether any of these roles carries every permission that exists. */
+export function grantsAllPermissions(roleKeys: readonly string[]) {
+  return STATIC_ROLES.some((entry) => entry.grantsAllPermissions && roleKeys.includes(entry.key));
+}
+
 /**
  * Turns the roles a person holds into the access they actually have: roles expand up the
  * role hierarchy, then the permissions those roles carry expand down the permission
  * hierarchy. Keys that no longer exist in the catalog are dropped.
+ *
+ * Master Admin is a wildcard rather than a stored list, so it keeps covering permissions
+ * created after it was last edited. Inheriting from it has the same effect, since the role
+ * hierarchy is expanded first.
  */
 export function resolveAccess(catalog: RbacCatalog, roleKeys: Iterable<string>): ResolvedAccess {
   const index = indexCatalog(catalog);
   const roles = expandRoleKeys(catalog, roleKeys);
+  if (grantsAllPermissions(roles))
+    return { roles, permissions: catalog.permissions.map((entry) => entry.key).sort() };
   const granted = roles.flatMap((key) => index.roles.get(key)?.permissions ?? []);
   return { roles, permissions: expandPermissionKeys(catalog, granted) };
 }
@@ -296,6 +397,11 @@ export function validatePermissionDraft(
     "Use lowercase letters, digits, and . _ - : for example membership:read.",
   );
   const key = draft.key.trim().toLowerCase();
+  const current = currentKey ? index.permissions.get(currentKey) : undefined;
+  if (current?.managed && key !== currentKey)
+    errors.key = "This permission is defined by the identity provider, so its key is fixed.";
+  else if (!currentKey && isManagedPermissionKey(key))
+    errors.key = "This key belongs to a permission the identity provider defines itself.";
   if (draft.implies.some((implied) => !index.permissions.has(implied)))
     errors.implies = "One of the granted permissions no longer exists.";
   else if (draft.implies.includes(key)) errors.implies = "A permission cannot grant itself.";

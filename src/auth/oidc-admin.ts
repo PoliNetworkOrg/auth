@@ -6,11 +6,15 @@ import { env } from "../env";
 import { checkEntraGroupMember } from "./membership";
 
 /**
- * Who may manage OIDC clients.
+ * Who holds the built-in Master Admin role, and through it every permission.
  * - `pn-entra`: anyone who signed in with a PoliNetwork Entra account (the initial rule).
  * - `entra-group`: only direct members of `PN_ENTRA_OIDC_ADMIN_GROUP_ID`, a stricter group
  *   than Soci. Set that variable to switch without code changes.
  * `IDP_ADMIN_USER_IDS` remains a break-glass allowlist in both modes.
+ *
+ * This is the one decision that is deliberately made outside the database, so a mistake in
+ * the roles cannot lock the service out of its own administration. Every other
+ * administrative right is an ordinary permission resolved through RBAC.
  */
 export type OidcAdminPolicy = "pn-entra" | "entra-group";
 
@@ -82,7 +86,7 @@ async function pnEntraObjectIds(userId: string): Promise<string[]> {
   return rows.flatMap((row) => (row.externalId ? [row.externalId] : []));
 }
 
-export async function canManageOidcClients(userId: string): Promise<boolean> {
+export async function canAdministerIdp(userId: string): Promise<boolean> {
   if (env.IDP_ADMIN_USER_IDS.includes(userId)) return true;
   const objectIds = await pnEntraObjectIds(userId);
   const groupId = env.PN_ENTRA_OIDC_ADMIN_GROUP_ID;
@@ -102,10 +106,3 @@ export async function canManageOidcClients(userId: string): Promise<boolean> {
     groupMember,
   });
 }
-
-/**
- * Role and permission administration uses the same gate as OIDC client administration.
- * It is deliberately not itself an RBAC permission: anyone who can edit roles can grant
- * themselves anything, so the decision stays outside the system it would control.
- */
-export const canAdministerIdp = canManageOidcClients;
