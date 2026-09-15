@@ -1,22 +1,22 @@
 import { Link } from "@tanstack/react-router";
 import { cn } from "cn";
 import { authClient } from "@/auth/client";
-import { type OidcAccessState, useOidcAccess } from "@/components/oidc/use-oidc-access";
+import { type IdpAccess, useIdpAccess } from "@/components/idp-access";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { UserAvatar } from "@/components/user-avatar";
 
 type Section = "account" | "applications" | "access";
 
-export function AppHeader({ active, access }: { active: Section; access?: OidcAccessState }) {
+export function AppHeader({ active, access }: { active: Section; access?: IdpAccess }) {
   const { data: session } = authClient.useSession();
-  const ownAccess = useOidcAccess(!!session && !access);
-  const status = (access ?? ownAccess).status;
+  const ownAccess = useIdpAccess(!!session && !access);
+  const { can } = access ?? ownAccess;
   const links: { to: "/" | "/applications" | "/access/roles"; label: string; section: Section }[] =
     [{ to: "/", label: "Account", section: "account" }];
-  if (status === "allowed") {
+  if (can("idp:applications:read"))
     links.push({ to: "/applications", label: "Applications", section: "applications" });
+  if (can("idp:permissions:read"))
     links.push({ to: "/access/roles", label: "Access", section: "access" });
-  }
   const nav = (className: string) =>
     session && links.length > 1 ? (
       <nav aria-label="Primary" className={className}>

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { apiError, noStore, requireAdministrator } from "@/auth/api-guard";
+import { apiError, noStore, requireIdpPermission } from "@/auth/api-guard";
 import { RbacError, deleteRole, saveRole } from "@/auth/rbac-store";
 
 const draftSchema = z.object({
@@ -21,7 +21,7 @@ export const Route = createFileRoute("/api/rbac/role-save")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const guard = await requireAdministrator(request, { write: true });
+        const guard = await requireIdpPermission(request, "idp:roles:write", { write: true });
         if ("response" in guard) return guard.response;
         const parsed = inputSchema.safeParse(await request.json().catch(() => null));
         if (!parsed.success) return apiError(400, "Invalid request.");

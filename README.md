@@ -18,7 +18,7 @@ The included `Dockerfile` builds the app and runs the same migration-first start
 
 Google and PoliNetwork Entra create accounts. Once signed in, users can add a passkey from the account page and use it for future logins. Signed-out visitors see a login form with configured providers and passkey sign-in. Email/password login is disabled. The server rejects direct Telegram sign-in requests and protects the last Google or PoliNetwork Entra account from being disconnected, including when passkeys or verifier accounts remain linked.
 
-Roles and permissions require the checked-in `0004` and `0005` migrations, which also move each account's single proven state into a list so one Entra identity can prove both Socio and Direttivo. `0004` carries the old `state` column into the new `states` list and seeds the built-in roles before `0005` drops it, so apply them in order and never `0005` alone. Passkeys require the checked-in `0003` database migration. Run `vp run db:migrate` before using them. Their relying-party ID and origin come from `BETTER_AUTH_URL`; use that exact origin in your browser, with HTTPS in production or localhost in development. Register a passkey after signing in with Google or PoliNetwork Entra. The account page lists and removes registered passkeys.
+Roles and permissions require the checked-in `0004`, `0005`, and `0006` migrations, which also move each account's single proven state into a list so one Entra identity can prove both Socio and Direttivo. `0004` carries the old `state` column into the new `states` list and seeds the built-in roles before `0005` drops it, so apply them in order and never `0005` alone. `0006` adds Master Admin and the `idp:*` permissions. Passkeys require the checked-in `0003` database migration. Run `vp run db:migrate` before using them. Their relying-party ID and origin come from `BETTER_AUTH_URL`; use that exact origin in your browser, with HTTPS in production or localhost in development. Register a passkey after signing in with Google or PoliNetwork Entra. The account page lists and removes registered passkeys.
 
 New registrations send `PoliNetwork Auth` as the relying-party name. The username uses the user's real email, then an email from stored Google or Microsoft ID-token claims, and falls back to the user's name if neither is available. These claims are display metadata only. Passkey labels use the authenticator's AAGUID to recognize password managers such as 1Password; unknown authenticators display `Passkey`. Existing default labels are resolved when listed, while custom names are preserved. Password managers control their own vault item titles and may still show `localhost` during development. Previously saved vault metadata is not updated by the app.
 
@@ -59,20 +59,29 @@ inherit from each other or two permissions grant each other.
 
 ### Roles the identity provider defines itself
 
-Three roles always exist and are never created, deleted, or handed out by an administrator.
-Their membership is inferred from the evidence this service already collects:
+Four roles always exist and are never created, deleted, or handed out by an administrator.
+Their membership is conferred by the identity provider itself:
 
-| Role        | Key         | Granted by                                                                 |
-| ----------- | ----------- | -------------------------------------------------------------------------- |
-| `Socio`     | `socio`     | Direct membership of the `Soci` group in PoliNetwork Entra ID              |
-| `Direttivo` | `direttivo` | Direct membership of `PN_ENTRA_DIRETTIVO_GROUP_ID` in PoliNetwork Entra ID |
-| `Student`   | `student`   | A verification code delivered to an `@mail.polimi.it` address              |
+| Role           | Key            | Granted by                                                                 |
+| -------------- | -------------- | -------------------------------------------------------------------------- |
+| `Master Admin` | `master-admin` | `IDP_ADMIN_USER_IDS` or the configured Entra administrators group          |
+| `Socio`        | `socio`        | Direct membership of the `Soci` group in PoliNetwork Entra ID              |
+| `Direttivo`    | `direttivo`    | Direct membership of `PN_ENTRA_DIRETTIVO_GROUP_ID` in PoliNetwork Entra ID |
+| `Student`      | `student`      | A verification code delivered to an `@mail.polimi.it` address              |
 
-What they grant is still yours to choose: give them permissions, rename them, describe
-them, and place them in the hierarchy like any other role. Only their key, their deletion,
-and who holds them are fixed. The checked-in migration seeds them alongside the two
-permissions this service already issued, so existing consumers keep working: `socio` grants
-`membership:read` and `student` grants `student:verified`.
+**Master Admin holds every permission that exists**, including ones created after it was
+last looked at, because it is a wildcard rather than a stored list. It therefore has no
+grant list of its own to edit, and a role that inherits from it inherits everything too.
+Unlike the other three it is not proven by identity evidence and never appears among the
+`states`: it comes from the deployment's own configuration, which is what keeps the service
+from being locked out of its own administration. Set `IDP_ADMIN_USER_IDS`, or
+`PN_ENTRA_OIDC_ADMIN_GROUP_ID` to a Microsoft Entra group, to decide who holds it.
+
+What the other three grant is still yours to choose: give them permissions, rename them,
+describe them, and place them in the hierarchy like any other role. Only their key, their
+deletion, and who holds them are fixed. The checked-in migrations seed them alongside the
+two permissions this service already issued, so existing consumers keep working: `socio`
+grants `membership:read` and `student` grants `student:verified`.
 
 `PN_ENTRA_DIRETTIVO_GROUP_ID` is optional and has no default. Until you set it to the
 board's Entra group object ID, nobody is inferred as Direttivo. Both group checks reuse the
@@ -90,16 +99,43 @@ inherit from `Socio`, everyone holding your role also reports the `socio` role a
 permissions, whether or not Entra says they are a member. Inherit from a built-in role only
 when that is what you mean.
 
+### Permissions the identity provider defines itself
+
+Administering this service is expressed as permissions like any other capability, so it can
+be delegated to a role instead of being wired to a single group. These seven always exist
+and can never be created, deleted, or rekeyed, because the code checks for these exact
+keys; which roles carry them is entirely up to you.
+
+| Permission               | Covers                                                     |
+| ------------------------ | ---------------------------------------------------------- |
+| `idp:people:read`        | Searching the people registered here                       |
+| `idp:permissions:read`   | Seeing permissions, and the `/access` section at all       |
+| `idp:permissions:write`  | Creating, changing, and deleting permissions               |
+| `idp:roles:read`         | Seeing roles, what they grant, and who holds them          |
+| `idp:roles:write`        | Creating and changing roles, and giving them to people     |
+| `idp:applications:read`  | Seeing the OIDC applications at `/applications`            |
+| `idp:applications:write` | Registering and editing applications, and rotating secrets |
+
+They use the permission hierarchy themselves: each `write` grants its `read`,
+`idp:roles:write` also grants `idp:people:read` so a role manager can find who to give a
+role to, and `idp:roles:read` grants `idp:permissions:read` because a role is meaningless
+without seeing the permissions it carries. A role with `idp:roles:write` therefore ends up
+with four permissions and still cannot touch applications.
+
+Every administration endpoint and every page checks the specific permission it needs, and
+the navigation only offers what you hold. Because Master Admin is a wildcard over every
+permission, whoever the deployment configures as an administrator holds all of these, which
+is the bootstrap and break-glass path: there is no second kind of check beside RBAC.
+
+Granting these is real delegation. Someone with `idp:roles:write` can give themselves any
+other role, and so effectively holds everything short of Master Admin. Treat it as you
+would root.
+
 ### Assigning a role
 
 Roles you create are given to people from the role's page at `/access/roles`, which lists
 who holds it and searches for someone to add. An assignment lasts until it is removed.
 Deleting a role removes it from everyone who held it and from every role that inherited it.
-
-Administering roles and permissions uses the same gate as OIDC client administration,
-described below. It is deliberately not itself a permission in this system: anyone who can
-edit roles can grant themselves anything, so that decision stays outside the system it
-would control.
 
 Changes take effect on the next token. Already-issued OIDC tokens expire after five
 minutes, so consumers must account for that revocation delay; `/api/identity` and UserInfo
@@ -139,7 +175,7 @@ spaces between values and are empty strings when no values apply, as is
 `polinetwork_telegram_id` when no Telegram account is linked. The `/api/identity` response
 keeps the object format shown inside the URL-named claim.
 
-Administering this service is a separate matter from membership. Anyone signed in with a PoliNetwork Entra account (the `pn-entra` provider, verified against `PN_ENTRA_TENANT_ID`) can currently manage OIDC clients, roles, and permissions. To restrict it to a stricter Microsoft 365 group than Soci, set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to that group's object ID: only its direct members, checked through the same Graph credentials, keep access. Graph answers are cached for 15 minutes per user; a failed check denies access instead of caching. `IDP_ADMIN_USER_IDS` remains a break-glass allowlist of local user IDs that always pass. Being a socio never confers this permission by itself.
+Managing applications needs the `idp:applications:write` permission, so it can be given to any role. Master Admin holds it, and by default anyone signed in with a PoliNetwork Entra account (the `pn-entra` provider, verified against `PN_ENTRA_TENANT_ID`) is a Master Admin. To restrict that to a stricter Microsoft 365 group than Soci, set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to that group's object ID: only its direct members, checked through the same Graph credentials, keep it. Graph answers are cached for 15 minutes per user; a failed check denies access instead of caching. `IDP_ADMIN_USER_IDS` remains a break-glass allowlist of local user IDs that always pass. Being a socio never confers administration by itself.
 
 Dynamic registration and client-credentials grants are disabled. Administrators manage clients at `/applications`: create web or native apps as confidential (secret shown once) or public (PKCE only) clients, edit redirect URIs and allowed scopes, rotate secrets, pause sign-ins by disabling an app, skip the consent screen for first-party apps, and delete apps. All administrators share one client pool (the plugin's `clientReference` is a fixed value), so clients are not tied to whoever created them. Redirect URIs follow the provider's rules: web apps need `https` on a public host, native apps may use `http://localhost`, `http://127.0.0.1`, `http://[::1]`, or a reverse-domain custom scheme. Custom routes under `/api/oidc/` back the pages; creation, deletion, and secret rotation go through the Better Auth client endpoints, which enforce the same administrator check.
 

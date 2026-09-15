@@ -26,7 +26,16 @@ function Person({ name, email, image }: { name: string; email: string; image: st
 }
 
 /** Who holds a role, and the search used to add someone. Only for roles that can be given out. */
-export function RoleMembers({ roleId, roleName }: { roleId: string; roleName: string }) {
+export function RoleMembers({
+  roleId,
+  roleName,
+  canWrite,
+}: {
+  roleId: string;
+  roleName: string;
+  /** Without it the list is shown but nobody can be added or removed. */
+  canWrite: boolean;
+}) {
   const [members, setMembers] = useState<RoleMember[] | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<UserSearchResult[]>([]);
@@ -97,77 +106,85 @@ export function RoleMembers({ roleId, roleName }: { roleId: string; roleName: st
           {error}
         </p>
       )}
-      <div className="space-y-3">
-        <div className="relative">
-          <Search
-            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search by name or email"
-            aria-label={`Find someone to give ${roleName} to`}
-            className="pl-9"
-          />
-        </div>
-        {query.trim() && (
-          <div className="divide-y rounded-xl border" aria-live="polite">
-            {searching ? (
-              <p className="px-4 py-5 text-center text-xs text-muted-foreground">Searching…</p>
-            ) : candidates.length === 0 ? (
-              <p className="px-4 py-5 text-center text-xs text-muted-foreground">
-                {results.length ? "Everyone matching already holds this role." : "Nobody matches."}
-              </p>
-            ) : (
-              candidates.map((person) => (
-                <div key={person.id} className="flex items-center gap-3 px-4 py-3">
-                  <Person name={person.name} email={person.email} image={person.image} />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busyUser === person.id}
-                    onClick={() => void change("assign", person.id)}
-                  >
-                    {busyUser === person.id ? (
-                      <LoaderCircle className="animate-spin" aria-hidden="true" />
-                    ) : (
-                      <UserPlus aria-hidden="true" />
-                    )}
-                    Give role
-                  </Button>
-                </div>
-              ))
-            )}
+      {canWrite && (
+        <div className="space-y-3">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search by name or email"
+              aria-label={`Find someone to give ${roleName} to`}
+              className="pl-9"
+            />
           </div>
-        )}
-      </div>
+          {query.trim() && (
+            <div className="divide-y rounded-xl border" aria-live="polite">
+              {searching ? (
+                <p className="px-4 py-5 text-center text-xs text-muted-foreground">Searching…</p>
+              ) : candidates.length === 0 ? (
+                <p className="px-4 py-5 text-center text-xs text-muted-foreground">
+                  {results.length
+                    ? "Everyone matching already holds this role."
+                    : "Nobody matches."}
+                </p>
+              ) : (
+                candidates.map((person) => (
+                  <div key={person.id} className="flex items-center gap-3 px-4 py-3">
+                    <Person name={person.name} email={person.email} image={person.image} />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busyUser === person.id}
+                      onClick={() => void change("assign", person.id)}
+                    >
+                      {busyUser === person.id ? (
+                        <LoaderCircle className="animate-spin" aria-hidden="true" />
+                      ) : (
+                        <UserPlus aria-hidden="true" />
+                      )}
+                      Give role
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {members === null ? (
         <p className="text-sm text-muted-foreground">Loading members…</p>
       ) : members.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Nobody holds {roleName} yet. Search above to give it to someone.
+          {canWrite
+            ? `Nobody holds ${roleName} yet. Search above to give it to someone.`
+            : `Nobody holds ${roleName} yet.`}
         </p>
       ) : (
         <ul className="divide-y rounded-xl border" aria-label={`People with ${roleName}`}>
           {members.map((member) => (
             <li key={member.userId} className="flex items-center gap-3 px-4 py-3">
               <Person name={member.name} email={member.email} image={member.image} />
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-destructive"
-                disabled={busyUser === member.userId}
-                onClick={() => void change("unassign", member.userId)}
-              >
-                {busyUser === member.userId ? (
-                  <LoaderCircle className="animate-spin" aria-hidden="true" />
-                ) : (
-                  <UserMinus aria-hidden="true" />
-                )}
-                Remove
-              </Button>
+              {canWrite && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive"
+                  disabled={busyUser === member.userId}
+                  onClick={() => void change("unassign", member.userId)}
+                >
+                  {busyUser === member.userId ? (
+                    <LoaderCircle className="animate-spin" aria-hidden="true" />
+                  ) : (
+                    <UserMinus aria-hidden="true" />
+                  )}
+                  Remove
+                </Button>
+              )}
             </li>
           ))}
         </ul>

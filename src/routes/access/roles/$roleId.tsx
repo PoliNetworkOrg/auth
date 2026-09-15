@@ -8,19 +8,23 @@ import {
   roleDraftFrom,
   staticRole,
 } from "@/auth/rbac";
+import { useIdpAccessContext } from "@/components/idp-access";
 import { RbacApiError, deleteRole, errorMessage, saveRole } from "@/components/rbac/api";
 import { KeyChip } from "@/components/rbac/fields";
 import { RoleForm } from "@/components/rbac/role-form";
 import { RoleMembers } from "@/components/rbac/role-members";
+import { RequirePermission } from "@/components/rbac/require-permission";
 import { useCatalog } from "@/components/rbac/use-catalog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export const Route = createFileRoute("/access/roles/$roleId")({ component: RoleDetail });
+export const Route = createFileRoute("/access/roles/$roleId")({ component: GuardedRoleDetail });
 
 function RoleDetail() {
   const { roleId } = Route.useParams();
   const navigate = useNavigate();
+  const { can } = useIdpAccessContext();
+  const canWrite = can("idp:roles:write");
   const { catalog, loading, error: loadError, reload } = useCatalog();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -81,6 +85,7 @@ function RoleDetail() {
   }
 
   const inferred = role.managed ? staticRole(role.key) : undefined;
+  const grantsEverything = inferred?.grantsAllPermissions ?? false;
   const effective = effectiveRolePermissions(catalog, role.key);
 
   return (
@@ -96,8 +101,9 @@ function RoleDetail() {
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
           <KeyChip>{role.key}</KeyChip>
           <span className="ml-2">
-            {effective.length} {effective.length === 1 ? "permission" : "permissions"} in total,
-            including inherited ones.
+            {grantsEverything
+              ? "Holds every permission that exists, including ones created later."
+              : `${effective.length} ${effective.length === 1 ? "permission" : "permissions"} in total, including inherited ones.`}
           </span>
         </p>
       </div>
@@ -136,6 +142,8 @@ function RoleDetail() {
             catalog={catalog}
             currentKey={role.key}
             managed={role.managed}
+            grantsEverything={grantsEverything}
+            readOnly={!canWrite}
             busy={busy}
             serverErrors={fields}
             submitLabel="Save role"
@@ -150,7 +158,9 @@ function RoleDetail() {
           <CardDescription>
             {inferred
               ? inferred.evidence
-              : "Anyone you add here holds this role until you remove them."}
+              : canWrite
+                ? "Anyone you add here holds this role until you remove them."
+                : "The people currently holding this role."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -160,12 +170,12 @@ function RoleDetail() {
               list to edit here.
             </p>
           ) : (
-            <RoleMembers roleId={role.id} roleName={role.name} />
+            <RoleMembers roleId={role.id} roleName={role.name} canWrite={canWrite} />
           )}
         </CardContent>
       </Card>
 
-      {!role.managed && (
+      {!role.managed && canWrite && (
         <Card className="border-destructive/40">
           <CardHeader>
             <CardTitle>Delete this role</CardTitle>
@@ -185,5 +195,13 @@ function RoleDetail() {
         </Card>
       )}
     </div>
+  );
+}
+
+function GuardedRoleDetail() {
+  return (
+    <RequirePermission permission="idp:roles:read">
+      <RoleDetail />
+    </RequirePermission>
   );
 }

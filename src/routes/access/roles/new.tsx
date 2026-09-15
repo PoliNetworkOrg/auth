@@ -4,13 +4,14 @@ import { ArrowLeft } from "lucide-react";
 import { type RbacDraftErrors, type RoleDraft, emptyRoleDraft } from "@/auth/rbac";
 import { RbacApiError, errorMessage, saveRole } from "@/components/rbac/api";
 import { RoleForm } from "@/components/rbac/role-form";
+import { RequirePermission } from "@/components/rbac/require-permission";
 import { useCatalog } from "@/components/rbac/use-catalog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 export const Route = createFileRoute("/access/roles/new")({
   head: () => ({ meta: [{ title: "New role · PoliNetwork Auth" }] }),
-  component: NewRole,
+  component: GuardedNewRole,
 });
 
 function NewRole() {
@@ -76,5 +77,13 @@ function NewRole() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function GuardedNewRole() {
+  return (
+    <RequirePermission permission="idp:roles:write">
+      <NewRole />
+    </RequirePermission>
   );
 }

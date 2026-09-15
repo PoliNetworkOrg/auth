@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { apiError, noStore, requireAdministrator } from "@/auth/api-guard";
+import { apiError, noStore, requireIdpPermission } from "@/auth/api-guard";
 import { RbacError, assignRole, listRoleMembers, unassignRole } from "@/auth/rbac-store";
 
 const inputSchema = z.object({
@@ -13,7 +13,7 @@ export const Route = createFileRoute("/api/rbac/role-members")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const guard = await requireAdministrator(request);
+        const guard = await requireIdpPermission(request, "idp:roles:read");
         if ("response" in guard) return guard.response;
         const roleId = new URL(request.url).searchParams.get("role_id");
         if (!roleId) return apiError(400, "Name the role to list.");
@@ -25,7 +25,7 @@ export const Route = createFileRoute("/api/rbac/role-members")({
         }
       },
       POST: async ({ request }) => {
-        const guard = await requireAdministrator(request, { write: true });
+        const guard = await requireIdpPermission(request, "idp:roles:write", { write: true });
         if ("response" in guard) return guard.response;
         const parsed = inputSchema.safeParse(await request.json().catch(() => null));
         if (!parsed.success) return apiError(400, "Invalid request.");

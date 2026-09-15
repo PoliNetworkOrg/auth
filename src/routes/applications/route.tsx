@@ -4,7 +4,7 @@ import type { OidcAdminPolicy } from "@/auth/oidc-admin";
 import { authClient } from "@/auth/client";
 import { AppHeader } from "@/components/app-header";
 import { LoginLayout, LoginPage } from "@/components/login-page";
-import { useOidcAccess } from "@/components/oidc/use-oidc-access";
+import { useIdpAccess } from "@/components/idp-access";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/applications")({
@@ -40,7 +40,7 @@ function NoAccess({ policy }: { policy: OidcAdminPolicy | null }) {
 
 function ApplicationsLayout() {
   const { data: session, isPending, error, refetch } = authClient.useSession();
-  const access = useOidcAccess(!!session);
+  const access = useIdpAccess(!!session);
 
   if (isPending) {
     return (
@@ -67,9 +67,9 @@ function ApplicationsLayout() {
     <div className="min-h-screen">
       <AppHeader active="applications" access={access} />
       <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
-        {access.status === "allowed" ? (
+        {access.status === "ready" && access.can("idp:applications:read") ? (
           <Outlet />
-        ) : access.status === "denied" ? (
+        ) : access.status === "ready" ? (
           <NoAccess policy={access.policy} />
         ) : access.status === "error" ? (
           <div className="mx-auto max-w-lg space-y-4 py-10 text-center">

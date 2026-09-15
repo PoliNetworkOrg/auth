@@ -19,6 +19,8 @@ import {
   type RoleMember,
   type RoleSummary,
   type UserSearchResult,
+  MANAGED_PERMISSIONS,
+  MASTER_ADMIN_ROLE_KEY,
   hasDraftErrors,
   normalizePermissionDraft,
   normalizeRoleDraft,
@@ -39,39 +41,66 @@ export class RbacError extends Error {
   }
 }
 
-/** Static roles keep a derived, stable id so the seed is idempotent across replicas. */
+/** Managed rows keep a derived, stable id so the seed is idempotent across replicas. */
 function staticRoleId(key: string) {
   return `static-role-${key}`;
 }
 
-let staticRolesReady: Promise<void> | undefined;
+function managedPermissionId(key: string) {
+  return `managed-permission-${key.replace(/:/g, "-")}`;
+}
+
+let managedRecordsReady: Promise<void> | undefined;
 
 /**
- * Makes sure the roles the identity provider defines itself exist. The checked-in migration
- * seeds them; this is the safety net for a database restored from an older dump. Existing
- * rows are left alone so administrator edits to their name, description, and permissions
- * survive a restart.
+ * Makes sure the roles and permissions the identity provider defines itself exist. The
+ * checked-in migrations seed them; this is the safety net for a database restored from an
+ * older dump. Existing rows are left alone so administrator edits to their name,
+ * description, and the roles that carry them survive a restart.
  */
-export function ensureStaticRoles(): Promise<void> {
-  staticRolesReady ??= db
-    .insert(role)
-    .values(
-      STATIC_ROLES.map((entry) => ({
-        id: staticRoleId(entry.key),
-        key: entry.key,
-        name: entry.name,
-        description: entry.description,
-        managed: true,
-        sourceState: entry.state,
-      })),
-    )
-    .onConflictDoNothing({ target: role.key })
+export function ensureManagedRecords(): Promise<void> {
+  managedRecordsReady ??= db
+    .transaction(async (transaction) => {
+      await transaction
+        .insert(role)
+        .values(
+          STATIC_ROLES.map((entry) => ({
+            id: staticRoleId(entry.key),
+            key: entry.key,
+            name: entry.name,
+            description: entry.description,
+            managed: true,
+            sourceState: entry.state,
+          })),
+        )
+        .onConflictDoNothing({ target: role.key });
+      await transaction
+        .insert(permission)
+        .values(
+          MANAGED_PERMISSIONS.map((entry) => ({
+            id: managedPermissionId(entry.key),
+            key: entry.key,
+            name: entry.name,
+            description: entry.description,
+            managed: true,
+          })),
+        )
+        .onConflictDoNothing({ target: permission.key });
+      const implications = MANAGED_PERMISSIONS.flatMap((entry) =>
+        entry.implies.map((implied) => ({
+          permissionId: managedPermissionId(entry.key),
+          impliedPermissionId: managedPermissionId(implied),
+        })),
+      );
+      if (implications.length)
+        await transaction.insert(permissionImplication).values(implications).onConflictDoNothing();
+    })
     .then(() => undefined)
     .catch((cause: unknown) => {
-      staticRolesReady = undefined;
+      managedRecordsReady = undefined;
       throw cause;
     });
-  return staticRolesReady;
+  return managedRecordsReady;
 }
 
 const CATALOG_TTL_MS = 15_000;
@@ -86,7 +115,7 @@ export function invalidateCatalog() {
 }
 
 async function readCatalog(): Promise<RbacCatalog> {
-  await ensureStaticRoles();
+  await ensureManagedRecords();
   const [roles, permissions, rolePermissions, roleParents, implications, members] =
     await Promise.all([
       db.select().from(role).orderBy(role.key),
@@ -159,6 +188,7 @@ async function readCatalog(): Promise<RbacCatalog> {
       key: row.key,
       name: row.name,
       description: row.description,
+      managed: row.managed,
       implies: impliedByPermission.get(row.id) ?? [],
       roleCount: rolesPerPermission.get(row.key) ?? 0,
       createdAt: row.createdAt?.toISOString() ?? null,
@@ -214,6 +244,11 @@ export async function savePermission(
   const catalog = await loadCatalog();
   const current = permissionId ? requirePermission(catalog, permissionId) : undefined;
   const draft = normalizePermissionDraft(input);
+  // A managed permission's key is what the identity provider's own checks look for.
+  if (current?.managed && draft.key !== current.key)
+    throw new RbacError(400, "The key of a built-in permission cannot be changed.", {
+      key: "This permission is defined by the identity provider.",
+    });
   checked(validatePermissionDraft(draft, { catalog, currentKey: current?.key }));
   const id = current?.id ?? randomUUID();
   const impliedIds = idsForPermissionKeys(catalog, draft.implies);
@@ -244,7 +279,12 @@ export async function savePermission(
 
 export async function deletePermission(permissionId: string) {
   const catalog = await loadCatalog();
-  requirePermission(catalog, permissionId);
+  const current = requirePermission(catalog, permissionId);
+  if (current.managed)
+    throw new RbacError(
+      400,
+      "Permissions defined by the identity provider cannot be deleted. Remove it from the roles that carry it instead.",
+    );
   await db.delete(permission).where(eq(permission.id, permissionId));
   invalidateCatalog();
 }
@@ -258,6 +298,15 @@ export async function saveRole(input: RoleDraft, roleId?: string): Promise<RoleS
     throw new RbacError(400, "The key of a built-in role cannot be changed.", {
       key: "This role is defined by the identity provider.",
     });
+  // Master Admin already holds everything, so a stored grant list would only mislead.
+  if (
+    current?.key === MASTER_ADMIN_ROLE_KEY &&
+    (draft.permissions.length > 0 || draft.parents.length > 0)
+  )
+    throw new RbacError(
+      400,
+      `${current.name} already holds every permission, so it needs no grants of its own.`,
+    );
   checked(validateRoleDraft(draft, { catalog, currentKey: current?.key }));
   const id = current?.id ?? randomUUID();
   const permissionIds = idsForPermissionKeys(catalog, draft.permissions);
@@ -364,14 +413,21 @@ export async function assignedRoleKeys(userId: string, catalog: RbacCatalog): Pr
 }
 
 /**
- * The roles and permissions a person currently holds: the roles assigned to them plus the
- * managed roles their identity states prove, expanded through both hierarchies.
+ * The roles and permissions a person currently holds: the roles assigned to them, the
+ * managed roles their identity states prove, and any role conferred some other way (Master
+ * Admin comes from the configured allowlist, not from evidence), expanded through both
+ * hierarchies.
  */
 export async function resolveUserAccess(
   userId: string,
   states: readonly string[],
+  conferredRoleKeys: readonly string[] = [],
 ): Promise<ResolvedAccess> {
   const catalog = await loadCatalog();
-  const held = [...(await assignedRoleKeys(userId, catalog)), ...staticRolesForStates(states)];
+  const held = [
+    ...(await assignedRoleKeys(userId, catalog)),
+    ...staticRolesForStates(states),
+    ...conferredRoleKeys,
+  ];
   return resolveAccess(catalog, held);
 }

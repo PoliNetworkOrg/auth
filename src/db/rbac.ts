@@ -19,6 +19,9 @@ export const permission = pgTable(
     key: text().notNull(),
     name: text().notNull(),
     description: text(),
+    // Managed permissions back the identity provider's own administration, so the code
+    // checks for these exact keys and they can never be created or removed by hand.
+    managed: boolean().default(false).notNull(),
     createdAt: now(),
     updatedAt: now(),
   },
@@ -48,10 +51,12 @@ export const permissionImplication = pgTable(
 /**
  * A named bundle of permissions.
  *
- * `managed` roles (Socio, Student, Direttivo) are seeded by the application and their
- * membership is inferred from identity evidence through `source_state`. They cannot be
- * created, deleted, rekeyed, or handed out by an administrator; only the permissions they
- * carry are editable.
+ * `managed` roles (Master Admin, Socio, Direttivo, Student) are seeded by the application
+ * and their membership is conferred by the identity provider: through `source_state` for
+ * the roles proven by identity evidence, and through the configured administrator
+ * allowlist for Master Admin, which has no state. They cannot be created, deleted,
+ * rekeyed, or handed out by an administrator; only the permissions they carry are
+ * editable.
  */
 export const role = pgTable(
   "role",

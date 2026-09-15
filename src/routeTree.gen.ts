@@ -28,7 +28,7 @@ import { Route as AccessRolesRoleIdRouteImport } from './routes/access/roles/$ro
 import { Route as AccessRolesNewRouteImport } from './routes/access/roles/new'
 import { Route as ApiAccountsUnlinkRouteImport } from './routes/api/accounts/unlink'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as ApiOidcAccessRouteImport } from './routes/api/oidc/access'
+import { Route as ApiIdpAccessRouteImport } from './routes/api/idp/access'
 import { Route as ApiOidcClientUpdateRouteImport } from './routes/api/oidc/client-update'
 import { Route as ApiOidcClientsRouteImport } from './routes/api/oidc/clients'
 import { Route as ApiRbacCatalogRouteImport } from './routes/api/rbac/catalog'
@@ -133,9 +133,9 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiOidcAccessRoute = ApiOidcAccessRouteImport.update({
-  id: '/api/oidc/access',
-  path: '/api/oidc/access',
+const ApiIdpAccessRoute = ApiIdpAccessRouteImport.update({
+  id: '/api/idp/access',
+  path: '/api/idp/access',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiOidcClientUpdateRoute = ApiOidcClientUpdateRouteImport.update({
@@ -192,7 +192,7 @@ export interface FileRoutesByFullPath {
   '/access/roles/new': typeof AccessRolesNewRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/oidc/access': typeof ApiOidcAccessRoute
+  '/api/idp/access': typeof ApiIdpAccessRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
   '/api/oidc/clients': typeof ApiOidcClientsRoute
   '/api/rbac/catalog': typeof ApiRbacCatalogRoute
@@ -219,7 +219,7 @@ export interface FileRoutesByTo {
   '/access/roles/new': typeof AccessRolesNewRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/oidc/access': typeof ApiOidcAccessRoute
+  '/api/idp/access': typeof ApiIdpAccessRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
   '/api/oidc/clients': typeof ApiOidcClientsRoute
   '/api/rbac/catalog': typeof ApiRbacCatalogRoute
@@ -249,7 +249,7 @@ export interface FileRoutesById {
   '/access/roles/new': typeof AccessRolesNewRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/oidc/access': typeof ApiOidcAccessRoute
+  '/api/idp/access': typeof ApiIdpAccessRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
   '/api/oidc/clients': typeof ApiOidcClientsRoute
   '/api/rbac/catalog': typeof ApiRbacCatalogRoute
@@ -280,7 +280,7 @@ export interface FileRouteTypes {
     | '/access/roles/new'
     | '/api/accounts/unlink'
     | '/api/auth/$'
-    | '/api/oidc/access'
+    | '/api/idp/access'
     | '/api/oidc/client-update'
     | '/api/oidc/clients'
     | '/api/rbac/catalog'
@@ -307,7 +307,7 @@ export interface FileRouteTypes {
     | '/access/roles/new'
     | '/api/accounts/unlink'
     | '/api/auth/$'
-    | '/api/oidc/access'
+    | '/api/idp/access'
     | '/api/oidc/client-update'
     | '/api/oidc/clients'
     | '/api/rbac/catalog'
@@ -336,7 +336,7 @@ export interface FileRouteTypes {
     | '/access/roles/new'
     | '/api/accounts/unlink'
     | '/api/auth/$'
-    | '/api/oidc/access'
+    | '/api/idp/access'
     | '/api/oidc/client-update'
     | '/api/oidc/clients'
     | '/api/rbac/catalog'
@@ -358,7 +358,7 @@ export interface RootRouteChildren {
   ApiStudentVerificationRoute: typeof ApiStudentVerificationRoute
   ApiAccountsUnlinkRoute: typeof ApiAccountsUnlinkRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
-  ApiOidcAccessRoute: typeof ApiOidcAccessRoute
+  ApiIdpAccessRoute: typeof ApiIdpAccessRoute
   ApiOidcClientUpdateRoute: typeof ApiOidcClientUpdateRoute
   ApiOidcClientsRoute: typeof ApiOidcClientsRoute
   ApiRbacCatalogRoute: typeof ApiRbacCatalogRoute
@@ -503,11 +503,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/oidc/access': {
-      id: '/api/oidc/access'
-      path: '/api/oidc/access'
-      fullPath: '/api/oidc/access'
-      preLoaderRoute: typeof ApiOidcAccessRouteImport
+    '/api/idp/access': {
+      id: '/api/idp/access'
+      path: '/api/idp/access'
+      fullPath: '/api/idp/access'
+      preLoaderRoute: typeof ApiIdpAccessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/oidc/client-update': {
@@ -611,7 +611,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiStudentVerificationRoute: ApiStudentVerificationRoute,
   ApiAccountsUnlinkRoute: ApiAccountsUnlinkRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
-  ApiOidcAccessRoute: ApiOidcAccessRoute,
+  ApiIdpAccessRoute: ApiIdpAccessRoute,
   ApiOidcClientUpdateRoute: ApiOidcClientUpdateRoute,
   ApiOidcClientsRoute: ApiOidcClientsRoute,
   ApiRbacCatalogRoute: ApiRbacCatalogRoute,

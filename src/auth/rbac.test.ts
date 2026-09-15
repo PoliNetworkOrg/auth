@@ -3,10 +3,13 @@ import {
   type PermissionSummary,
   type RbacCatalog,
   type RoleSummary,
+  MANAGED_PERMISSIONS,
+  MASTER_ADMIN_ROLE_KEY,
   STATIC_ROLES,
   effectiveRolePermissions,
   expandPermissionKeys,
   expandRoleKeys,
+  isManagedPermissionKey,
   isStaticRoleKey,
   resolveAccess,
   roleParentWouldCycle,
@@ -15,12 +18,13 @@ import {
   validateRoleDraft,
 } from "./rbac";
 
-function permission(key: string, implies: string[] = []): PermissionSummary {
+function permission(key: string, implies: string[] = [], managed = false): PermissionSummary {
   return {
     id: `p-${key}`,
     key,
     name: key,
     description: null,
+    managed,
     implies,
     roleCount: 0,
     createdAt: null,
@@ -116,9 +120,15 @@ describe("roles the identity provider defines itself", () => {
     expect(staticRolesForStates(["unrelated"])).toEqual([]);
   });
 
-  it("covers Socio, Direttivo, and Student", () => {
-    expect(STATIC_ROLES.map((entry) => entry.key)).toEqual(["socio", "direttivo", "student"]);
-    for (const key of ["socio", "direttivo", "student"]) expect(isStaticRoleKey(key)).toBe(true);
+  it("covers Master Admin, Socio, Direttivo, and Student", () => {
+    expect(STATIC_ROLES.map((entry) => entry.key)).toEqual([
+      "master-admin",
+      "socio",
+      "direttivo",
+      "student",
+    ]);
+    for (const key of ["master-admin", "socio", "direttivo", "student"])
+      expect(isStaticRoleKey(key)).toBe(true);
     expect(isStaticRoleKey("chair")).toBe(false);
   });
 
@@ -178,6 +188,107 @@ describe("validation", () => {
         { key: "new-role", name: "New", description: "", parents: [], permissions: ["gone"] },
         context,
       ).permissions,
+    ).toBeTruthy();
+  });
+});
+
+describe("Master Admin", () => {
+  const withMaster: RbacCatalog = {
+    ...catalog,
+    roles: [...catalog.roles, role(MASTER_ADMIN_ROLE_KEY, [], [], true)],
+  };
+
+  it("holds every permission without listing any of them", () => {
+    const access = resolveAccess(withMaster, [MASTER_ADMIN_ROLE_KEY]);
+    expect(access.permissions).toEqual([
+      "bank:sign",
+      "membership:read",
+      "membership:write",
+      "student:verified",
+    ]);
+  });
+
+  it("covers a permission created after it was last edited", () => {
+    const later: RbacCatalog = {
+      ...withMaster,
+      permissions: [...withMaster.permissions, permission("invented:later")],
+    };
+    expect(resolveAccess(later, [MASTER_ADMIN_ROLE_KEY]).permissions).toContain("invented:later");
+  });
+
+  it("passes everything on to a role that inherits from it", () => {
+    const deputy: RbacCatalog = {
+      ...withMaster,
+      roles: [...withMaster.roles, role("deputy", [], [MASTER_ADMIN_ROLE_KEY])],
+    };
+    expect(resolveAccess(deputy, ["deputy"]).permissions).toEqual(
+      resolveAccess(withMaster, [MASTER_ADMIN_ROLE_KEY]).permissions,
+    );
+  });
+
+  it("is not conferred by any identity state", () => {
+    expect(staticRolesForStates(["socio", "student", "direttivo"])).not.toContain(
+      MASTER_ADMIN_ROLE_KEY,
+    );
+  });
+
+  it("gives nothing extra to someone who does not hold it", () => {
+    expect(resolveAccess(withMaster, ["socio"]).permissions).toEqual(["membership:read"]);
+  });
+});
+
+describe("permissions the identity provider defines itself", () => {
+  const managedCatalog: RbacCatalog = {
+    roles: [role("staff", ["idp:roles:write"])],
+    permissions: MANAGED_PERMISSIONS.map((entry) =>
+      permission(entry.key, [...entry.implies], true),
+    ),
+  };
+
+  it("covers roles, permissions, applications, and people", () => {
+    expect(MANAGED_PERMISSIONS.map((entry) => entry.key)).toEqual([
+      "idp:people:read",
+      "idp:permissions:read",
+      "idp:permissions:write",
+      "idp:roles:read",
+      "idp:roles:write",
+      "idp:applications:read",
+      "idp:applications:write",
+    ]);
+    for (const entry of MANAGED_PERMISSIONS) expect(isManagedPermissionKey(entry.key)).toBe(true);
+    expect(isManagedPermissionKey("membership:read")).toBe(false);
+  });
+
+  it("expands managing roles into reading roles, permissions, and people", () => {
+    expect(resolveAccess(managedCatalog, ["staff"]).permissions).toEqual([
+      "idp:people:read",
+      "idp:permissions:read",
+      "idp:roles:read",
+      "idp:roles:write",
+    ]);
+  });
+
+  it("does not let managing roles reach applications", () => {
+    expect(resolveAccess(managedCatalog, ["staff"]).permissions).not.toContain(
+      "idp:applications:write",
+    );
+  });
+
+  it("refuses a new permission that would shadow one of them", () => {
+    expect(
+      validatePermissionDraft(
+        { key: "idp:roles:write", name: "Mine", description: "", implies: [] },
+        { catalog: { roles: [], permissions: [] } },
+      ).key,
+    ).toBeTruthy();
+  });
+
+  it("refuses to rekey one of them", () => {
+    expect(
+      validatePermissionDraft(
+        { key: "idp:roles:writeable", name: "Manage roles", description: "", implies: [] },
+        { catalog: managedCatalog, currentKey: "idp:roles:write" },
+      ).key,
     ).toBeTruthy();
   });
 });

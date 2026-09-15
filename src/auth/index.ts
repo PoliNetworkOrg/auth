@@ -11,7 +11,7 @@ import { db } from "../db";
 import * as schema from "../db/schema";
 import { env } from "../env";
 import { getOidcClaims } from "./identity";
-import { canManageOidcClients } from "./oidc-admin";
+import { hasIdpPermission } from "./idp-access";
 import { OIDC_CLIENT_REFERENCE } from "./oidc-clients";
 import { isLinkOnlyProvider } from "./policy";
 import { providers } from "./providers";
@@ -104,7 +104,8 @@ export const auth = betterAuth({
       allowPublicClientPrelogin: true,
       // Administrators share one client pool instead of owning clients individually.
       clientReference: () => OIDC_CLIENT_REFERENCE,
-      clientPrivileges: ({ user }) => (user ? canManageOidcClients(user.id) : false),
+      clientPrivileges: ({ user }) =>
+        user ? hasIdpPermission(user.id, "idp:applications:write") : false,
       accessTokenExpiresIn: 300,
       idTokenExpiresIn: 300,
       customIdTokenClaims: ({ user, scopes }) => getOidcClaims(user.id, scopes),
