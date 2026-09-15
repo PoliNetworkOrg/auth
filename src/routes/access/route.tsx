@@ -6,17 +6,13 @@ import { authClient } from "@/auth/client";
 import { AppHeader } from "@/components/app-header";
 import { LoginLayout, LoginPage } from "@/components/login-page";
 import { IdpAccessProvider, useIdpAccess } from "@/components/idp-access";
+import { ACCESS_TABS } from "@/components/rbac/access-tabs";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/access")({
   head: () => ({ meta: [{ title: "Roles and permissions · PoliNetwork Auth" }] }),
   component: AccessLayout,
 });
-
-const tabs = [
-  { to: "/access/roles", label: "Roles", permission: "idp:roles:read" },
-  { to: "/access/permissions", label: "Permissions", permission: "idp:permissions:read" },
-] as const;
 
 function NoAccess({ policy }: { policy: OidcAdminPolicy | null }) {
   return (
@@ -50,7 +46,7 @@ function AccessLayout() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   // Whatever any tab needs, rather than one fixed permission: the implication that makes
   // reading roles grant reading permissions is stored data an administrator can remove.
-  const visibleTabs = tabs.filter((tab) => access.can(tab.permission));
+  const visibleTabs = ACCESS_TABS.filter((tab) => access.can(tab.permission));
 
   if (isPending) {
     return (
@@ -71,7 +67,9 @@ function AccessLayout() {
       </LoginLayout>
     );
   }
-  if (!session) return <LoginPage callbackURL="/access/roles" />;
+  // Back to the section rather than a named tab: which one they may read is only
+  // known after they have signed in.
+  if (!session) return <LoginPage callbackURL="/access" />;
 
   return (
     <div className="min-h-screen">
