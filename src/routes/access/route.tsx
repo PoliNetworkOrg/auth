@@ -1,15 +1,17 @@
-import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { ArrowLeft, Building2, ShieldOff } from "lucide-react";
+import { cn } from "cn";
 import type { OidcAdminPolicy } from "@/auth/oidc-admin";
 import { authClient } from "@/auth/client";
 import { AppHeader } from "@/components/app-header";
 import { LoginLayout, LoginPage } from "@/components/login-page";
-import { useIdpAccess } from "@/components/idp-access";
+import { IdpAccessProvider, useIdpAccess } from "@/components/idp-access";
+import { ACCESS_TABS } from "@/components/rbac/access-tabs";
 import { Button } from "@/components/ui/button";
 
-export const Route = createFileRoute("/applications")({
-  head: () => ({ meta: [{ title: "Applications · PoliNetwork Auth" }] }),
-  component: ApplicationsLayout,
+export const Route = createFileRoute("/access")({
+  head: () => ({ meta: [{ title: "Roles and permissions · PoliNetwork Auth" }] }),
+  component: AccessLayout,
 });
 
 function NoAccess({ policy }: { policy: OidcAdminPolicy | null }) {
@@ -19,12 +21,12 @@ function NoAccess({ policy }: { policy: OidcAdminPolicy | null }) {
         <ShieldOff className="size-6" aria-hidden="true" />
       </div>
       <h1 className="mt-6 text-2xl font-bold tracking-tight">
-        Applications are managed by PoliNetwork staff
+        Roles are managed by PoliNetwork staff
       </h1>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">
         {policy === "entra-group"
-          ? "Managing sign-in applications is limited to members of the PoliNetwork Entra administrators group. Ask an administrator to add your PoliNetwork Microsoft account."
-          : "Managing sign-in applications requires a PoliNetwork Microsoft account. Link your PoliNetwork APS account from your account page, then come back here."}
+          ? "Editing roles and permissions is limited to members of the PoliNetwork Entra administrators group. Ask an administrator to add your PoliNetwork Microsoft account."
+          : "Editing roles and permissions requires a PoliNetwork Microsoft account. Link your PoliNetwork APS account from your account page, then come back here."}
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-3">
         <Button asChild>
@@ -38,9 +40,13 @@ function NoAccess({ policy }: { policy: OidcAdminPolicy | null }) {
   );
 }
 
-function ApplicationsLayout() {
+function AccessLayout() {
   const { data: session, isPending, error, refetch } = authClient.useSession();
   const access = useIdpAccess(!!session);
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  // Whatever any tab needs, rather than one fixed permission: the implication that makes
+  // reading roles grant reading permissions is stored data an administrator can remove.
+  const visibleTabs = ACCESS_TABS.filter((tab) => access.can(tab.permission));
 
   if (isPending) {
     return (
@@ -61,19 +67,45 @@ function ApplicationsLayout() {
       </LoginLayout>
     );
   }
-  if (!session) return <LoginPage callbackURL="/applications" />;
+  // Back to the section rather than a named tab: which one they may read is only
+  // known after they have signed in.
+  if (!session) return <LoginPage callbackURL="/access" />;
 
   return (
     <div className="min-h-screen">
-      <AppHeader active="applications" access={access} />
+      <AppHeader active="access" access={access} />
       <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
-        {access.status === "ready" && access.can("idp:applications:read") ? (
-          <Outlet />
+        {access.status === "ready" && visibleTabs.length > 0 ? (
+          <div className="space-y-8">
+            <nav aria-label="Access administration" className="flex gap-1 border-b">
+              {visibleTabs.map((tab) => {
+                const current = pathname.startsWith(tab.to);
+                return (
+                  <Link
+                    key={tab.to}
+                    to={tab.to}
+                    aria-current={current ? "page" : undefined}
+                    className={cn(
+                      "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      current
+                        ? "border-primary text-foreground"
+                        : "border-transparent text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {tab.label}
+                  </Link>
+                );
+              })}
+            </nav>
+            <IdpAccessProvider access={access}>
+              <Outlet />
+            </IdpAccessProvider>
+          </div>
         ) : access.status === "ready" ? (
           <NoAccess policy={access.policy} />
         ) : access.status === "error" ? (
           <div className="mx-auto max-w-lg space-y-4 py-10 text-center">
-            <p role="alert">We couldn't check whether you can manage applications.</p>
+            <p role="alert">We couldn't check whether you can manage roles.</p>
             <div className="flex flex-wrap justify-center gap-3">
               <Button onClick={access.retry}>Try again</Button>
               <Button variant="ghost" asChild>

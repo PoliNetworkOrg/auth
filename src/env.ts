@@ -16,9 +16,13 @@ export const env = createEnv({
     PN_ENTRA_CLIENT_SECRET: z.string().min(1).optional(),
     PN_ENTRA_TENANT_ID: z.uuid().optional(),
     PN_ENTRA_MEMBER_GROUP_ID: z.uuid().default("1c68dbb8-4ac3-4569-a886-283b5a825cbd"),
+    // Optional Entra group whose direct members hold the built-in Direttivo role.
+    // Unset: nobody is inferred as Direttivo.
+    PN_ENTRA_DIRETTIVO_GROUP_ID: z.uuid().optional(),
     PN_ENTRA_MEMBER_REFRESH_HOURS: z.coerce.number().int().positive().default(24),
-    // Optional stricter Entra group for OIDC client administrators.
-    // Unset: every linked PN Entra account may manage OIDC clients.
+    // Optional stricter Entra group whose direct members hold the built-in Master Admin
+    // role, and through it every permission.
+    // Unset: every linked PN Entra account is a Master Admin.
     PN_ENTRA_OIDC_ADMIN_GROUP_ID: z.uuid().optional(),
 
     GOOGLE_CLIENT_ID: z.string().min(1).optional(),
@@ -33,7 +37,8 @@ export const env = createEnv({
     AZURE_EMAIL_SENDER: z.email().default("noreply@polinetwork.org"),
     STUDENT_VERIFICATION_TTL_DAYS: z.coerce.number().int().positive().default(365),
 
-    // Break-glass allowlist of local user IDs that may always manage OIDC clients.
+    // Break-glass allowlist of local user IDs that always hold Master Admin. Every other
+    // administrative right is an ordinary permission granted through a role.
     IDP_ADMIN_USER_IDS: z
       .string()
       .default("")

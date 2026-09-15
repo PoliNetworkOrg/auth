@@ -64,16 +64,34 @@ export async function checkEntraGroupMember(
   }
 }
 
-export function checkPnMemberGroup(objectId: string): Promise<boolean | null> {
-  return checkEntraGroupMember(env.PN_ENTRA_MEMBER_GROUP_ID, objectId);
+/**
+ * The states the PoliNetwork Entra groups currently prove for an Entra object. Returns null
+ * when any configured check could not be performed, so a Graph outage never looks like a
+ * confirmed loss of membership.
+ */
+export async function checkPnGroupStates(objectId: string): Promise<string[] | null> {
+  const groups = [
+    { state: "socio", groupId: env.PN_ENTRA_MEMBER_GROUP_ID },
+    { state: "direttivo", groupId: env.PN_ENTRA_DIRETTIVO_GROUP_ID },
+  ].filter((group): group is { state: string; groupId: string } => Boolean(group.groupId));
+  const states: string[] = [];
+  for (const group of groups) {
+    const member = await checkEntraGroupMember(group.groupId, objectId);
+    if (member === null) return null;
+    if (member) states.push(group.state);
+  }
+  return states;
 }
 
-export function membershipEvidence(member: boolean | null, now = new Date()) {
+/**
+ * Evidence to store for an Entra account. An unsuccessful check expires immediately instead
+ * of being cached as a confirmed nonmember, so the next request retries.
+ */
+export function membershipEvidence(states: string[] | null, now = new Date()) {
   return {
-    state: member === true ? "socio" : null,
-    // An unsuccessful check must not be cached as a confirmed nonmember.
+    states: states ?? [],
     validUntil: new Date(
-      now.getTime() + (member === null ? 0 : env.PN_ENTRA_MEMBER_REFRESH_HOURS * 3_600_000),
+      now.getTime() + (states === null ? 0 : env.PN_ENTRA_MEMBER_REFRESH_HOURS * 3_600_000),
     ),
   };
 }
