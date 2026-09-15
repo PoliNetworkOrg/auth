@@ -93,6 +93,9 @@ export function RoleMembers({
     }
   }
 
+  // One change at a time: each one answers with the whole list, so overlapping requests
+  // would race to decide what is shown.
+  const changing = busyUser !== "";
   const held = new Set(members?.map((member) => member.userId));
   const candidates = results.filter((person) => !held.has(person.id));
 
@@ -138,7 +141,7 @@ export function RoleMembers({
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={busyUser === person.id}
+                      disabled={changing}
                       onClick={() => void change("assign", person.id)}
                     >
                       {busyUser === person.id ? (
@@ -174,7 +177,7 @@ export function RoleMembers({
                   size="sm"
                   variant="ghost"
                   className="text-destructive"
-                  disabled={busyUser === member.userId}
+                  disabled={changing}
                   onClick={() => void change("unassign", member.userId)}
                 >
                   {busyUser === member.userId ? (

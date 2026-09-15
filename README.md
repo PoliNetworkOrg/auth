@@ -71,7 +71,8 @@ Their membership is conferred by the identity provider itself:
 
 **Master Admin holds every permission that exists**, including ones created after it was
 last looked at, because it is a wildcard rather than a stored list. It therefore has no
-grant list of its own to edit, and a role that inherits from it inherits everything too.
+grant list of its own to edit, and no role may inherit from it: that would launder a
+wildcard nobody can be given into a role an administrator could hand to anyone.
 Unlike the other three it is not proven by identity evidence and never appears among the
 `states`: it comes from the deployment's own configuration, which is what keeps the service
 from being locked out of its own administration. Set `IDP_ADMIN_USER_IDS`, or

@@ -234,8 +234,9 @@ export function grantsAllPermissions(roleKeys: readonly string[]) {
  * hierarchy. Keys that no longer exist in the catalog are dropped.
  *
  * Master Admin is a wildcard rather than a stored list, so it keeps covering permissions
- * created after it was last edited. Inheriting from it has the same effect, since the role
- * hierarchy is expanded first.
+ * created after it was last edited. Nothing may inherit from it (see `validateRoleDraft`),
+ * but the wildcard is still honoured through the expanded role set so that an edge left in
+ * the database by an older version cannot quietly grant less than it appears to.
  */
 export function resolveAccess(catalog: RbacCatalog, roleKeys: Iterable<string>): ResolvedAccess {
   const index = indexCatalog(catalog);
@@ -431,6 +432,12 @@ export function validateRoleDraft(
     errors.permissions = "One of the selected permissions no longer exists.";
   if (draft.parents.some((parent) => !index.roles.has(parent)))
     errors.parents = "One of the selected roles no longer exists.";
+  // Master Admin's wildcard is conferred by the deployment's configuration and is never
+  // handed out. Inheriting from it would launder that wildcard into a role an
+  // administrator can give to anyone, so no role may name it as a parent.
+  else if (draft.parents.includes(MASTER_ADMIN_ROLE_KEY))
+    errors.parents =
+      "No role can inherit from Master Admin: it holds everything and is granted only by this deployment's configuration.";
   else if (draft.parents.includes(key)) errors.parents = "A role cannot inherit from itself.";
   else if (
     currentKey &&

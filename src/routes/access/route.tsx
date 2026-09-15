@@ -48,6 +48,9 @@ function AccessLayout() {
   const { data: session, isPending, error, refetch } = authClient.useSession();
   const access = useIdpAccess(!!session);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  // Whatever any tab needs, rather than one fixed permission: the implication that makes
+  // reading roles grant reading permissions is stored data an administrator can remove.
+  const visibleTabs = tabs.filter((tab) => access.can(tab.permission));
 
   if (isPending) {
     return (
@@ -74,29 +77,27 @@ function AccessLayout() {
     <div className="min-h-screen">
       <AppHeader active="access" access={access} />
       <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
-        {access.status === "ready" && access.can("idp:permissions:read") ? (
+        {access.status === "ready" && visibleTabs.length > 0 ? (
           <div className="space-y-8">
             <nav aria-label="Access administration" className="flex gap-1 border-b">
-              {tabs
-                .filter((tab) => access.can(tab.permission))
-                .map((tab) => {
-                  const current = pathname.startsWith(tab.to);
-                  return (
-                    <Link
-                      key={tab.to}
-                      to={tab.to}
-                      aria-current={current ? "page" : undefined}
-                      className={cn(
-                        "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        current
-                          ? "border-primary text-foreground"
-                          : "border-transparent text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {tab.label}
-                    </Link>
-                  );
-                })}
+              {visibleTabs.map((tab) => {
+                const current = pathname.startsWith(tab.to);
+                return (
+                  <Link
+                    key={tab.to}
+                    to={tab.to}
+                    aria-current={current ? "page" : undefined}
+                    className={cn(
+                      "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      current
+                        ? "border-primary text-foreground"
+                        : "border-transparent text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {tab.label}
+                  </Link>
+                );
+              })}
             </nav>
             <IdpAccessProvider access={access}>
               <Outlet />

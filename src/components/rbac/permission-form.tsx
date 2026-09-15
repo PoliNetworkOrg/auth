@@ -14,6 +14,7 @@ import {
 } from "@/auth/rbac";
 import { Field, KeyChip } from "@/components/rbac/fields";
 import { PickList } from "@/components/rbac/pick-list";
+import { useDraftErrors } from "@/components/rbac/use-draft-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -50,8 +51,12 @@ export function PermissionForm({
   const [touched, setTouched] = useState(false);
   const ids = { key: useId(), name: useId(), description: useId() };
   const local = validatePermissionDraft(normalizePermissionDraft(draft), { catalog, currentKey });
-  const errors: RbacDraftErrors = touched ? local : { ...serverErrors };
-  const change = (patch: Partial<PermissionDraft>) => setDraft((prev) => ({ ...prev, ...patch }));
+  const { serverFieldErrors, noteEdited } = useDraftErrors(serverErrors);
+  const errors: RbacDraftErrors = { ...serverFieldErrors, ...(touched ? local : {}) };
+  const change = (patch: Partial<PermissionDraft>) => {
+    noteEdited(Object.keys(patch));
+    setDraft((prev) => ({ ...prev, ...patch }));
+  };
 
   const options = catalog.permissions
     .filter((entry) => entry.key !== (currentKey ?? draft.key.trim().toLowerCase()))

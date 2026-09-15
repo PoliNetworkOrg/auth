@@ -16,7 +16,7 @@ export const Route = createFileRoute("/access/roles/new")({
 
 function NewRole() {
   const navigate = useNavigate();
-  const { catalog, loading } = useCatalog();
+  const { catalog, loading, error: loadError, reload } = useCatalog();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fields, setFields] = useState<RbacDraftErrors>();
@@ -62,6 +62,18 @@ function NewRole() {
         <CardContent className="pt-6">
           {loading ? (
             <p className="py-8 text-center text-sm text-muted-foreground">Loading permissions…</p>
+          ) : loadError ? (
+            <div className="space-y-4 py-8 text-center">
+              <p role="alert" className="text-sm">
+                {loadError}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Unable to load the permissions this role could grant. Try again before creating one.
+              </p>
+              <Button variant="outline" onClick={reload}>
+                Try again
+              </Button>
+            </div>
           ) : (
             <RoleForm
               mode="create"
