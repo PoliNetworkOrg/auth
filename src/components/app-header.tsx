@@ -15,7 +15,7 @@ export function AppHeader({ active, access }: { active: Section; access?: IdpAcc
     [{ to: "/", label: "Account", section: "account" }];
   if (can("idp:applications:read"))
     links.push({ to: "/applications", label: "Applications", section: "applications" });
-  if (can("idp:permissions:read"))
+  if (can("idp:roles:read") || can("idp:permissions:read"))
     links.push({ to: "/access/roles", label: "Access", section: "access" });
   const nav = (className: string) =>
     session && links.length > 1 ? (

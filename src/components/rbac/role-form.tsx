@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import {
+  MASTER_ADMIN_ROLE_KEY,
   MAX_DESCRIPTION_LENGTH,
   MAX_NAME_LENGTH,
   type RbacCatalog,
@@ -14,9 +15,16 @@ import {
 } from "@/auth/rbac";
 import { Field, KeyChip } from "@/components/rbac/fields";
 import { PickList } from "@/components/rbac/pick-list";
+import { useDraftErrors } from "@/components/rbac/use-draft-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+
+/**
+ * Stands in for the role being edited while previewing its effect. Role keys cannot contain
+ * a colon, so this can never collide with a stored role.
+ */
+const PREVIEW_ROLE_KEY = "draft:preview";
 
 export function RoleForm({
   mode,
@@ -52,19 +60,26 @@ export function RoleForm({
   const [touched, setTouched] = useState(false);
   const ids = { key: useId(), name: useId(), description: useId() };
   const local = validateRoleDraft(normalizeRoleDraft(draft), { catalog, currentKey });
-  const errors: RbacDraftErrors = touched ? local : { ...serverErrors };
-  const change = (patch: Partial<RoleDraft>) => setDraft((prev) => ({ ...prev, ...patch }));
+  const { serverFieldErrors, noteEdited } = useDraftErrors(serverErrors);
+  const errors: RbacDraftErrors = { ...serverFieldErrors, ...(touched ? local : {}) };
+  const change = (patch: Partial<RoleDraft>) => {
+    noteEdited(Object.keys(patch));
+    setDraft((prev) => ({ ...prev, ...patch }));
+  };
 
   const parentOptions = catalog.roles
     .filter((entry) => entry.key !== (currentKey ?? draft.key.trim().toLowerCase()))
     .map((entry) => {
       const cycles = currentKey ? roleParentWouldCycle(catalog, currentKey, entry.key) : false;
+      const wildcard = entry.key === MASTER_ADMIN_ROLE_KEY;
       return {
         key: entry.key,
         label: entry.name,
         hint: entry.description ?? undefined,
-        disabled: cycles,
-        disabledReason: `${entry.name} already inherits from this role.`,
+        disabled: cycles || wildcard,
+        disabledReason: wildcard
+          ? `${entry.name} holds every permission and is granted only by this deployment's configuration, so no role can inherit from it.`
+          : `${entry.name} already inherits from this role.`,
       };
     });
 
@@ -81,8 +96,8 @@ export function RoleForm({
       roles: [
         ...catalog.roles.filter((entry) => entry.key !== (currentKey ?? "")),
         {
-          id: "preview",
-          key: "preview",
+          id: PREVIEW_ROLE_KEY,
+          key: PREVIEW_ROLE_KEY,
           name: draft.name,
           description: null,
           managed: false,
@@ -95,7 +110,7 @@ export function RoleForm({
         },
       ],
     },
-    ["preview"],
+    [PREVIEW_ROLE_KEY],
   );
   const inherited = preview.permissions.filter((key) => !draft.permissions.includes(key));
 

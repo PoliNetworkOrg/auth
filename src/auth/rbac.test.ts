@@ -216,7 +216,24 @@ describe("Master Admin", () => {
     expect(resolveAccess(later, [MASTER_ADMIN_ROLE_KEY]).permissions).toContain("invented:later");
   });
 
-  it("passes everything on to a role that inherits from it", () => {
+  it("cannot be named as a parent, which would make its wildcard assignable", () => {
+    const draft = { name: "Deputy", description: "", permissions: [], parents: ["master-admin"] };
+    expect(
+      validateRoleDraft({ ...draft, key: "deputy" }, { catalog: withMaster }).parents,
+    ).toBeTruthy();
+    expect(
+      validateRoleDraft({ ...draft, key: "chair" }, { catalog: withMaster, currentKey: "chair" })
+        .parents,
+    ).toBeTruthy();
+    // Not even a role the identity provider defines itself: everyone proven a socio would
+    // otherwise become omnipotent.
+    expect(
+      validateRoleDraft({ ...draft, key: "socio" }, { catalog: withMaster, currentKey: "socio" })
+        .parents,
+    ).toBeTruthy();
+  });
+
+  it("still honours an inheriting edge left in the database by an older version", () => {
     const deputy: RbacCatalog = {
       ...withMaster,
       roles: [...withMaster.roles, role("deputy", [], [MASTER_ADMIN_ROLE_KEY])],
@@ -224,6 +241,15 @@ describe("Master Admin", () => {
     expect(resolveAccess(deputy, ["deputy"]).permissions).toEqual(
       resolveAccess(withMaster, [MASTER_ADMIN_ROLE_KEY]).permissions,
     );
+  });
+
+  it("leaves ordinary parents alone", () => {
+    expect(
+      validateRoleDraft(
+        { key: "deputy", name: "Deputy", description: "", permissions: [], parents: ["socio"] },
+        { catalog: withMaster },
+      ).parents,
+    ).toBeUndefined();
   });
 
   it("is not conferred by any identity state", () => {
