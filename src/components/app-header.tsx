@@ -5,17 +5,18 @@ import { type OidcAccessState, useOidcAccess } from "@/components/oidc/use-oidc-
 import { ThemeSwitch } from "@/components/theme-switch";
 import { UserAvatar } from "@/components/user-avatar";
 
-type Section = "account" | "applications";
+type Section = "account" | "applications" | "access";
 
 export function AppHeader({ active, access }: { active: Section; access?: OidcAccessState }) {
   const { data: session } = authClient.useSession();
   const ownAccess = useOidcAccess(!!session && !access);
   const status = (access ?? ownAccess).status;
-  const links: { to: "/" | "/applications"; label: string; section: Section }[] = [
-    { to: "/", label: "Account", section: "account" },
-  ];
-  if (status === "allowed")
+  const links: { to: "/" | "/applications" | "/access/roles"; label: string; section: Section }[] =
+    [{ to: "/", label: "Account", section: "account" }];
+  if (status === "allowed") {
     links.push({ to: "/applications", label: "Applications", section: "applications" });
+    links.push({ to: "/access/roles", label: "Access", section: "access" });
+  }
   const nav = (className: string) =>
     session && links.length > 1 ? (
       <nav aria-label="Primary" className={className}>

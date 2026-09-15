@@ -180,7 +180,7 @@ export async function confirmStudentVerification(
       issuer: POLIMI_EMAIL_ISSUER,
       subject: email,
       providerId: "polimi-email",
-      state: "student",
+      states: ["student"],
       validUntil,
       telegramId: null,
     };

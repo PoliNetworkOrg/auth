@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { authClient } from "@/auth/client";
-import { type identityClaims, isLoginProvider } from "@/auth/policy";
+import { type IdentityClaims, isLoginProvider } from "@/auth/policy";
+import { STATIC_ROLES } from "@/auth/rbac";
 import { StudentVerificationForm } from "@/components/student-verification-form";
 import { UserAvatar } from "@/components/user-avatar";
 import { GoogleIcon } from "@/components/google-icon";
@@ -39,6 +40,11 @@ const signInOptions = [
 
 type ProviderCapabilities = { signIn: string[]; link: string[] };
 
+/** The built-in roles each verified state grants, named for the person who holds them. */
+const STATE_LABELS: Record<string, string> = Object.fromEntries(
+  STATIC_ROLES.map((role) => [role.state, role.name]),
+);
+
 function Home() {
   const { data: session, isPending, error, refetch } = authClient.useSession();
 
@@ -71,7 +77,7 @@ function AccountPage() {
   const [accounts, setAccounts] = useState<{ id: string; providerId: string; accountId: string }[]>(
     [],
   );
-  const [identity, setIdentity] = useState<ReturnType<typeof identityClaims> | null>(null);
+  const [identity, setIdentity] = useState<IdentityClaims | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -90,7 +96,7 @@ function AccountPage() {
         if (linked.error) throw new Error(linked.error.message);
         const result = await fetch("/api/identity");
         if (!result.ok) throw new Error("Unable to load your identity.");
-        const value: ReturnType<typeof identityClaims> = await result.json();
+        const value: IdentityClaims = await result.json();
         if (active) {
           setAccounts(linked.data);
           setIdentity(value);
@@ -195,7 +201,7 @@ function AccountPage() {
                     identity.states.map((state) => (
                       <Badge key={state} className="border-white/30 bg-white/15 text-white">
                         <BadgeCheck className="size-3.5" />
-                        {state === "socio" ? "Socio PN" : "Polimi student"}
+                        {STATE_LABELS[state] ?? state}
                       </Badge>
                     ))
                   ) : (

@@ -102,3 +102,10 @@ export async function canManageOidcClients(userId: string): Promise<boolean> {
     groupMember,
   });
 }
+
+/**
+ * Role and permission administration uses the same gate as OIDC client administration.
+ * It is deliberately not itself an RBAC permission: anyone who can edit roles can grant
+ * themselves anything, so the decision stays outside the system it would control.
+ */
+export const canAdministerIdp = canManageOidcClients;

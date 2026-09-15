@@ -18,7 +18,7 @@ The included `Dockerfile` builds the app and runs the same migration-first start
 
 Google and PoliNetwork Entra create accounts. Once signed in, users can add a passkey from the account page and use it for future logins. Signed-out visitors see a login form with configured providers and passkey sign-in. Email/password login is disabled. The server rejects direct Telegram sign-in requests and protects the last Google or PoliNetwork Entra account from being disconnected, including when passkeys or verifier accounts remain linked.
 
-Passkeys require the checked-in `0003` database migration. Run `vp run db:migrate` before using them. Their relying-party ID and origin come from `BETTER_AUTH_URL`; use that exact origin in your browser, with HTTPS in production or localhost in development. Register a passkey after signing in with Google or PoliNetwork Entra. The account page lists and removes registered passkeys.
+Roles and permissions require the checked-in `0004` and `0005` migrations, which also move each account's single proven state into a list so one Entra identity can prove both Socio and Direttivo. `0004` carries the old `state` column into the new `states` list and seeds the built-in roles before `0005` drops it, so apply them in order and never `0005` alone. Passkeys require the checked-in `0003` database migration. Run `vp run db:migrate` before using them. Their relying-party ID and origin come from `BETTER_AUTH_URL`; use that exact origin in your browser, with HTTPS in production or localhost in development. Register a passkey after signing in with Google or PoliNetwork Entra. The account page lists and removes registered passkeys.
 
 New registrations send `PoliNetwork Auth` as the relying-party name. The username uses the user's real email, then an email from stored Google or Microsoft ID-token claims, and falls back to the user's name if neither is available. These claims are display metadata only. Passkey labels use the authenticator's AAGUID to recognize password managers such as 1Password; unknown authenticators display `Passkey`. Existing default labels are resolved when listed, while custom names are preserved. Password managers control their own vault item titles and may still show `localhost` during development. Previously saved vault metadata is not updated by the app.
 
@@ -42,21 +42,72 @@ Polimi verification accepts only the exact `mail.polimi.it` domain. Codes contai
 
 Email delivery uses the same Microsoft Graph client-credential setup as the current backend. The Azure application needs the Graph `Mail.Send` application permission and permission to send as `AZURE_EMAIL_SENDER`. These Azure credentials belong to the mail sender; they do not require access to Polimi Entra.
 
-## States and permissions
+## Roles and permissions
 
-| Evidence                                        | State              | Permission                         |
-| ----------------------------------------------- | ------------------ | ---------------------------------- |
-| PN Entra account in the configured `Soci` group | `socio`            | `membership:read`                  |
-| Code sent to an `@mail.polimi.it` address       | `student`          | `student:verified`                 |
-| Telegram identity                               | Linked Telegram ID | No automatic moderation permission |
+Access is modelled as permissions bundled into roles. A **permission** is one thing an
+application can check for, addressed by a key such as `membership:read`. A **role** is a
+named bundle of permissions that someone can hold. Administrators create both at `/access`,
+and both support a hierarchy:
 
-States accumulate independently. A socio is not automatically a student. Signature, issuer, audience, expiration, and Entra tenant are checked before recording evidence. Evidence contributes only when joined to an account owned by the user.
+- A permission can **also grant** other permissions. Holding `membership:write` can grant
+  `membership:read` without listing it everywhere.
+- A role can **inherit from** other roles. It then carries every permission of its parents,
+  including what those inherit in turn.
 
-`PN_ENTRA_MEMBER_GROUP_ID` identifies the Microsoft Entra `Soci` group used by the backend. Membership is checked through Microsoft Graph using `PN_ENTRA_TENANT_ID`, `PN_ENTRA_CLIENT_ID`, and `PN_ENTRA_CLIENT_SECRET`. Grant Microsoft Graph **application** permission `GroupMember.Read.All` and admin consent on that PN app registration. `AZURE_*` credentials are only used for email delivery. The check reads direct group members across all result pages, matching the backend's membership rule. A Graph failure is logged and grants no new membership evidence; it is never cached as a confirmed nonmember or replaced by a token group claim.
+Both hierarchies are transitive, and the editor refuses an edge that would make two roles
+inherit from each other or two permissions grant each other.
 
-Microsoft membership is rechecked on login and on the first identity request after `PN_ENTRA_MEMBER_REFRESH_HOURS`, which defaults to 24 hours. This is a cache interval, not the duration of someone's membership. Expired evidence grants no state if Graph cannot verify it, and the next request retries. Polimi student verification lasts for `STUDENT_VERIFICATION_TTL_DAYS`, which defaults to 365 days. The user must verify the address again after that. The Telegram ownership link persists until disconnected. Already issued OIDC tokens expire after five minutes, so consumers must account for that revocation delay; `/api/identity` and UserInfo compute current evidence on each request.
+### Roles the identity provider defines itself
 
-OIDC client administration is a separate permission from membership. Anyone signed in with a PoliNetwork Entra account (the `pn-entra` provider, verified against `PN_ENTRA_TENANT_ID`) can currently manage applications. To restrict it to a stricter Microsoft 365 group than Soci, set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to that group's object ID: only its direct members, checked through the same Graph credentials, keep access. Graph answers are cached for 15 minutes per user; a failed check denies access instead of caching. `IDP_ADMIN_USER_IDS` remains a break-glass allowlist of local user IDs that always pass. Being a socio never confers this permission by itself. Existing backend Telegram roles and group assignments remain authoritative and are not copied or queried by this prototype.
+Three roles always exist and are never created, deleted, or handed out by an administrator.
+Their membership is inferred from the evidence this service already collects:
+
+| Role        | Key         | Granted by                                                                 |
+| ----------- | ----------- | -------------------------------------------------------------------------- |
+| `Socio`     | `socio`     | Direct membership of the `Soci` group in PoliNetwork Entra ID              |
+| `Direttivo` | `direttivo` | Direct membership of `PN_ENTRA_DIRETTIVO_GROUP_ID` in PoliNetwork Entra ID |
+| `Student`   | `student`   | A verification code delivered to an `@mail.polimi.it` address              |
+
+What they grant is still yours to choose: give them permissions, rename them, describe
+them, and place them in the hierarchy like any other role. Only their key, their deletion,
+and who holds them are fixed. The checked-in migration seeds them alongside the two
+permissions this service already issued, so existing consumers keep working: `socio` grants
+`membership:read` and `student` grants `student:verified`.
+
+`PN_ENTRA_DIRETTIVO_GROUP_ID` is optional and has no default. Until you set it to the
+board's Entra group object ID, nobody is inferred as Direttivo. Both group checks reuse the
+`PN_ENTRA_*` Graph credentials, run together on sign-in, and are rechecked after
+`PN_ENTRA_MEMBER_REFRESH_HOURS`. If either check fails, the evidence expires immediately
+rather than being cached as a confirmed loss of membership, and the next request retries.
+
+Membership of the built-in roles is not a role assignment: nothing is written to
+`user_role` for them, and evidence contributes only when joined to an account owned by the
+user. States accumulate independently, so a socio is not automatically a student. Signature,
+issuer, audience, expiration, and Entra tenant are checked before evidence is recorded.
+
+Note that inheritance crosses this line in one direction. If you make a role you created
+inherit from `Socio`, everyone holding your role also reports the `socio` role and its
+permissions, whether or not Entra says they are a member. Inherit from a built-in role only
+when that is what you mean.
+
+### Assigning a role
+
+Roles you create are given to people from the role's page at `/access/roles`, which lists
+who holds it and searches for someone to add. An assignment lasts until it is removed.
+Deleting a role removes it from everyone who held it and from every role that inherited it.
+
+Administering roles and permissions uses the same gate as OIDC client administration,
+described below. It is deliberately not itself a permission in this system: anyone who can
+edit roles can grant themselves anything, so that decision stays outside the system it
+would control.
+
+Changes take effect on the next token. Already-issued OIDC tokens expire after five
+minutes, so consumers must account for that revocation delay; `/api/identity` and UserInfo
+compute current access on each request. Each replica caches the role graph for 15 seconds,
+so a change made on one replica reaches the others within that window.
+
+A linked Telegram identity grants no role and no permission. Existing backend Telegram
+roles and group assignments remain authoritative and are not copied or queried here.
 
 ## OIDC clients
 
@@ -68,16 +119,27 @@ Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_a
 {
   "https://auth.polinetwork.org/api/identity": {
     "states": ["socio", "student"],
+    "roles": ["socio", "student"],
     "permissions": ["membership:read", "student:verified"],
     "telegramId": "123456789"
   },
   "polinetwork_states": "socio student",
+  "polinetwork_roles": "socio student",
   "polinetwork_permissions": "membership:read student:verified",
   "polinetwork_telegram_id": "123456789"
 }
 ```
 
-The string `polinetwork_states` and `polinetwork_permissions` claims use spaces between values. They are empty strings when no values apply, as is `polinetwork_telegram_id` when no Telegram account is linked. The `/api/identity` response keeps the object format shown inside the URL-named claim.
+`states` is the raw evidence: what the person's linked accounts proved. `roles` and
+`permissions` are the result of resolving that evidence and their assignments through both
+hierarchies, so `roles` includes inherited parent roles and `permissions` includes
+everything granted indirectly. Applications should check `permissions` for a specific
+capability and treat `roles` as a coarser label. The string `polinetwork_*` claims use
+spaces between values and are empty strings when no values apply, as is
+`polinetwork_telegram_id` when no Telegram account is linked. The `/api/identity` response
+keeps the object format shown inside the URL-named claim.
+
+Administering this service is a separate matter from membership. Anyone signed in with a PoliNetwork Entra account (the `pn-entra` provider, verified against `PN_ENTRA_TENANT_ID`) can currently manage OIDC clients, roles, and permissions. To restrict it to a stricter Microsoft 365 group than Soci, set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to that group's object ID: only its direct members, checked through the same Graph credentials, keep access. Graph answers are cached for 15 minutes per user; a failed check denies access instead of caching. `IDP_ADMIN_USER_IDS` remains a break-glass allowlist of local user IDs that always pass. Being a socio never confers this permission by itself.
 
 Dynamic registration and client-credentials grants are disabled. Administrators manage clients at `/applications`: create web or native apps as confidential (secret shown once) or public (PKCE only) clients, edit redirect URIs and allowed scopes, rotate secrets, pause sign-ins by disabling an app, skip the consent screen for first-party apps, and delete apps. All administrators share one client pool (the plugin's `clientReference` is a fixed value), so clients are not tied to whoever created them. Redirect URIs follow the provider's rules: web apps need `https` on a public host, native apps may use `http://localhost`, `http://127.0.0.1`, `http://[::1]`, or a reverse-domain custom scheme. Custom routes under `/api/oidc/` back the pages; creation, deletion, and secret rotation go through the Better Auth client endpoints, which enforce the same administrator check.
 
@@ -109,7 +171,7 @@ IDENTITY_TEST_SECRET=your-test-server-secret \
 vp test
 ```
 
-The integration suite covers discovery, anonymous rejection, current identity claims, denied client registration, unique account ownership, unlink revocation, and last-account protection. Live Google, Entra, Telegram, and Microsoft Graph email delivery require actual app registrations and have not been validated here.
+The integration suite covers discovery, anonymous rejection, current identity claims, denied client registration, unique account ownership, unlink revocation, and last-account protection. Role and permission resolution, hierarchy expansion, cycle refusal, and the protections around the built-in roles are covered by the unit tests in `src/auth/rbac.test.ts`. Live Google, Entra, Telegram, and Microsoft Graph email delivery require actual app registrations and have not been validated here.
 
 The auth schema was generated with the Better Auth CLI and includes the `account.issuer` field and issuer/subject unique index required by installed Better Auth 1.7.2. Review regeneration diffs: older CLI core schemas omit that field. Generate Drizzle SQL with `vp run db:generate` after any schema change.
 
