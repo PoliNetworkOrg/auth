@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { cn } from "cn";
 import { authClient } from "@/auth/client";
 import { type IdpAccess, useIdpAccess } from "@/components/idp-access";
+import { firstAccessTab } from "@/components/rbac/access-tabs";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { UserAvatar } from "@/components/user-avatar";
 
@@ -11,12 +12,16 @@ export function AppHeader({ active, access }: { active: Section; access?: IdpAcc
   const { data: session } = authClient.useSession();
   const ownAccess = useIdpAccess(!!session && !access);
   const { can } = access ?? ownAccess;
-  const links: { to: "/" | "/applications" | "/access/roles"; label: string; section: Section }[] =
-    [{ to: "/", label: "Account", section: "account" }];
+  const links: {
+    to: "/" | "/applications" | "/access/roles" | "/access/permissions";
+    label: string;
+    section: Section;
+  }[] = [{ to: "/", label: "Account", section: "account" }];
   if (can("idp:applications:read"))
     links.push({ to: "/applications", label: "Applications", section: "applications" });
-  if (can("idp:roles:read") || can("idp:permissions:read"))
-    links.push({ to: "/access/roles", label: "Access", section: "access" });
+  // Straight to the tab they can actually read, rather than a page that would refuse them.
+  const accessTab = firstAccessTab(can);
+  if (accessTab) links.push({ to: accessTab.to, label: "Access", section: "access" });
   const nav = (className: string) =>
     session && links.length > 1 ? (
       <nav aria-label="Primary" className={className}>

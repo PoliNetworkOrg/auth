@@ -30,9 +30,9 @@ export function RequirePermission({
       </p>
       <div className="mt-6">
         <Button variant="ghost" asChild>
-          <Link to="/access/permissions">
+          <Link to="/access">
             <ArrowLeft aria-hidden="true" />
-            Back to permissions
+            Back to access administration
           </Link>
         </Button>
       </div>
