@@ -3,12 +3,15 @@ import { ChevronRight, KeyRound, Plus, ShieldCheck, Sparkles } from "lucide-reac
 import { type PermissionSummary, expandPermissionKeys } from "@/auth/rbac";
 import { useIdpAccessContext } from "@/components/idp-access";
 import { KeyChip } from "@/components/rbac/fields";
+import { RequirePermission } from "@/components/rbac/require-permission";
 import { useCatalog } from "@/components/rbac/use-catalog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export const Route = createFileRoute("/access/permissions/")({ component: PermissionsIndex });
+export const Route = createFileRoute("/access/permissions/")({
+  component: GuardedPermissionsIndex,
+});
 
 function PermissionRow({
   permission,
@@ -168,5 +171,13 @@ function PermissionsIndex() {
         </div>
       )}
     </div>
+  );
+}
+
+function GuardedPermissionsIndex() {
+  return (
+    <RequirePermission permission="idp:permissions:read">
+      <PermissionsIndex />
+    </RequirePermission>
   );
 }

@@ -62,12 +62,12 @@ inherit from each other or two permissions grant each other.
 Four roles always exist and are never created, deleted, or handed out by an administrator.
 Their membership is conferred by the identity provider itself:
 
-| Role           | Key            | Granted by                                                                 |
-| -------------- | -------------- | -------------------------------------------------------------------------- |
-| `Master Admin` | `master-admin` | `IDP_ADMIN_USER_IDS` or the configured Entra administrators group          |
-| `Socio`        | `socio`        | Direct membership of the `Soci` group in PoliNetwork Entra ID              |
-| `Direttivo`    | `direttivo`    | Direct membership of `PN_ENTRA_DIRETTIVO_GROUP_ID` in PoliNetwork Entra ID |
-| `Student`      | `student`      | A verification code delivered to an `@mail.polimi.it` address              |
+| Role           | Key            | Granted by                                                                                                        |
+| -------------- | -------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `Master Admin` | `master-admin` | `IDP_ADMIN_USER_IDS`; otherwise the configured administrators group, or any PN Entra account when no group is set |
+| `Socio`        | `socio`        | Direct membership of the `Soci` group in PoliNetwork Entra ID                                                     |
+| `Direttivo`    | `direttivo`    | Direct membership of `PN_ENTRA_DIRETTIVO_GROUP_ID` in PoliNetwork Entra ID                                        |
+| `Student`      | `student`      | A verification code delivered to an `@mail.polimi.it` address                                                     |
 
 **Master Admin holds every permission that exists**, including ones created after it was
 last looked at, because it is a wildcard rather than a stored list. It therefore has no
@@ -75,8 +75,10 @@ grant list of its own to edit, and no role may inherit from it: that would laund
 wildcard nobody can be given into a role an administrator could hand to anyone.
 Unlike the other three it is not proven by identity evidence and never appears among the
 `states`: it comes from the deployment's own configuration, which is what keeps the service
-from being locked out of its own administration. Set `IDP_ADMIN_USER_IDS`, or
-`PN_ENTRA_OIDC_ADMIN_GROUP_ID` to a Microsoft Entra group, to decide who holds it.
+from being locked out of its own administration. `IDP_ADMIN_USER_IDS` is always honored.
+Set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to limit everyone else to that Microsoft Entra group.
+If the group is unset, every linked PN Entra account holds Master Admin, preserving the
+service's previous OIDC administration rule.
 
 What the other three grant is still yours to choose: give them permissions, rename them,
 describe them, and place them in the hierarchy like any other role. Only their key, their
@@ -110,7 +112,7 @@ keys; which roles carry them is entirely up to you.
 | Permission               | Covers                                                     |
 | ------------------------ | ---------------------------------------------------------- |
 | `idp:people:read`        | Searching the people registered here                       |
-| `idp:permissions:read`   | Seeing permissions, and the `/access` section at all       |
+| `idp:permissions:read`   | Seeing permissions in the `/access` section                |
 | `idp:permissions:write`  | Creating, changing, and deleting permissions               |
 | `idp:roles:read`         | Seeing roles, what they grant, and who holds them          |
 | `idp:roles:write`        | Creating and changing roles, and giving them to people     |
@@ -128,9 +130,10 @@ the navigation only offers what you hold. Because Master Admin is a wildcard ove
 permission, whoever the deployment configures as an administrator holds all of these, which
 is the bootstrap and break-glass path: there is no second kind of check beside RBAC.
 
-Granting these is real delegation. Someone with `idp:roles:write` can give themselves any
-other role, and so effectively holds everything short of Master Admin. Treat it as you
-would root.
+Granting either write permission is real delegation. Someone with `idp:roles:write` can
+give themselves any other role. Someone with `idp:permissions:write` can make a permission
+they already hold imply another managed permission. Either can therefore acquire every
+stored capability short of Master Admin's wildcard. Treat both as you would root.
 
 ### Assigning a role
 

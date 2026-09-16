@@ -6,6 +6,7 @@ import {
   MANAGED_PERMISSIONS,
   MASTER_ADMIN_ROLE_KEY,
   STATIC_ROLES,
+  catalogForIdpPermissions,
   effectiveRolePermissions,
   expandPermissionKeys,
   expandRoleKeys,
@@ -316,5 +317,18 @@ describe("permissions the identity provider defines itself", () => {
         { catalog: managedCatalog, currentKey: "idp:roles:write" },
       ).key,
     ).toBeTruthy();
+  });
+});
+
+describe("administration catalog visibility", () => {
+  it("does not disclose roles to someone who may only read permissions", () => {
+    const visible = catalogForIdpPermissions(catalog, ["idp:permissions:read"]);
+    expect(visible.permissions).toBe(catalog.permissions);
+    expect(visible.roles).toEqual([]);
+  });
+
+  it("keeps the permission graph available when explaining roles", () => {
+    const visible = catalogForIdpPermissions(catalog, ["idp:roles:read"]);
+    expect(visible).toEqual(catalog);
   });
 });

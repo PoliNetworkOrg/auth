@@ -6,10 +6,8 @@ const baseURL = process.env.IDENTITY_TEST_URL;
 const databaseURL = process.env.IDENTITY_TEST_DATABASE_URL;
 const secret = process.env.IDENTITY_TEST_SECRET;
 
-describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration", () => {
-  const pool = new Pool({ connectionString: databaseURL });
-  const token = "identity-integration-session";
-  const headers = {
+function sessionHeaders(token: string) {
+  return {
     Cookie: `better-auth.session_token=${encodeURIComponent(
       `${token}.${createHmac("sha256", secret ?? "unused")
         .update(token)
@@ -18,12 +16,23 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     Origin: baseURL ?? "http://localhost",
     "Content-Type": "application/json",
   };
+}
+
+describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration", () => {
+  const pool = new Pool({ connectionString: databaseURL });
+  const token = "identity-integration-session";
+  const headers = sessionHeaders(token);
+  const permissionReaderHeaders = sessionHeaders("permission-reader-session");
   beforeAll(async () => {
     await pool.query(
-      `INSERT INTO "user" (id, name, email) VALUES ('integration-user', 'Test', 'test@identity.invalid')`,
+      `INSERT INTO "user" (id, name, email) VALUES
+        ('integration-user', 'Test', 'test@identity.invalid'),
+        ('permission-reader', 'Permission Reader', 'permission-reader@identity.invalid')`,
     );
     await pool.query(
-      `INSERT INTO session (id, token, user_id, expires_at, updated_at) VALUES ('integration-session', $1, 'integration-user', NOW() + interval '1 hour', NOW())`,
+      `INSERT INTO session (id, token, user_id, expires_at, updated_at) VALUES
+        ('integration-session', $1, 'integration-user', NOW() + interval '1 hour', NOW()),
+        ('permission-reader-session', 'permission-reader-session', 'permission-reader', NOW() + interval '1 hour', NOW())`,
       [token],
     );
     for (const [id, provider, subject] of [
@@ -37,11 +46,28 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       );
     }
     await pool.query(
-      `INSERT INTO identity_evidence (issuer, subject, provider_id, state, valid_until, telegram_id) VALUES ('pn-entra', 'pn-subject', 'pn-entra', 'socio', NOW() + interval '1 hour', NULL), ('telegram', 'tg-subject', 'telegram', NULL, NOW() + interval '1 hour', '123456')`,
+      `INSERT INTO identity_evidence (issuer, subject, provider_id, states, valid_until, telegram_id) VALUES
+        ('pn-entra', 'pn-subject', 'pn-entra', ARRAY['socio']::text[], NOW() + interval '1 hour', NULL),
+        ('telegram', 'tg-subject', 'telegram', ARRAY[]::text[], NOW() + interval '1 hour', '123456')`,
+    );
+    await pool.query(
+      `INSERT INTO role (id, key, name) VALUES
+        ('integration-permission-reader-role', 'integration-permission-reader', 'Permission Reader')`,
+    );
+    await pool.query(
+      `INSERT INTO role_permission (role_id, permission_id)
+       SELECT 'integration-permission-reader-role', id
+       FROM permission
+       WHERE key = 'idp:permissions:read'`,
+    );
+    await pool.query(
+      `INSERT INTO user_role (user_id, role_id)
+       VALUES ('permission-reader', 'integration-permission-reader-role')`,
     );
   });
   afterAll(async () => {
-    await pool.query(`DELETE FROM "user" WHERE id = 'integration-user'`);
+    await pool.query(`DELETE FROM "user" WHERE id IN ('integration-user', 'permission-reader')`);
+    await pool.query(`DELETE FROM role WHERE id = 'integration-permission-reader-role'`);
     await pool.query(
       `DELETE FROM identity_evidence WHERE issuer IN ('pn-entra', 'telegram', 'https://mail.polimi.it')`,
     );
@@ -111,9 +137,28 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.json()).toEqual({
       states: ["socio"],
+      roles: ["socio"],
       permissions: ["membership:read"],
       telegramId: "123456",
     });
+  });
+  it("does not disclose the role graph to a permissions-only reader", async () => {
+    const response = await fetch(`${baseURL}/api/rbac/catalog`, {
+      headers: permissionReaderHeaders,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      roles: [],
+      permissions: expect.arrayContaining([
+        expect.objectContaining({ key: "idp:permissions:read" }),
+      ]),
+    });
+
+    const members = await fetch(
+      `${baseURL}/api/rbac/role-members?role_id=integration-permission-reader-role`,
+      { headers: permissionReaderHeaders },
+    );
+    expect(members.status).toBe(403);
   });
   it("denies client registration to ordinary users", async () => {
     const response = await fetch(`${baseURL}/api/auth/oauth2/create-client`, {
@@ -148,6 +193,7 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     expect(response.status).toBe(200);
     expect(await (await fetch(`${baseURL}/api/identity`, { headers })).json()).toEqual({
       states: ["socio", "student"],
+      roles: ["socio", "student"],
       permissions: ["membership:read", "student:verified"],
       telegramId: "123456",
     });
@@ -162,6 +208,7 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     expect((await unlink("integration-pn")).status).toBe(200);
     expect(await (await fetch(`${baseURL}/api/identity`, { headers })).json()).toEqual({
       states: ["student"],
+      roles: ["student"],
       permissions: ["student:verified"],
       telegramId: "123456",
     });

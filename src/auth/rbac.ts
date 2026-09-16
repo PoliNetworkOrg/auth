@@ -18,7 +18,7 @@ export const STATIC_ROLES = [
     name: "Master Admin",
     description: "Complete control of this identity provider.",
     evidence:
-      "Configured outside the database, through IDP_ADMIN_USER_IDS or the PoliNetwork Entra administrators group, so the service can never be locked out of its own administration.",
+      "Configured outside the database through IDP_ADMIN_USER_IDS or the PoliNetwork Entra administrators group. When no group is configured, every linked PoliNetwork Entra account holds it, preserving the previous administration policy.",
   },
   {
     key: "socio",
@@ -174,6 +174,18 @@ export type RoleSummary = {
 export type RbacCatalog = { roles: RoleSummary[]; permissions: PermissionSummary[] };
 
 export const emptyCatalog: RbacCatalog = { roles: [], permissions: [] };
+
+/**
+ * Removes role metadata when the caller may inspect permissions but not roles. Role readers
+ * still need the permission graph to understand what each role grants, even when an
+ * administrator removes the default `idp:roles:read -> idp:permissions:read` implication.
+ */
+export function catalogForIdpPermissions(
+  catalog: RbacCatalog,
+  permissions: readonly string[],
+): RbacCatalog {
+  return permissions.includes("idp:roles:read") ? catalog : { ...catalog, roles: [] };
+}
 
 type CatalogIndex = {
   roles: Map<string, RoleSummary>;

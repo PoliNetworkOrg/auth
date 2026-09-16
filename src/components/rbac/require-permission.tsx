@@ -12,9 +12,13 @@ import { Button } from "@/components/ui/button";
 export function RequirePermission({
   permission,
   children,
+  backTo = "/access",
+  backLabel = "Back to access administration",
 }: {
   permission: ManagedPermissionKey;
   children: ReactNode;
+  backTo?: "/access" | "/applications";
+  backLabel?: string;
 }) {
   const { can } = useIdpAccessContext();
   if (can(permission)) return children;
@@ -30,9 +34,9 @@ export function RequirePermission({
       </p>
       <div className="mt-6">
         <Button variant="ghost" asChild>
-          <Link to="/access">
+          <Link to={backTo}>
             <ArrowLeft aria-hidden="true" />
-            Back to access administration
+            {backLabel}
           </Link>
         </Button>
       </div>

@@ -4,7 +4,7 @@ import type { OidcAdminPolicy } from "@/auth/oidc-admin";
 import { authClient } from "@/auth/client";
 import { AppHeader } from "@/components/app-header";
 import { LoginLayout, LoginPage } from "@/components/login-page";
-import { useIdpAccess } from "@/components/idp-access";
+import { IdpAccessProvider, useIdpAccess } from "@/components/idp-access";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/applications")({
@@ -68,7 +68,9 @@ function ApplicationsLayout() {
       <AppHeader active="applications" access={access} />
       <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
         {access.status === "ready" && access.can("idp:applications:read") ? (
-          <Outlet />
+          <IdpAccessProvider access={access}>
+            <Outlet />
+          </IdpAccessProvider>
         ) : access.status === "ready" ? (
           <NoAccess policy={access.policy} />
         ) : access.status === "error" ? (

@@ -74,13 +74,11 @@ export async function checkPnGroupStates(objectId: string): Promise<string[] | n
     { state: "socio", groupId: env.PN_ENTRA_MEMBER_GROUP_ID },
     { state: "direttivo", groupId: env.PN_ENTRA_DIRETTIVO_GROUP_ID },
   ].filter((group): group is { state: string; groupId: string } => Boolean(group.groupId));
-  const states: string[] = [];
-  for (const group of groups) {
-    const member = await checkEntraGroupMember(group.groupId, objectId);
-    if (member === null) return null;
-    if (member) states.push(group.state);
-  }
-  return states;
+  const memberships = await Promise.all(
+    groups.map((group) => checkEntraGroupMember(group.groupId, objectId)),
+  );
+  if (memberships.some((member) => member === null)) return null;
+  return groups.flatMap((group, index) => (memberships[index] ? [group.state] : []));
 }
 
 /**

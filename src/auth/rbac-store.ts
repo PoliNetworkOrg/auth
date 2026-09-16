@@ -389,8 +389,7 @@ export async function listRoleMembers(roleId: string): Promise<RoleMember[]> {
     .from(userRole)
     .innerJoin(user, eq(user.id, userRole.userId))
     .where(eq(userRole.roleId, roleId))
-    .orderBy(desc(userRole.assignedAt))
-    .limit(500);
+    .orderBy(desc(userRole.assignedAt));
   return rows.map((row) => ({ ...row, assignedAt: row.assignedAt?.toISOString() ?? null }));
 }
 

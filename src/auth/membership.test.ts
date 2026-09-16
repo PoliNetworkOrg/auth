@@ -77,6 +77,20 @@ describe("PN membership verification", () => {
     expect(await checkPnGroupStates("member")).toEqual(["socio"]);
   });
 
+  it("starts both configured group checks together", async () => {
+    const resolve: ((page: { value: { id: string }[] }) => void)[] = [];
+    mocks.get.mockImplementation(
+      () =>
+        new Promise<{ value: { id: string }[] }>((done) => {
+          resolve.push(done);
+        }),
+    );
+    const result = checkPnGroupStates("member");
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+    for (const done of resolve) done({ value: [{ id: "member" }] });
+    await expect(result).resolves.toEqual(["socio", "direttivo"]);
+  });
+
   it("does not cache failed checks for a full membership interval", () => {
     const now = new Date("2026-09-07T00:00:00Z");
     expect(membershipEvidence(null, now)).toEqual({ states: [], validUntil: now });
