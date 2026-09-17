@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
-const mocks = vi.hoisted(() => ({ graph: vi.fn().mockResolvedValue(false) }));
+const mocks = vi.hoisted(() => ({ graph: vi.fn().mockResolvedValue(false), sendEmail: vi.fn() }));
 vi.mock("../env", () => {
   const url = new URL(
     process.env.RBAC_TEST_DATABASE_URL ??
@@ -17,6 +17,7 @@ vi.mock("../env", () => {
       DB_NAME: url.pathname.slice(1),
       BETTER_AUTH_URL: "http://localhost:35439",
       BETTER_AUTH_SECRET: "test-only-secret-with-at-least-32-characters",
+      STUDENT_VERIFICATION_TTL_DAYS: 365,
       IDP_ADMIN_USER_IDS: ["security-root"],
       PN_ENTRA_TENANT_ID: "11111111-1111-4111-8111-111111111111",
       PN_ENTRA_MEMBER_GROUP_ID: "soci",
@@ -38,7 +39,14 @@ vi.mock("./index", () => ({
   },
 }));
 
+vi.mock("./email", () => ({
+  studentVerificationEmailConfigured: true,
+  sendStudentVerificationEmail: mocks.sendEmail,
+}));
+
 import { db } from "../db/index";
+import { confirmStudentVerification, requestStudentVerification } from "./student-verification";
+import { disconnectAccount } from "./accounts";
 import { getIdentity } from "./identity";
 import {
   assignRole,
@@ -242,6 +250,83 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
         managed.id,
       );
     }
+  });
+
+  async function challenge(actor) {
+    const email = `${unique("student")}@mail.polimi.it`;
+    const code = "123456";
+    const hash = createHmac("sha256", "test-only-secret-with-at-least-32-characters")
+      .update(`${actor}:${email}:${code}`)
+      .digest("hex");
+    await pool.query(
+      `INSERT INTO student_verification_challenge (user_id, email, code_hash, expires_at, last_sent_at) VALUES ($1, $2, $3, now() + interval '10 minutes', now())`,
+      [actor, email, hash],
+    );
+    return { email, code };
+  }
+
+  it("denies a correct student code after five concurrent wrong attempts", async () => {
+    const actor = await delegate([]);
+    const input = await challenge(actor.id);
+    const guesses = await Promise.allSettled(
+      Array.from({ length: 5 }, () =>
+        confirmStudentVerification(actor.id, { ...input, code: "000000" }),
+      ),
+    );
+    expect(guesses.every((entry) => entry.status === "rejected")).toBe(true);
+    await expect(confirmStudentVerification(actor.id, input)).rejects.toMatchObject({
+      status: 400,
+    });
+    expect((await getIdentity(actor.id)).roles).not.toContain("student");
+  });
+
+  it("denies concurrent code replay and prevents cross-user code consumption", async () => {
+    const actor = await delegate([]);
+    const input = await challenge(actor.id);
+    await expect(confirmStudentVerification(ordinary, input)).rejects.toMatchObject({
+      status: 400,
+    });
+    const results = await Promise.allSettled([
+      confirmStudentVerification(actor.id, input),
+      confirmStudentVerification(actor.id, input),
+    ]);
+    expect(results.filter((entry) => entry.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((entry) => entry.status === "rejected")).toHaveLength(1);
+    expect((await getIdentity(ordinary)).roles).not.toContain("student");
+  });
+
+  it("denies concurrent resend attempts inside the cooldown", async () => {
+    const actor = await delegate([]);
+    const email = `${unique("resend")}@mail.polimi.it`;
+    const results = await Promise.allSettled(
+      Array.from({ length: 3 }, () => requestStudentVerification(actor.id, email)),
+    );
+    expect(results.filter((entry) => entry.status === "fulfilled")).toHaveLength(1);
+    expect(
+      results
+        .filter((entry) => entry.status === "rejected")
+        .every((entry) => entry.reason.status === 429),
+    ).toBe(true);
+  });
+
+  it("denies cross-user unlink and concurrent removal of the last login account", async () => {
+    const actor = await delegate([]);
+    const first = unique("google");
+    const second = unique("entra");
+    await pool.query(
+      `INSERT INTO account (id, account_id, provider_id, issuer, user_id, updated_at) VALUES ($1, $1, 'google', 'google', $3, now()), ($2, $2, 'pn-entra', 'pn-entra', $3, now())`,
+      [first, second, actor.id],
+    );
+    await expect(disconnectAccount(ordinary, first)).rejects.toMatchObject({ status: 404 });
+    const results = await Promise.allSettled([
+      disconnectAccount(actor.id, first),
+      disconnectAccount(actor.id, second),
+    ]);
+    expect(results.filter((entry) => entry.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((entry) => entry.status === "rejected")).toHaveLength(1);
+    expect(
+      (await pool.query(`SELECT id FROM account WHERE user_id = $1`, [actor.id])).rows,
+    ).toHaveLength(1);
   });
 
   it("denies ordinary users at HTTP and direct repository mutation boundaries", async () => {

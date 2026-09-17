@@ -3,8 +3,9 @@ import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject } from "./identity-subject";
 import type { IdentityClaims } from "./policy";
 import { randomUUID } from "node:crypto";
-import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or } from "drizzle-orm";
 import { db } from "../db/index";
+import { authorizationMutationLock } from "../db/security-lock";
 import {
   rbacAuditEvent,
   permission,
@@ -137,9 +138,6 @@ export async function loadCatalog(): Promise<RbacCatalog> {
   });
 }
 
-// Follows the convention the migration bootstrap uses for its own lock.
-const hierarchyLock = sql`select pg_advisory_xact_lock(hashtext('polinetwork-auth'), hashtext('rbac-hierarchy'))`;
-
 /**
  * Runs a change to the role or permission graph against the graph as it actually is.
  *
@@ -156,7 +154,7 @@ export async function withAuthorizedRbacWrite<T>(
 ): Promise<T> {
   return db.transaction(
     async (transaction) => {
-      await transaction.execute(hierarchyLock);
+      await transaction.execute(authorizationMutationLock);
       const subject = await readIdentitySubject(actorId, transaction);
       const catalog = await readCatalog(transaction);
       const access = resolveAccess(catalog, [
