@@ -11,6 +11,7 @@ import { db } from "../db";
 import * as schema from "../db/schema";
 import { env } from "../env";
 import { getOidcClaims } from "./identity";
+import { logAuthorizationDenial } from "./denial-log";
 import { hasIdpPermission } from "./idp-access";
 import { OIDC_CLIENT_REFERENCE } from "./oidc-clients";
 import { isLinkOnlyProvider } from "./policy";
@@ -104,8 +105,17 @@ export const auth = betterAuth({
       allowPublicClientPrelogin: true,
       // Administrators share one client pool instead of owning clients individually.
       clientReference: () => OIDC_CLIENT_REFERENCE,
-      clientPrivileges: ({ user }) =>
-        user ? hasIdpPermission(user.id, "idp:applications:write") : false,
+      clientPrivileges: async ({ user, action }) => {
+        const allowed = user ? await hasIdpPermission(user.id, "idp:applications:write") : false;
+        if (!allowed)
+          logAuthorizationDenial(user?.id ?? null, `oauth-client:${action}`, [
+            "idp:applications:write",
+          ]);
+        return allowed;
+      },
+      // Resource-policy administration is not a supported product surface. The plugin's
+      // server-only SDK defaults to permitting any session unless this hook is set.
+      resourcePrivileges: () => false,
       accessTokenExpiresIn: 300,
       idTokenExpiresIn: 300,
       customIdTokenClaims: ({ user, scopes }) => getOidcClaims(user.id, scopes),

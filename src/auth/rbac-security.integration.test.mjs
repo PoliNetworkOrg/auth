@@ -1,5 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { Pool } from "pg";
+import { spawnSync } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({ graph: vi.fn().mockResolvedValue(false), sendEmail: vi.fn() }));
@@ -415,6 +416,33 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     expect((await getIdentity(ordinary)).permissions).not.toContain("idp:applications:read");
     await loadCatalog(root);
     expect((await getIdentity(ordinary)).permissions).not.toContain("idp:applications:read");
+    const connection = new URL(process.env.RBAC_TEST_DATABASE_URL);
+    const fresh = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "-e",
+        'import { getIdentity } from "./src/auth/identity.ts"; console.log(JSON.stringify((await getIdentity("security-ordinary")).permissions)); process.exit(0);',
+      ],
+      {
+        env: {
+          PATH: process.env.PATH,
+          DB_HOST: connection.hostname,
+          DB_PORT: connection.port,
+          DB_USER: connection.username,
+          DB_PASS: connection.password,
+          DB_NAME: connection.pathname.slice(1),
+          BETTER_AUTH_SECRET: "test-only-secret-with-at-least-32-characters",
+          IDP_ADMIN_USER_IDS: root,
+        },
+        encoding: "utf8",
+        timeout: 10000,
+      },
+    );
+    expect(fresh.status, fresh.stderr).toBe(0);
+    expect(JSON.parse(fresh.stdout)).not.toContain("idp:applications:read");
     await unassignRole(root, role.id, ordinary);
     await savePermission(root, draftPermission(managed.key, ["idp:applications:read"]), managed.id);
   });
