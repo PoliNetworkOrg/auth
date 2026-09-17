@@ -1,6 +1,7 @@
 import {
   boolean,
   index,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -125,3 +126,14 @@ export const userRole = pgTable(
     index("userRole_role_idx").on(table.roleId),
   ],
 );
+
+/** Append-only security history; actor identifiers survive user deletion. */
+export const rbacAuditEvent = pgTable("rbac_audit_event", {
+  id: text().primaryKey(),
+  actorId: text("actor_id").notNull(),
+  operation: text().notNull(),
+  targetId: text("target_id").notNull(),
+  before: jsonb().notNull(),
+  after: jsonb().notNull(),
+  createdAt: now(),
+});

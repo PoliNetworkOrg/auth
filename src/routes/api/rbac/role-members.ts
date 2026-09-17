@@ -31,8 +31,8 @@ export const Route = createFileRoute("/api/rbac/role-members")({
         if (!parsed.success) return apiError(400, "Invalid request.");
         const { action, roleId, userId } = parsed.data;
         try {
-          if (action === "assign") await assignRole(roleId, userId, guard.session.userId);
-          else await unassignRole(roleId, userId);
+          if (action === "assign") await assignRole(guard.session.userId, roleId, userId);
+          else await unassignRole(guard.session.userId, roleId, userId);
           return Response.json(await listRoleMembers(roleId), { headers: noStore });
         } catch (cause) {
           if (cause instanceof RbacError) return apiError(cause.status, cause.message);

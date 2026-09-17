@@ -1,3 +1,4 @@
+import { logAuthorizationDenial } from "./denial-log";
 import { auth } from "./index";
 import { idpPermissions } from "./idp-access";
 import type { ManagedPermissionKey } from "./rbac";
@@ -16,13 +17,22 @@ async function requirePermission(
   required: readonly ManagedPermissionKey[],
   options: { write?: boolean },
 ): Promise<Guard> {
+  const deny = (status: number, message: string, actorId: string | null = null): Guard => {
+    logAuthorizationDenial(actorId, new URL(request.url).pathname, required);
+    return { response: apiError(status, message) };
+  };
   if (options.write && request.headers.get("origin") !== new URL(env.BETTER_AUTH_URL).origin)
-    return { response: apiError(403, "Invalid origin.") };
+    return deny(403, "Invalid origin.");
   const session = await auth.api.getSession({ headers: request.headers });
-  if (!session) return { response: apiError(401, "Unauthorized.") };
-  const permissions = await idpPermissions(session.user.id);
+  if (!session?.user?.id) return deny(401, "Unauthorized.");
+  let permissions: string[];
+  try {
+    permissions = await idpPermissions(session.user.id);
+  } catch {
+    return deny(503, "Authorization unavailable.", session.user.id);
+  }
   if (!required.some((permission) => permissions.includes(permission)))
-    return { response: apiError(403, "You do not have permission to do that.") };
+    return deny(403, "You do not have permission to do that.", session.user.id);
   return { session: { userId: session.user.id, permissions } };
 }
 

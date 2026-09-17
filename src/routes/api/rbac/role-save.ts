@@ -28,10 +28,11 @@ export const Route = createFileRoute("/api/rbac/role-save")({
         const input = parsed.data;
         try {
           if (input.action === "delete") {
-            await deleteRole(input.roleId);
+            await deleteRole(guard.session.userId, input.roleId);
             return Response.json({ deleted: true }, { headers: noStore });
           }
           const saved = await saveRole(
+            guard.session.userId,
             input.draft,
             input.action === "update" ? input.roleId : undefined,
           );

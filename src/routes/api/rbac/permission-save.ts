@@ -27,10 +27,11 @@ export const Route = createFileRoute("/api/rbac/permission-save")({
         const input = parsed.data;
         try {
           if (input.action === "delete") {
-            await deletePermission(input.permissionId);
+            await deletePermission(guard.session.userId, input.permissionId);
             return Response.json({ deleted: true }, { headers: noStore });
           }
           const saved = await savePermission(
+            guard.session.userId,
             input.draft,
             input.action === "update" ? input.permissionId : undefined,
           );
