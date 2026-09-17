@@ -13,6 +13,8 @@ import {
   validatePermissionDraft,
 } from "@/auth/rbac";
 import { Field, KeyChip } from "@/components/rbac/fields";
+import { useIdpAccessContext } from "@/components/idp-access";
+import { canGrantPermission } from "@/components/rbac/delegation";
 import { PickList } from "@/components/rbac/pick-list";
 import { useDraftErrors } from "@/components/rbac/use-draft-errors";
 import { Button } from "@/components/ui/button";
@@ -47,6 +49,7 @@ export function PermissionForm({
   onSubmit: (draft: PermissionDraft) => void;
   onCancel?: () => void;
 }) {
+  const access = useIdpAccessContext();
   const [draft, setDraft] = useState(initial);
   const [touched, setTouched] = useState(false);
   const ids = { key: useId(), name: useId(), description: useId() };
@@ -60,6 +63,10 @@ export function PermissionForm({
 
   const options = catalog.permissions
     .filter((entry) => entry.key !== (currentKey ?? draft.key.trim().toLowerCase()))
+    .filter(
+      (entry) =>
+        canGrantPermission(access, catalog, entry.key) || draft.implies.includes(entry.key),
+    )
     .map((entry) => {
       const cycles = currentKey
         ? permissionImplicationWouldCycle(catalog, currentKey, entry.key)
@@ -68,8 +75,10 @@ export function PermissionForm({
         key: entry.key,
         label: entry.name,
         hint: entry.description ?? undefined,
-        disabled: cycles,
-        disabledReason: `${entry.name} already grants this permission.`,
+        disabled: cycles || !canGrantPermission(access, catalog, entry.key),
+        disabledReason: cycles
+          ? `${entry.name} already grants this permission.`
+          : "You do not hold this permission or everything it grants.",
       };
     });
 
@@ -89,6 +98,13 @@ export function PermissionForm({
         onSubmit(normalizePermissionDraft(draft));
       }}
     >
+      {!access.isMasterAdmin && !readOnly && (
+        <p className="text-sm text-muted-foreground">
+          You can include only permissions you already hold. Master Admin must grant a newly created
+          permission before you can use or edit it. Changes affecting built-in access require Master
+          Admin.
+        </p>
+      )}
       <fieldset disabled={readOnly} className="space-y-8 border-0 p-0">
         <div className="grid gap-6 sm:grid-cols-2">
           <Field
@@ -112,9 +128,11 @@ export function PermissionForm({
             hint={
               managed
                 ? "This permission is defined by the identity provider, so its key is fixed."
-                : mode === "create"
-                  ? "How applications ask for it, for example membership:read."
-                  : "Changing the key changes what applications must check for."
+                : mode === "edit" && !access.isMasterAdmin
+                  ? "Ask Master Admin to change this permission's key."
+                  : mode === "create"
+                    ? "How applications ask for it, for example membership:read."
+                    : "Changing the key changes what applications must check for."
             }
             error={errors.key}
           >
@@ -122,7 +140,7 @@ export function PermissionForm({
               id={ids.key}
               value={draft.key}
               maxLength={64}
-              disabled={managed}
+              disabled={managed || (mode === "edit" && !access.isMasterAdmin)}
               aria-invalid={!!errors.key}
               className="font-mono"
               placeholder="membership:read"

@@ -1,7 +1,6 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { ArrowLeft, Building2, ShieldOff } from "lucide-react";
 import { cn } from "cn";
-import type { OidcAdminPolicy } from "@/auth/oidc-admin";
 import { authClient } from "@/auth/client";
 import { AppHeader } from "@/components/app-header";
 import { LoginLayout, LoginPage } from "@/components/login-page";
@@ -14,7 +13,7 @@ export const Route = createFileRoute("/access")({
   component: AccessLayout,
 });
 
-function NoAccess({ policy }: { policy: OidcAdminPolicy | null }) {
+function NoAccess() {
   return (
     <div className="mx-auto max-w-lg py-10 text-center">
       <div className="mx-auto flex size-14 items-center justify-center rounded-2xl border bg-card text-muted-foreground">
@@ -24,9 +23,8 @@ function NoAccess({ policy }: { policy: OidcAdminPolicy | null }) {
         Roles are managed by PoliNetwork staff
       </h1>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">
-        {policy === "entra-group"
-          ? "Editing roles and permissions is limited to members of the PoliNetwork Entra administrators group. Ask an administrator to add your PoliNetwork Microsoft account."
-          : "Access requires explicitly delegated permissions. Ask an administrator to grant the appropriate role."}
+        Access requires role or permission administration access. Ask an administrator to grant the
+        appropriate role.
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-3">
         <Button asChild>
@@ -102,7 +100,7 @@ function AccessLayout() {
             </IdpAccessProvider>
           </div>
         ) : access.status === "ready" ? (
-          <NoAccess policy={access.policy} />
+          <NoAccess />
         ) : access.status === "error" ? (
           <div className="mx-auto max-w-lg space-y-4 py-10 text-center">
             <p role="alert">We couldn't check whether you can manage roles.</p>

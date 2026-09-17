@@ -4,7 +4,7 @@ import type {
   RbacCatalog,
   RbacDraftErrors,
   RoleDraft,
-  RoleMember,
+  RoleMemberPage,
   RoleSummary,
   UserSearchResult,
 } from "@/auth/rbac";
@@ -77,14 +77,16 @@ export function deleteRole(roleId: string) {
   );
 }
 
-export function fetchRoleMembers(roleId: string, signal?: AbortSignal) {
-  return fetch(`/api/rbac/role-members?role_id=${encodeURIComponent(roleId)}`, { signal }).then(
-    (response) => readJson<RoleMember[]>(response, "Unable to load the people in this role."),
+export function fetchRoleMembers(roleId: string, signal?: AbortSignal, after?: string) {
+  const params = new URLSearchParams({ role_id: roleId });
+  if (after) params.set("after", after);
+  return fetch(`/api/rbac/role-members?${params}`, { signal }).then((response) =>
+    readJson<RoleMemberPage>(response, "Unable to load the people in this role."),
   );
 }
 
 export function changeRoleMember(action: "assign" | "unassign", roleId: string, userId: string) {
-  return post<RoleMember[]>(
+  return post<{ changed: true }>(
     "/api/rbac/role-members",
     { action, roleId, userId },
     "Unable to change who holds this role.",

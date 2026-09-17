@@ -12,7 +12,11 @@ export const MEMBERSHIP_CACHE_MS = 60_000;
 const member = createGroupMembershipCache(checkEntraGroupMember, MEMBERSHIP_CACHE_MS);
 
 /** The subject is always a persisted user; evidence must match the configured issuer. */
-export async function readIdentitySubject(userId: string, reader: IdentityReader) {
+export async function readIdentitySubject(
+  userId: string,
+  reader: IdentityReader,
+  refreshMembership = false,
+) {
   const [subject] = await reader.select({ id: user.id }).from(user).where(eq(user.id, userId));
   if (!subject) throw new Error("Unknown identity subject.");
   const proofs = await reader
@@ -46,21 +50,32 @@ export async function readIdentitySubject(userId: string, reader: IdentityReader
   const verifiedStates = new Set(states);
   // Persisted group evidence is display/history data, never an authorization cache.
   // Recheck all group-backed rights with the same short bound, including downstream rights.
-  for (const proof of proofs) {
+  const check = refreshMembership ? member : member.cached;
+  const checks = proofs.flatMap((proof) => {
     if (proof.providerId !== "pn-entra" || proof.issuer !== entraIssuer || !proof.externalId)
-      continue;
-    const groups = [
+      return [];
+    const objectId = proof.externalId;
+    return [
       ["socio", env.PN_ENTRA_MEMBER_GROUP_ID],
       ["direttivo", env.PN_ENTRA_DIRETTIVO_GROUP_ID],
-    ] as const;
-    for (const [state, groupId] of groups)
-      if (groupId && (await member(groupId, proof.externalId))) verifiedStates.add(state);
-  }
+    ].map(async ([state, groupId]) => {
+      if (groupId && (await check(groupId, objectId))) verifiedStates.add(state!);
+    });
+  });
+  const [master] = await Promise.all([
+    canAdministerIdp(userId, reader, refreshMembership),
+    ...checks,
+  ]);
   const currentStates = [...verifiedStates].sort();
-  const master = await canAdministerIdp(userId, reader);
   return {
     states: currentStates,
     telegramId,
     roleKeys: [...staticRolesForStates(currentStates), ...(master ? [MASTER_ADMIN_ROLE_KEY] : [])],
   };
+}
+
+/** Warm only external membership facts, before taking a transaction or mutation lock.
+ * The transaction then rereads account ownership/evidence and checks cache expiry again. */
+export async function refreshIdentityMembership(userId: string) {
+  await readIdentitySubject(userId, db, true);
 }

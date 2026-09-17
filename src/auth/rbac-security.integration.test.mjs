@@ -359,11 +359,108 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
         userId: actor.id,
       });
       expect(response.status).toBe(200);
-      expect(await response.json()).toEqual([]);
+      expect(await response.json()).toEqual({ changed: true });
       await expect(listRoleMembers(actor.id, role.id)).rejects.toMatchObject({ status: 403 });
     } finally {
       await savePermission(root, draftPermission(managed.key, managed.implies), managed.id);
     }
+  });
+
+  it("acknowledges self-revocation after the actor loses read access", async () => {
+    const actor = await delegate(["idp:roles:write"]);
+    const response = await post(members, actor.id, {
+      action: "unassign",
+      roleId: actor.role.id,
+      userId: actor.id,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ changed: true });
+    expect((await getIdentity(actor.id)).permissions).not.toContain("idp:roles:read");
+    await expect(listRoleMembers(actor.id, actor.role.id)).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("pages every member beyond the former 500-person cutoff without duplicates", async () => {
+    const role = await saveRole(root, draftRole(unique("paged")));
+    const prefix = unique("paged-person");
+    await pool.query(
+      `INSERT INTO "user" (id, name, email)
+       SELECT $1 || '-' || n, $1, $1 || '-' || n || '@identity.invalid'
+       FROM generate_series(1, 505) AS n`,
+      [prefix],
+    );
+    await pool.query(
+      `INSERT INTO user_role (user_id, role_id)
+       SELECT id, $1 FROM "user" WHERE id LIKE $2`,
+      [role.id, `${prefix}-%`],
+    );
+    const ids = [];
+    let cursor;
+    do {
+      const page = await listRoleMembers(root, role.id, cursor);
+      expect(page.members.length).toBeLessThanOrEqual(100);
+      ids.push(...page.members.map((member) => member.userId));
+      cursor = page.nextCursor;
+    } while (cursor);
+    expect(ids).toHaveLength(505);
+    expect(new Set(ids).size).toBe(505);
+    const response = await members.options.server.handlers.GET({
+      request: new Request(`http://localhost:35439/api/rbac/role-members?role_id=${role.id}`, {
+        headers: { "x-test-user": root },
+      }),
+    });
+    const page = await response.json();
+    expect(response.status).toBe(200);
+    expect(page.members).toHaveLength(100);
+    expect(page.nextCursor).toBe(page.members[99].userId);
+  });
+
+  it("does not lock unrelated writes during Graph I/O or trust an account unlinked meanwhile", async () => {
+    const actor = await delegate([]);
+    const subject = unique("slow-graph");
+    const issuer = "https://login.microsoftonline.com/11111111-1111-4111-8111-111111111111/v2.0";
+    await pool.query(
+      `INSERT INTO account (id, account_id, provider_id, issuer, user_id, updated_at)
+       VALUES ($1, $1, 'pn-entra', $2, $3, now()), ($1 || '-google', $1, 'google', 'google', $3, now())`,
+      [subject, issuer, actor.id],
+    );
+    await pool.query(
+      `INSERT INTO identity_evidence (issuer, subject, provider_id, external_id, states, valid_until)
+       VALUES ($1, $2, 'pn-entra', $2, ARRAY['socio'], now() + interval '24 hours')`,
+      [issuer, subject],
+    );
+    const graph = Promise.withResolvers();
+    const started = Promise.withResolvers();
+    mocks.graph.mockImplementation(async (_group, objectId) => {
+      if (objectId !== subject) return false;
+      started.resolve();
+      return graph.promise;
+    });
+    const pending = saveRole(actor.id, draftRole(unique("stale-actor"))).catch((error) => error);
+    try {
+      await started.promise;
+      const independent = (async () => {
+        await saveRole(root, draftRole(unique("unblocked")));
+        await disconnectAccount(actor.id, subject);
+        return "completed";
+      })();
+      let timer;
+      try {
+        expect(
+          await Promise.race([
+            independent,
+            new Promise((resolve) => {
+              timer = setTimeout(() => resolve("blocked"), 2000);
+            }),
+          ]),
+        ).toBe("completed");
+      } finally {
+        clearTimeout(timer);
+      }
+    } finally {
+      graph.resolve(true);
+      mocks.graph.mockResolvedValue(false);
+    }
+    expect(await pending).toMatchObject({ status: 403 });
   });
 
   it("denies ordinary users at HTTP and direct repository mutation boundaries", async () => {

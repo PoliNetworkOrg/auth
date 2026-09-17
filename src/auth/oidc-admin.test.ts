@@ -105,7 +105,7 @@ describe("bounded administrative revocation", () => {
     );
     expect(await member("group", "user")).toBe(false);
   });
-  it("does not let a late positive overwrite a newer denial", async () => {
+  it("shares a concurrent refresh and expires it at the original deadline", async () => {
     let time = 0;
     let finish!: (value: boolean) => void;
     const check = vi
@@ -120,9 +120,16 @@ describe("bounded administrative revocation", () => {
     const member = createGroupMembershipCache(check, 60_000, () => time);
     const old = member("group", "user");
     time = 10;
-    expect(await member("group", "user")).toBe(false);
+    const concurrent = member("group", "user");
+    expect(member.cached("group", "user")).toBe(false);
+    expect(check).toHaveBeenCalledTimes(1);
     finish(true);
-    expect(await old).toBe(false);
+    expect(await old).toBe(true);
+    expect(await concurrent).toBe(true);
+    expect(member.cached("group", "user")).toBe(true);
+    time = 60_000;
+    expect(member.cached("group", "user")).toBe(false);
     expect(await member("group", "user")).toBe(false);
+    expect(check).toHaveBeenCalledTimes(2);
   });
 });

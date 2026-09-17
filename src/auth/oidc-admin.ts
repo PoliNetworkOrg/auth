@@ -44,23 +44,35 @@ type GroupCheck = (groupId: string, objectId: string) => Promise<boolean | null>
  * through the group. Failed checks are never cached and grant nothing.
  */
 export function createGroupMembershipCache(check: GroupCheck, ttlMs: number, now = Date.now) {
-  let version = 0;
-  const cache = new Map<string, { member: boolean; expiresAt: number; version: number }>();
-  return async (groupId: string, objectId: string): Promise<boolean> => {
+  type Entry = { member: boolean; expiresAt: number; pending?: Promise<boolean> };
+  const cache = new Map<string, Entry>();
+  const cachedMember = (groupId: string, objectId: string) => {
+    const entry = cache.get(`${groupId} ${objectId}`);
+    return Boolean(entry && entry.expiresAt > now() && entry.member);
+  };
+  const isMember = async (groupId: string, objectId: string): Promise<boolean> => {
     const key = `${groupId} ${objectId}`;
     const cached = cache.get(key);
     if (cached && cached.expiresAt > now()) return cached.member;
+    if (cached?.pending) return cached.pending;
     const startedAt = now();
-    const requestVersion = ++version;
     if (cache.size >= 1000) cache.delete(cache.keys().next().value!);
-    cache.set(key, { member: false, expiresAt: 0, version: requestVersion });
-    const member = await check(groupId, objectId).catch(() => null);
-    // A slow positive must never replace or outlive a more recent verification.
-    if (member === null || now() >= startedAt + ttlMs || cache.get(key)?.version !== requestVersion)
-      return false;
-    cache.set(key, { member, expiresAt: startedAt + ttlMs, version: requestVersion });
-    return member;
+    const entry: Entry = { member: false, expiresAt: 0 };
+    cache.set(key, entry);
+    entry.pending = (async () => {
+      const member = await check(groupId, objectId).catch(() => null);
+      // Measure freshness from request start, never from a delayed response.
+      if (member === null || now() >= startedAt + ttlMs || cache.get(key) !== entry) return false;
+      entry.member = member;
+      entry.expiresAt = startedAt + ttlMs;
+      return member;
+    })().finally(() => {
+      entry.pending = undefined;
+    });
+    return entry.pending;
   };
+  // Transactional authorization must never initiate or wait for remote I/O.
+  return Object.assign(isMember, { cached: cachedMember });
 }
 
 const ADMIN_GROUP_CACHE_MS = 60_000;
@@ -78,6 +90,7 @@ async function pnEntraObjectIds(userId: string, reader: IdentityReader): Promise
       and(
         eq(account.issuer, identityEvidence.issuer),
         eq(account.accountId, identityEvidence.subject),
+        eq(account.providerId, identityEvidence.providerId),
       ),
     )
     .where(
@@ -94,18 +107,17 @@ async function pnEntraObjectIds(userId: string, reader: IdentityReader): Promise
 export async function canAdministerIdp(
   userId: string,
   reader: IdentityReader = db,
+  refreshMembership = false,
 ): Promise<boolean> {
   if (env.IDP_ADMIN_USER_IDS.includes(userId)) return true;
   const objectIds = await pnEntraObjectIds(userId, reader);
   const groupId = env.PN_ENTRA_OIDC_ADMIN_GROUP_ID;
   let groupMember = false;
   if (groupId) {
-    for (const objectId of objectIds) {
-      if (await adminGroupMember(groupId, objectId)) {
-        groupMember = true;
-        break;
-      }
-    }
+    const check = refreshMembership ? adminGroupMember : adminGroupMember.cached;
+    groupMember = (
+      await Promise.all(objectIds.map(async (objectId) => check(groupId, objectId)))
+    ).some(Boolean);
   }
   return decideOidcAdmin({
     allowlisted: false,

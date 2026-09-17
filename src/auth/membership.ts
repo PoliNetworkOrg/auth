@@ -20,6 +20,7 @@ export async function readGroupMembership(
 }
 
 let graphClient: Client | undefined;
+export const GRAPH_CHECK_TIMEOUT_MS = 5_000;
 
 /**
  * Checks whether an Entra object is a direct member of a group through Microsoft Graph.
@@ -34,6 +35,8 @@ export async function checkEntraGroupMember(
     console.warn("Entra group check unavailable: configure PN_ENTRA credentials.");
     return null;
   }
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     if (!graphClient) {
       const credential = new ClientSecretCredential(
@@ -49,7 +52,19 @@ export async function checkEntraGroupMember(
       });
     }
     const client = graphClient;
-    return await readGroupMembership((path) => client.api(path).get(), groupId, objectId);
+    return await Promise.race([
+      readGroupMembership(
+        (path) => client.api(path).option("signal", controller.signal).get(),
+        groupId,
+        objectId,
+      ),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error("Graph membership check timed out."));
+        }, GRAPH_CHECK_TIMEOUT_MS);
+      }),
+    ]);
   } catch (error) {
     // Do not log Graph errors wholesale: they may contain tokens or personal data.
     const status = error instanceof Error && "statusCode" in error ? error.statusCode : null;
@@ -61,6 +76,8 @@ export async function checkEntraGroupMember(
       "The PN_ENTRA_CLIENT_ID app needs Graph application GroupMember.Read.All with admin consent; check the group ID too.",
     );
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

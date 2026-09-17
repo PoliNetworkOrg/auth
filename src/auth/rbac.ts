@@ -26,7 +26,8 @@ export const STATIC_ROLES = [
     grantsAllPermissions: false,
     name: "Socio",
     description: "Member of PoliNetwork APS.",
-    evidence: "Direct membership of the Soci group in PoliNetwork Entra ID, rechecked on sign-in.",
+    evidence:
+      "Direct membership of the Soci group in PoliNetwork Entra ID. Membership checks expire after one minute.",
   },
   {
     key: "direttivo",
@@ -35,7 +36,7 @@ export const STATIC_ROLES = [
     name: "Direttivo",
     description: "Member of the PoliNetwork APS board.",
     evidence:
-      "Direct membership of the Direttivo group in PoliNetwork Entra ID, rechecked on sign-in.",
+      "Direct membership of the Direttivo group in PoliNetwork Entra ID. Membership checks expire after one minute.",
   },
   {
     key: "student",
@@ -172,6 +173,8 @@ export type RoleSummary = {
 };
 
 export type RbacCatalog = { roles: RoleSummary[]; permissions: PermissionSummary[] };
+
+export type RoleMemberPage = { members: RoleMember[]; nextCursor: string | null };
 
 export const emptyCatalog: RbacCatalog = { roles: [], permissions: [] };
 

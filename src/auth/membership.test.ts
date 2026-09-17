@@ -19,10 +19,17 @@ vi.mock("@azure/identity", () => ({
   },
 }));
 vi.mock("@microsoft/microsoft-graph-client", () => ({
-  Client: { initWithMiddleware: () => ({ api: () => ({ get: mocks.get }) }) },
+  Client: {
+    initWithMiddleware: () => ({ api: () => ({ option: () => ({ get: mocks.get }) }) }),
+  },
 }));
 
-import { checkPnGroupStates, membershipEvidence, readGroupMembership } from "./membership";
+import {
+  GRAPH_CHECK_TIMEOUT_MS,
+  checkPnGroupStates,
+  membershipEvidence,
+  readGroupMembership,
+} from "./membership";
 
 describe("PN membership verification", () => {
   beforeEach(() => {
@@ -102,5 +109,19 @@ describe("PN membership verification", () => {
       states: [],
       validUntil: new Date("2026-09-08T00:00:00Z"),
     });
+  });
+
+  it("bounds a stalled Graph lookup and denies group evidence", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      mocks.get.mockImplementation(() => new Promise(() => {}));
+      const result = checkPnGroupStates("member");
+      await vi.advanceTimersByTimeAsync(GRAPH_CHECK_TIMEOUT_MS);
+      await expect(result).resolves.toBeNull();
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

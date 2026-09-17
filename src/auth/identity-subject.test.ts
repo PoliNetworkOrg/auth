@@ -7,7 +7,7 @@ vi.mock("../db/index", () => ({ db: {} }));
 vi.mock("./membership", () => ({ checkEntraGroupMember: mocks.check }));
 vi.mock("./oidc-admin", () => ({
   canAdministerIdp: async () => false,
-  createGroupMembershipCache: (check: unknown) => check,
+  createGroupMembershipCache: (check: unknown) => Object.assign(check!, { cached: () => false }),
 }));
 import { readIdentitySubject, type IdentityReader } from "./identity-subject";
 
@@ -35,14 +35,19 @@ describe("authorization evidence trust and freshness", () => {
     "denies stored unexpired membership when live verification returns %s",
     async (result) => {
       mocks.check.mockResolvedValue(result);
-      expect((await readIdentitySubject("user", reader([proof]))).roleKeys).toEqual([]);
+      expect((await readIdentitySubject("user", reader([proof]), true)).roleKeys).toEqual([]);
     },
   );
   it("denies another tenant's evidence even if membership checks would pass", async () => {
     mocks.check.mockResolvedValue(true);
     expect(
-      (await readIdentitySubject("user", reader([{ ...proof, issuer: "https://foreign.invalid" }])))
-        .roleKeys,
+      (
+        await readIdentitySubject(
+          "user",
+          reader([{ ...proof, issuer: "https://foreign.invalid" }]),
+          true,
+        )
+      ).roleKeys,
     ).toEqual([]);
   });
   it("denies missing subjects before considering any evidence", async () => {

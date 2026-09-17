@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { LoaderCircle, Search, UserMinus, UserPlus } from "lucide-react";
 import type { RoleMember, UserSearchResult } from "@/auth/rbac";
+import { useIdpAccessContext } from "@/components/idp-access";
 import {
   changeRoleMember,
   errorMessage,
@@ -42,20 +43,33 @@ export function RoleMembers({
   const [searching, setSearching] = useState(false);
   const [busyUser, setBusyUser] = useState("");
   const [error, setError] = useState("");
+  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  const { can, retry } = useIdpAccessContext();
+  const canSearch = canWrite && can("idp:people:read");
+  const cursor = cursors[cursors.length - 1];
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchRoleMembers(roleId, controller.signal)
-      .then(setMembers)
+    setMembers(null);
+    setNextCursor(null);
+    setError("");
+    fetchRoleMembers(roleId, controller.signal, cursor)
+      .then((page) => {
+        if (controller.signal.aborted) return;
+        setMembers(page.members);
+        setNextCursor(page.nextCursor);
+      })
       .catch((cause: unknown) => {
         if (!controller.signal.aborted) setError(errorMessage(cause, "Unable to load members."));
       });
     return () => controller.abort();
-  }, [roleId]);
+  }, [roleId, cursor, revision]);
 
   useEffect(() => {
     const term = query.trim();
-    if (!term) {
+    if (!term || !canSearch) {
       setResults([]);
       setSearching(false);
       return;
@@ -78,13 +92,16 @@ export function RoleMembers({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, canSearch]);
 
   async function change(action: "assign" | "unassign", userId: string) {
     setBusyUser(userId);
     setError("");
     try {
-      setMembers(await changeRoleMember(action, roleId, userId));
+      await changeRoleMember(action, roleId, userId);
+      setCursors([undefined]);
+      setRevision((value) => value + 1);
+      retry();
       if (action === "assign") setQuery("");
     } catch (cause) {
       setError(errorMessage(cause, "Unable to change who holds this role."));
@@ -93,8 +110,7 @@ export function RoleMembers({
     }
   }
 
-  // One change at a time: each one answers with the whole list, so overlapping requests
-  // would race to decide what is shown.
+  // Refresh access and the current page after each successful change.
   const changing = busyUser !== "";
   const held = new Set(members?.map((member) => member.userId));
   const candidates = results.filter((person) => !held.has(person.id));
@@ -109,7 +125,7 @@ export function RoleMembers({
           {error}
         </p>
       )}
-      {canWrite && (
+      {canSearch && (
         <div className="space-y-3">
           <div className="relative">
             <Search
@@ -159,11 +175,15 @@ export function RoleMembers({
         </div>
       )}
 
-      {members === null ? (
+      {members === null && error ? (
+        <Button variant="outline" onClick={() => setRevision((value) => value + 1)}>
+          Retry loading members
+        </Button>
+      ) : members === null ? (
         <p className="text-sm text-muted-foreground">Loading members…</p>
       ) : members.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          {canWrite
+          {canSearch && cursors.length === 1
             ? `Nobody holds ${roleName} yet. Search above to give it to someone.`
             : `Nobody holds ${roleName} yet.`}
         </p>
@@ -191,6 +211,25 @@ export function RoleMembers({
             </li>
           ))}
         </ul>
+      )}
+      {(cursors.length > 1 || nextCursor) && (
+        <div className="flex items-center justify-between gap-3">
+          <Button
+            variant="outline"
+            disabled={changing || members === null || cursors.length === 1}
+            onClick={() => setCursors((pages) => pages.slice(0, -1))}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-muted-foreground">Page {cursors.length}</span>
+          <Button
+            variant="outline"
+            disabled={changing || members === null || !nextCursor}
+            onClick={() => setCursors((pages) => [...pages, nextCursor!])}
+          >
+            Next
+          </Button>
+        </div>
       )}
     </div>
   );
