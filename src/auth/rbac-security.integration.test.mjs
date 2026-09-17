@@ -48,11 +48,14 @@ import { db } from "../db/index";
 import { confirmStudentVerification, requestStudentVerification } from "./student-verification";
 import { disconnectAccount } from "./accounts";
 import { getIdentity } from "./identity";
+import { listOidcClients, updateOidcClient } from "./oidc-registry";
 import {
   assignRole,
   deletePermission,
   deleteRole,
   loadCatalog,
+  listRoleMembers,
+  searchUsers,
   savePermission,
   saveRole,
   unassignRole,
@@ -166,7 +169,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
   it("denies escalation through managed and custom permission implications", async () => {
     const own = await savePermission(root, draftPermission(unique("own")));
     const actor = await delegate(["idp:permissions:write", own.key]);
-    const managed = (await loadCatalog()).permissions.find(
+    const managed = (await loadCatalog(root)).permissions.find(
       (entry) => entry.key === "idp:permissions:write",
     );
     for (const target of [managed, own]) {
@@ -221,7 +224,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     await assignRole(actor.id, low.id, ordinary);
     expect((await getIdentity(ordinary)).permissions).toContain(own.key);
     await unassignRole(actor.id, low.id, ordinary);
-    const managed = (await loadCatalog()).roles.find((entry) => entry.key === "socio");
+    const managed = (await loadCatalog(root)).roles.find((entry) => entry.key === "socio");
     expect(
       (
         await post(roleSave, actor.id, {
@@ -329,6 +332,39 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     ).toHaveLength(1);
   });
 
+  it("denies unguarded repository reads and application mutations", async () => {
+    for (const operation of [
+      () => loadCatalog(ordinary),
+      () => listRoleMembers(ordinary, "unknown"),
+      () => searchUsers(ordinary, ""),
+      () => listOidcClients(ordinary),
+      () => updateOidcClient(ordinary, "unknown", { disabled: true }),
+    ])
+      await expect(operation()).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("does not leak role members through a write-only membership response", async () => {
+    const managed = (await loadCatalog(root)).permissions.find(
+      (entry) => entry.key === "idp:roles:write",
+    );
+    await savePermission(root, draftPermission(managed.key), managed.id);
+    try {
+      const actor = await delegate([managed.key]);
+      const role = await saveRole(root, draftRole(unique("private-members")));
+      await assignRole(root, role.id, ordinary);
+      const response = await post(members, actor.id, {
+        action: "assign",
+        roleId: role.id,
+        userId: actor.id,
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual([]);
+      await expect(listRoleMembers(actor.id, role.id)).rejects.toMatchObject({ status: 403 });
+    } finally {
+      await savePermission(root, draftPermission(managed.key, managed.implies), managed.id);
+    }
+  });
+
   it("denies ordinary users at HTTP and direct repository mutation boundaries", async () => {
     const role = await saveRole(root, draftRole(unique("target")));
     const permission = await savePermission(root, draftPermission(unique("permission")));
@@ -371,13 +407,13 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
   });
 
   it("does not revive removed implications when the catalog is reloaded", async () => {
-    const catalog = await loadCatalog();
+    const catalog = await loadCatalog(root);
     const managed = catalog.permissions.find((entry) => entry.key === "idp:applications:write");
     await savePermission(root, draftPermission(managed.key), managed.id);
     const role = await saveRole(root, draftRole(unique("appwriter"), [managed.key]));
     await assignRole(root, role.id, ordinary);
     expect((await getIdentity(ordinary)).permissions).not.toContain("idp:applications:read");
-    await loadCatalog();
+    await loadCatalog(root);
     expect((await getIdentity(ordinary)).permissions).not.toContain("idp:applications:read");
     await unassignRole(root, role.id, ordinary);
     await savePermission(root, draftPermission(managed.key, ["idp:applications:read"]), managed.id);

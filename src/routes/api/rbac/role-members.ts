@@ -18,7 +18,9 @@ export const Route = createFileRoute("/api/rbac/role-members")({
         const roleId = new URL(request.url).searchParams.get("role_id");
         if (!roleId) return apiError(400, "Name the role to list.");
         try {
-          return Response.json(await listRoleMembers(roleId), { headers: noStore });
+          return Response.json(await listRoleMembers(guard.session.userId, roleId), {
+            headers: noStore,
+          });
         } catch (cause) {
           if (cause instanceof RbacError) return apiError(cause.status, cause.message);
           throw cause;
@@ -33,7 +35,12 @@ export const Route = createFileRoute("/api/rbac/role-members")({
         try {
           if (action === "assign") await assignRole(guard.session.userId, roleId, userId);
           else await unassignRole(guard.session.userId, roleId, userId);
-          return Response.json(await listRoleMembers(roleId), { headers: noStore });
+          return Response.json(
+            guard.session.permissions.includes("idp:roles:read")
+              ? await listRoleMembers(guard.session.userId, roleId)
+              : [],
+            { headers: noStore },
+          );
         } catch (cause) {
           if (cause instanceof RbacError) return apiError(cause.status, cause.message);
           throw cause;

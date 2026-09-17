@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { noStore, requireAnyIdpPermission } from "@/auth/api-guard";
-import { catalogForIdpPermissions } from "@/auth/rbac";
 import { loadCatalog } from "@/auth/rbac-store";
 
 export const Route = createFileRoute("/api/rbac/catalog")({
@@ -12,7 +11,7 @@ export const Route = createFileRoute("/api/rbac/catalog")({
           "idp:roles:read",
         ]);
         if ("response" in guard) return guard.response;
-        const catalog = catalogForIdpPermissions(await loadCatalog(), guard.session.permissions);
+        const catalog = await loadCatalog(guard.session.userId);
         return Response.json(catalog, { headers: noStore });
       },
     },

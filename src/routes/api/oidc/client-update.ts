@@ -46,7 +46,11 @@ export const Route = createFileRoute("/api/oidc/client-update")({
               { status: 400, headers: noStore },
             );
         }
-        const client = await updateOidcClient(clientId, { draft, disabled, skipConsent });
+        const client = await updateOidcClient(guard.session.userId, clientId, {
+          draft,
+          disabled,
+          skipConsent,
+        });
         if (!client)
           return Response.json(
             { error: "Application not found." },

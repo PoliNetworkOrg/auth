@@ -28,6 +28,7 @@ import {
   type UserSearchResult,
   MASTER_ADMIN_ROLE_KEY,
   hasDraftErrors,
+  catalogForIdpPermissions,
   normalizePermissionDraft,
   normalizeRoleDraft,
   resolveAccess,
@@ -131,11 +132,43 @@ async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
   };
 }
 
-export async function loadCatalog(): Promise<RbacCatalog> {
+async function loadCatalogSnapshot(): Promise<RbacCatalog> {
   return db.transaction((transaction) => readCatalog(transaction), {
     isolationLevel: "repeatable read",
     accessMode: "read only",
   });
+}
+
+/** Read guards and protected data share one database snapshot. */
+export async function withAuthorizedRbacRead<T>(
+  actorId: string,
+  required: readonly ManagedPermissionKey[],
+  read: (transaction: Transaction, catalog: RbacCatalog, access: ResolvedAccess) => Promise<T>,
+): Promise<T> {
+  return db.transaction(
+    async (transaction) => {
+      const subject = await readIdentitySubject(actorId, transaction);
+      const catalog = await readCatalog(transaction);
+      const access = resolveAccess(catalog, [
+        ...(await assignedRoleKeys(actorId, catalog, transaction)),
+        ...subject.roleKeys,
+      ]);
+      if (!required.some((key) => access.permissions.includes(key))) {
+        logAuthorizationDenial(actorId, "rbac-store", required);
+        throw new RbacError(403, "You do not have permission to do that.");
+      }
+      return read(transaction, catalog, access);
+    },
+    { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
+}
+
+export async function loadCatalog(actorId: string): Promise<RbacCatalog> {
+  return withAuthorizedRbacRead(
+    actorId,
+    ["idp:roles:read", "idp:permissions:read"],
+    async (_transaction, catalog, access) => catalogForIdpPermissions(catalog, access.permissions),
+  );
 }
 
 /**
@@ -149,7 +182,7 @@ export async function loadCatalog(): Promise<RbacCatalog> {
  */
 export async function withAuthorizedRbacWrite<T>(
   actorId: string,
-  required: ManagedPermissionKey,
+  required: Extract<ManagedPermissionKey, `${string}:write`>,
   change: (transaction: Transaction, catalog: RbacCatalog, access: ResolvedAccess) => Promise<T>,
 ): Promise<T> {
   return db.transaction(
@@ -302,7 +335,7 @@ export async function savePermission(
       return id;
     },
   );
-  const saved = (await loadCatalog()).permissions.find((entry) => entry.id === id);
+  const saved = (await loadCatalogSnapshot()).permissions.find((entry) => entry.id === id);
   if (!saved) throw new RbacError(500, "The permission could not be read back.");
   return saved;
 }
@@ -376,7 +409,7 @@ export async function saveRole(
       return id;
     },
   );
-  const saved = (await loadCatalog()).roles.find((entry) => entry.id === id);
+  const saved = (await loadCatalogSnapshot()).roles.find((entry) => entry.id === id);
   if (!saved) throw new RbacError(500, "The role could not be read back.");
   return saved;
 }
@@ -390,23 +423,24 @@ export async function deleteRole(actorId: string, roleId: string) {
   });
 }
 
-export async function listRoleMembers(roleId: string): Promise<RoleMember[]> {
-  const catalog = await loadCatalog();
-  requireRole(catalog, roleId);
-  const rows = await db
-    .select({
-      userId: user.id,
-      name: user.name,
-      email: user.email,
-      image: user.image,
-      assignedAt: userRole.assignedAt,
-      assignedBy: userRole.assignedBy,
-    })
-    .from(userRole)
-    .innerJoin(user, eq(user.id, userRole.userId))
-    .where(eq(userRole.roleId, roleId))
-    .orderBy(desc(userRole.assignedAt));
-  return rows.map((row) => ({ ...row, assignedAt: row.assignedAt?.toISOString() ?? null }));
+export async function listRoleMembers(actorId: string, roleId: string): Promise<RoleMember[]> {
+  return withAuthorizedRbacRead(actorId, ["idp:roles:read"], async (transaction, catalog) => {
+    requireRole(catalog, roleId);
+    const rows = await transaction
+      .select({
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+        assignedAt: userRole.assignedAt,
+        assignedBy: userRole.assignedBy,
+      })
+      .from(userRole)
+      .innerJoin(user, eq(user.id, userRole.userId))
+      .where(eq(userRole.roleId, roleId))
+      .orderBy(desc(userRole.assignedAt));
+    return rows.map((row) => ({ ...row, assignedAt: row.assignedAt?.toISOString() ?? null }));
+  });
 }
 
 export async function assignRole(actorId: string, roleId: string, userId: string) {
@@ -433,14 +467,16 @@ export async function unassignRole(actorId: string, roleId: string, userId: stri
 }
 
 /** People an administrator can pick when assigning a role. */
-export async function searchUsers(query: string): Promise<UserSearchResult[]> {
-  const term = `%${query.trim().replace(/[%_\\]/g, (match) => `\\${match}`)}%`;
-  return db
-    .select({ id: user.id, name: user.name, email: user.email, image: user.image })
-    .from(user)
-    .where(query.trim() ? or(ilike(user.name, term), ilike(user.email, term)) : undefined)
-    .orderBy(user.name)
-    .limit(25);
+export async function searchUsers(actorId: string, query: string): Promise<UserSearchResult[]> {
+  return withAuthorizedRbacRead(actorId, ["idp:people:read"], async (transaction) => {
+    const term = `%${query.trim().replace(/[%_\\]/g, (match) => `\\${match}`)}%`;
+    return transaction
+      .select({ id: user.id, name: user.name, email: user.email, image: user.image })
+      .from(user)
+      .where(query.trim() ? or(ilike(user.name, term), ilike(user.email, term)) : undefined)
+      .orderBy(user.name)
+      .limit(25);
+  });
 }
 
 /** The role keys a person has been given by hand, ignoring anything managed. */
