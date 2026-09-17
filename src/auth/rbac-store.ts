@@ -1,3 +1,5 @@
+import { readIdentitySubject } from "./identity-subject";
+import type { IdentityClaims } from "./policy";
 import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { db } from "../db/index";
@@ -14,19 +16,15 @@ import {
   type PermissionDraft,
   type PermissionSummary,
   type RbacCatalog,
-  type ResolvedAccess,
   type RoleDraft,
   type RoleMember,
   type RoleSummary,
   type UserSearchResult,
-  MANAGED_PERMISSIONS,
   MASTER_ADMIN_ROLE_KEY,
   hasDraftErrors,
   normalizePermissionDraft,
   normalizeRoleDraft,
   resolveAccess,
-  STATIC_ROLES,
-  staticRolesForStates,
   validatePermissionDraft,
   validateRoleDraft,
 } from "./rbac";
@@ -39,79 +37,6 @@ export class RbacError extends Error {
   ) {
     super(message);
   }
-}
-
-/** Managed rows keep a derived, stable id so the seed is idempotent across replicas. */
-function staticRoleId(key: string) {
-  return `static-role-${key}`;
-}
-
-function managedPermissionId(key: string) {
-  return `managed-permission-${key.replace(/:/g, "-")}`;
-}
-
-let managedRecordsReady: Promise<void> | undefined;
-
-/**
- * Makes sure the roles and permissions the identity provider defines itself exist. The
- * checked-in migrations seed them; this is the safety net for a database restored from an
- * older dump. Existing rows are left alone so administrator edits to their name,
- * description, and the roles that carry them survive a restart.
- */
-export function ensureManagedRecords(): Promise<void> {
-  managedRecordsReady ??= db
-    .transaction(async (transaction) => {
-      await transaction
-        .insert(role)
-        .values(
-          STATIC_ROLES.map((entry) => ({
-            id: staticRoleId(entry.key),
-            key: entry.key,
-            name: entry.name,
-            description: entry.description,
-            managed: true,
-            sourceState: entry.state,
-          })),
-        )
-        .onConflictDoNothing({ target: role.key });
-      await transaction
-        .insert(permission)
-        .values(
-          MANAGED_PERMISSIONS.map((entry) => ({
-            id: managedPermissionId(entry.key),
-            key: entry.key,
-            name: entry.name,
-            description: entry.description,
-            managed: true,
-          })),
-        )
-        .onConflictDoNothing({ target: permission.key });
-      const implications = MANAGED_PERMISSIONS.flatMap((entry) =>
-        entry.implies.map((implied) => ({
-          permissionId: managedPermissionId(entry.key),
-          impliedPermissionId: managedPermissionId(implied),
-        })),
-      );
-      if (implications.length)
-        await transaction.insert(permissionImplication).values(implications).onConflictDoNothing();
-    })
-    .then(() => undefined)
-    .catch((cause: unknown) => {
-      managedRecordsReady = undefined;
-      throw cause;
-    });
-  return managedRecordsReady;
-}
-
-const CATALOG_TTL_MS = 15_000;
-let cached: { readAt: number; catalog: RbacCatalog } | undefined;
-
-/**
- * Drops the memoized catalog. Every writer calls this so an administrator always sees the
- * result of their own change; other replicas catch up within `CATALOG_TTL_MS`.
- */
-export function invalidateCatalog() {
-  cached = undefined;
 }
 
 /** Anything that can run the catalog queries: the pool, or an open transaction. */
@@ -201,11 +126,10 @@ async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
 }
 
 export async function loadCatalog(): Promise<RbacCatalog> {
-  if (cached && Date.now() - cached.readAt < CATALOG_TTL_MS) return cached.catalog;
-  await ensureManagedRecords();
-  const catalog = await readCatalog(db);
-  cached = { readAt: Date.now(), catalog };
-  return catalog;
+  return db.transaction((transaction) => readCatalog(transaction), {
+    isolationLevel: "repeatable read",
+    accessMode: "read only",
+  });
 }
 
 // Follows the convention the migration bootstrap uses for its own lock.
@@ -223,7 +147,6 @@ const hierarchyLock = sql`select pg_advisory_xact_lock(hashtext('polinetwork-aut
 async function withRbacWriteLock<T>(
   change: (transaction: Transaction, catalog: RbacCatalog) => Promise<T>,
 ): Promise<T> {
-  await ensureManagedRecords();
   return db.transaction(async (transaction) => {
     await transaction.execute(hierarchyLock);
     return change(transaction, await readCatalog(transaction));
@@ -297,7 +220,6 @@ export async function savePermission(
         );
     return id;
   });
-  invalidateCatalog();
   const saved = (await loadCatalog()).permissions.find((entry) => entry.id === id);
   if (!saved) throw new RbacError(500, "The permission could not be read back.");
   return saved;
@@ -313,7 +235,6 @@ export async function deletePermission(permissionId: string) {
       );
     await transaction.delete(permission).where(eq(permission.id, permissionId));
   });
-  invalidateCatalog();
 }
 
 export async function saveRole(input: RoleDraft, roleId?: string): Promise<RoleSummary> {
@@ -358,7 +279,6 @@ export async function saveRole(input: RoleDraft, roleId?: string): Promise<RoleS
         .values(parentIds.map((parentRoleId) => ({ roleId: id, parentRoleId })));
     return id;
   });
-  invalidateCatalog();
   const saved = (await loadCatalog()).roles.find((entry) => entry.id === id);
   if (!saved) throw new RbacError(500, "The role could not be read back.");
   return saved;
@@ -371,7 +291,6 @@ export async function deleteRole(roleId: string) {
       throw new RbacError(400, "Roles defined by the identity provider cannot be deleted.");
     await transaction.delete(role).where(eq(role.id, roleId));
   });
-  invalidateCatalog();
 }
 
 export async function listRoleMembers(roleId: string): Promise<RoleMember[]> {
@@ -405,12 +324,10 @@ export async function assignRole(roleId: string, userId: string, assignedBy: str
   const [found] = await db.select({ id: user.id }).from(user).where(eq(user.id, userId)).limit(1);
   if (!found) throw new RbacError(404, "That person was not found.");
   await db.insert(userRole).values({ roleId, userId, assignedBy }).onConflictDoNothing();
-  invalidateCatalog();
 }
 
 export async function unassignRole(roleId: string, userId: string) {
   await db.delete(userRole).where(and(eq(userRole.roleId, roleId), eq(userRole.userId, userId)));
-  invalidateCatalog();
 }
 
 /** People an administrator can pick when assigning a role. */
@@ -425,8 +342,12 @@ export async function searchUsers(query: string): Promise<UserSearchResult[]> {
 }
 
 /** The role keys a person has been given by hand, ignoring anything managed. */
-export async function assignedRoleKeys(userId: string, catalog: RbacCatalog): Promise<string[]> {
-  const rows = await db
+async function assignedRoleKeys(
+  userId: string,
+  catalog: RbacCatalog,
+  reader: CatalogReader,
+): Promise<string[]> {
+  const rows = await reader
     .select({ roleId: userRole.roleId })
     .from(userRole)
     .where(eq(userRole.userId, userId));
@@ -439,22 +360,16 @@ export async function assignedRoleKeys(userId: string, catalog: RbacCatalog): Pr
   });
 }
 
-/**
- * The roles and permissions a person currently holds: the roles assigned to them, the
- * managed roles their identity states prove, and any role conferred some other way (Master
- * Admin comes from the configured allowlist, not from evidence), expanded through both
- * hierarchies.
- */
-export async function resolveUserAccess(
-  userId: string,
-  states: readonly string[],
-  conferredRoleKeys: readonly string[] = [],
-): Promise<ResolvedAccess> {
-  const catalog = await loadCatalog();
-  const held = [
-    ...(await assignedRoleKeys(userId, catalog)),
-    ...staticRolesForStates(states),
-    ...conferredRoleKeys,
-  ];
-  return resolveAccess(catalog, held);
+/** Read identity, assignments and graph from one committed database snapshot. */
+export async function resolveUserIdentity(userId: string): Promise<IdentityClaims> {
+  return db.transaction(
+    async (transaction) => {
+      const subject = await readIdentitySubject(userId, transaction);
+      const catalog = await readCatalog(transaction);
+      const held = [...(await assignedRoleKeys(userId, catalog, transaction)), ...subject.roleKeys];
+      const access = resolveAccess(catalog, held);
+      return { states: subject.states, telegramId: subject.telegramId, ...access };
+    },
+    { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
 }

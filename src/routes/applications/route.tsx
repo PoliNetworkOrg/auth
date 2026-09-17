@@ -24,7 +24,7 @@ function NoAccess({ policy }: { policy: OidcAdminPolicy | null }) {
       <p className="mt-3 text-sm leading-6 text-muted-foreground">
         {policy === "entra-group"
           ? "Managing sign-in applications is limited to members of the PoliNetwork Entra administrators group. Ask an administrator to add your PoliNetwork Microsoft account."
-          : "Managing sign-in applications requires a PoliNetwork Microsoft account. Link your PoliNetwork APS account from your account page, then come back here."}
+          : "Access requires explicitly delegated application permissions. Ask an administrator to grant the appropriate role."}
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-3">
         <Button asChild>

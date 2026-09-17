@@ -77,3 +77,52 @@ describe("group membership cache", () => {
     expect(check).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("bounded administrative revocation", () => {
+  it("denies a removed member at the cache deadline and on lookup failure", async () => {
+    let time = 0;
+    const check = vi
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(null);
+    const member = createGroupMembershipCache(check, 60_000, () => time);
+    expect(await member("admin-group", "removed-user")).toBe(true);
+    time = 60_000;
+    expect(await member("admin-group", "removed-user")).toBe(false);
+    time = 120_000;
+    expect(await member("admin-group", "removed-user")).toBe(false);
+  });
+  it("denies a positive response whose lookup outlives its authorization window", async () => {
+    let time = 0;
+    const member = createGroupMembershipCache(
+      async () => {
+        time = 60_001;
+        return true;
+      },
+      60_000,
+      () => time,
+    );
+    expect(await member("group", "user")).toBe(false);
+  });
+  it("does not let a late positive overwrite a newer denial", async () => {
+    let time = 0;
+    let finish!: (value: boolean) => void;
+    const check = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            finish = resolve;
+          }),
+      )
+      .mockResolvedValue(false);
+    const member = createGroupMembershipCache(check, 60_000, () => time);
+    const old = member("group", "user");
+    time = 10;
+    expect(await member("group", "user")).toBe(false);
+    finish(true);
+    expect(await old).toBe(false);
+    expect(await member("group", "user")).toBe(false);
+  });
+});

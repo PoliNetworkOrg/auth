@@ -88,9 +88,9 @@ grants `membership:read` and `student` grants `student:verified`.
 
 `PN_ENTRA_DIRETTIVO_GROUP_ID` is optional and has no default. Until you set it to the
 board's Entra group object ID, nobody is inferred as Direttivo. Both group checks reuse the
-`PN_ENTRA_*` Graph credentials, run together on sign-in, and are rechecked after
-`PN_ENTRA_MEMBER_REFRESH_HOURS`. If either check fails, the evidence expires immediately
-rather than being cached as a confirmed loss of membership, and the next request retries.
+`PN_ENTRA_*` Graph credentials. Authorization rechecks membership with a fixed 60-second
+cache measured from lookup start. Stored sign-in evidence and `PN_ENTRA_MEMBER_REFRESH_HOURS`
+do not extend authorization. Failed or overlong checks grant nothing.
 
 Membership of the built-in roles is not a role assignment: nothing is written to
 `user_role` for them, and evidence contributes only when joined to an account owned by the
@@ -143,8 +143,10 @@ Deleting a role removes it from everyone who held it and from every role that in
 
 Changes take effect on the next token. Already-issued OIDC tokens expire after five
 minutes, so consumers must account for that revocation delay; `/api/identity` and UserInfo
-compute current access on each request. Each replica caches the role graph for 15 seconds,
-so a change made on one replica reaches the others within that window.
+compute current access on each request. The role graph and assignments are read from one committed snapshot without a catalog
+cache. Requests starting after a database revocation commits see it. Group removal takes
+at most 60 seconds to affect new authorization decisions (subject to Graph propagation);
+a token issued just before expiry can remain valid for another five minutes.
 
 A linked Telegram identity grants no role and no permission. Existing backend Telegram
 roles and group assignments remain authoritative and are not copied or queried here.
@@ -179,7 +181,7 @@ spaces between values and are empty strings when no values apply, as is
 `polinetwork_telegram_id` when no Telegram account is linked. The `/api/identity` response
 keeps the object format shown inside the URL-named claim.
 
-Managing applications needs the `idp:applications:write` permission, so it can be given to any role. Master Admin holds it only through explicit deployment configuration. To use a Microsoft 365 administrators group distinct from Soci, set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to that group's object ID: only its direct members, checked through the same Graph credentials, keep it. Graph answers are cached for 15 minutes per user; a failed check denies access instead of caching. `IDP_ADMIN_USER_IDS` remains a break-glass allowlist of local user IDs that always pass. Being a socio never confers administration by itself.
+Managing applications needs the `idp:applications:write` permission, so it can be given to any role. Master Admin holds it only through explicit deployment configuration. To use a Microsoft 365 administrators group distinct from Soci, set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to that group's object ID: only its direct members, checked through the same Graph credentials, keep it. Graph answers are cached for at most 60 seconds from lookup start per user; a failed check denies access instead of caching. `IDP_ADMIN_USER_IDS` remains a break-glass allowlist of local user IDs that always pass. Being a socio never confers administration by itself.
 
 Dynamic registration and client-credentials grants are disabled. Administrators manage clients at `/applications`: create web or native apps as confidential (secret shown once) or public (PKCE only) clients, edit redirect URIs and allowed scopes, rotate secrets, pause sign-ins by disabling an app, skip the consent screen for first-party apps, and delete apps. All administrators share one client pool (the plugin's `clientReference` is a fixed value), so clients are not tied to whoever created them. Redirect URIs follow the provider's rules: web apps need `https` on a public host, native apps may use `http://localhost`, `http://127.0.0.1`, `http://[::1]`, or a reverse-domain custom scheme. Custom routes under `/api/oidc/` back the pages; creation, deletion, and secret rotation go through the Better Auth client endpoints, which enforce the same administrator check.
 
