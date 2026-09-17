@@ -183,7 +183,7 @@ function RoleDetail() {
               list to edit here.
             </p>
           ) : (
-            <RoleMembers roleId={role.id} roleName={role.name} canWrite={canWrite} />
+            <RoleMembers key={role.id} roleId={role.id} roleName={role.name} canWrite={canWrite} />
           )}
         </CardContent>
       </Card>
