@@ -63,6 +63,7 @@ COPY --from=build --chown=node:node /app/.output ./.output
 COPY --from=build --chown=node:node /app/drizzle ./drizzle
 COPY --from=build --chown=node:node /app/scripts/migrate.mjs ./scripts/migrate.mjs
 COPY --from=build --chown=node:node /app/scripts/start.mjs ./scripts/start.mjs
+COPY --from=build --chown=node:node /app/scripts/security-config.mjs ./scripts/security-config.mjs
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

@@ -4,6 +4,26 @@ const optional = (schema) =>
   z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
 const schema = z
   .object({
+    BETTER_AUTH_URL: z
+      .url()
+      .default("https://auth.polinetwork.org")
+      .refine((value) => {
+        const url = new URL(value);
+        return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password;
+      }, "BETTER_AUTH_URL must be an HTTP(S) URL without credentials."),
+    BETTER_AUTH_SECRET: z.string().trim().min(32),
+    PN_ENTRA_MEMBER_GROUP_ID: optional(z.uuid()),
+    PN_ENTRA_DIRETTIVO_GROUP_ID: optional(z.uuid()),
+    PN_ENTRA_MEMBER_REFRESH_HOURS: optional(z.coerce.number().int().positive()),
+    STUDENT_VERIFICATION_TTL_DAYS: optional(z.coerce.number().int().positive()),
+    GOOGLE_CLIENT_ID: optional(z.string().trim().min(1)),
+    GOOGLE_CLIENT_SECRET: optional(z.string().trim().min(1)),
+    TELEGRAM_CLIENT_ID: optional(z.string().trim().min(1)),
+    TELEGRAM_CLIENT_SECRET: optional(z.string().trim().min(1)),
+    AZURE_TENANT_ID: optional(z.string().trim().min(1)),
+    AZURE_CLIENT_ID: optional(z.string().trim().min(1)),
+    AZURE_CLIENT_SECRET: optional(z.string().trim().min(1)),
+    AZURE_EMAIL_SENDER: optional(z.email()),
     PN_ENTRA_TENANT_ID: optional(z.uuid()),
     PN_ENTRA_CLIENT_ID: optional(z.string().trim().min(1)),
     PN_ENTRA_CLIENT_SECRET: optional(z.string().trim().min(1)),
@@ -15,13 +35,23 @@ const schema = z
       .pipe(z.array(z.string().regex(/^[a-zA-Z0-9_-]+$/))),
   })
   .superRefine((config, context) => {
+    for (const keys of [
+      ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+      ["TELEGRAM_CLIENT_ID", "TELEGRAM_CLIENT_SECRET"],
+      ["AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET"],
+    ]) {
+      if (keys.some((key) => config[key]) && !keys.every((key) => config[key]))
+        context.addIssue({ code: "custom", message: `Configure ${keys.join(", ")} together.` });
+    }
     const credentials = [
       config.PN_ENTRA_TENANT_ID,
       config.PN_ENTRA_CLIENT_ID,
       config.PN_ENTRA_CLIENT_SECRET,
     ];
     if (
-      (credentials.some(Boolean) || config.PN_ENTRA_OIDC_ADMIN_GROUP_ID) &&
+      (credentials.some(Boolean) ||
+        config.PN_ENTRA_OIDC_ADMIN_GROUP_ID ||
+        config.PN_ENTRA_DIRETTIVO_GROUP_ID) &&
       !credentials.every(Boolean)
     )
       context.addIssue({

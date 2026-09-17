@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
-import { validateSecurityConfiguration } from "../../scripts/security-config.mjs";
+import { validateSecurityConfiguration as validate } from "../../scripts/security-config.mjs";
+
+const validateSecurityConfiguration = (environment: Record<string, string | undefined>) =>
+  validate({ BETTER_AUTH_SECRET: "test-only-secret-with-at-least-32-characters", ...environment });
 
 describe("security configuration startup validation", () => {
   it.each([undefined, "", "   ", ",", "root,", "root,,other", "*", "root user"])(
@@ -35,5 +38,17 @@ describe("security configuration startup validation", () => {
     expect(() =>
       validateSecurityConfiguration({ IDP_ADMIN_USER_IDS: "root, another-user" }),
     ).not.toThrow();
+  });
+  it.each([
+    { BETTER_AUTH_SECRET: "" },
+    { PN_ENTRA_MEMBER_GROUP_ID: "bad" },
+    { PN_ENTRA_MEMBER_REFRESH_HOURS: "NaN" },
+    { STUDENT_VERIFICATION_TTL_DAYS: "-1" },
+    { BETTER_AUTH_URL: "javascript:alert(1)" },
+    { GOOGLE_CLIENT_ID: "partial" },
+  ])("rejects malformed security settings before startup: %j", (invalid) => {
+    expect(() =>
+      validateSecurityConfiguration({ IDP_ADMIN_USER_IDS: "root", ...invalid }),
+    ).toThrow();
   });
 });
