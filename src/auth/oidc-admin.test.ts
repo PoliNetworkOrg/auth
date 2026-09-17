@@ -7,7 +7,7 @@ vi.mock("./membership", () => ({ checkEntraGroupMember: vi.fn() }));
 import { createGroupMembershipCache, decideOidcAdmin } from "./oidc-admin";
 
 describe("OIDC administrator policy", () => {
-  it("lets any PN Entra account manage clients until a stricter group is configured", () => {
+  it("denies a linked PN Entra account when no administrator group is configured", () => {
     expect(
       decideOidcAdmin({
         allowlisted: false,
@@ -15,7 +15,7 @@ describe("OIDC administrator policy", () => {
         groupConfigured: false,
         groupMember: false,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("requires membership of the stricter group once configured", () => {

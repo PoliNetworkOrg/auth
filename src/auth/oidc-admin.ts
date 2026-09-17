@@ -7,19 +7,19 @@ import { checkEntraGroupMember } from "./membership";
 
 /**
  * Who holds the built-in Master Admin role, and through it every permission.
- * - `pn-entra`: anyone who signed in with a PoliNetwork Entra account (the initial rule).
+ * - `allowlist`: only explicitly configured local user IDs.
  * - `entra-group`: only direct members of `PN_ENTRA_OIDC_ADMIN_GROUP_ID`, a stricter group
- *   than Soci. Set that variable to switch without code changes.
+ *   than Soci. Missing group configuration never grants membership.
  * `IDP_ADMIN_USER_IDS` remains a break-glass allowlist in both modes.
  *
  * This is the one decision that is deliberately made outside the database, so a mistake in
  * the roles cannot lock the service out of its own administration. Every other
  * administrative right is an ordinary permission resolved through RBAC.
  */
-export type OidcAdminPolicy = "pn-entra" | "entra-group";
+export type OidcAdminPolicy = "allowlist" | "entra-group";
 
 export function oidcAdminPolicy(): OidcAdminPolicy {
-  return env.PN_ENTRA_OIDC_ADMIN_GROUP_ID ? "entra-group" : "pn-entra";
+  return env.PN_ENTRA_OIDC_ADMIN_GROUP_ID ? "entra-group" : "allowlist";
 }
 
 export type OidcAdminDecisionInput = {
@@ -32,7 +32,7 @@ export type OidcAdminDecisionInput = {
 export function decideOidcAdmin(input: OidcAdminDecisionInput): boolean {
   if (input.allowlisted) return true;
   if (!input.pnEntraAccount) return false;
-  if (!input.groupConfigured) return true;
+  if (!input.groupConfigured) return false;
   return input.groupMember;
 }
 

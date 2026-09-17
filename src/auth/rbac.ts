@@ -18,7 +18,7 @@ export const STATIC_ROLES = [
     name: "Master Admin",
     description: "Complete control of this identity provider.",
     evidence:
-      "Configured outside the database through IDP_ADMIN_USER_IDS or the PoliNetwork Entra administrators group. When no group is configured, every linked PoliNetwork Entra account holds it, preserving the previous administration policy.",
+      "Configured outside the database through IDP_ADMIN_USER_IDS or the PoliNetwork Entra administrators group. Missing group configuration never grants access.",
   },
   {
     key: "socio",

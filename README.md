@@ -62,12 +62,12 @@ inherit from each other or two permissions grant each other.
 Four roles always exist and are never created, deleted, or handed out by an administrator.
 Their membership is conferred by the identity provider itself:
 
-| Role           | Key            | Granted by                                                                                                        |
-| -------------- | -------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `Master Admin` | `master-admin` | `IDP_ADMIN_USER_IDS`; otherwise the configured administrators group, or any PN Entra account when no group is set |
-| `Socio`        | `socio`        | Direct membership of the `Soci` group in PoliNetwork Entra ID                                                     |
-| `Direttivo`    | `direttivo`    | Direct membership of `PN_ENTRA_DIRETTIVO_GROUP_ID` in PoliNetwork Entra ID                                        |
-| `Student`      | `student`      | A verification code delivered to an `@mail.polimi.it` address                                                     |
+| Role           | Key            | Granted by                                                                                          |
+| -------------- | -------------- | --------------------------------------------------------------------------------------------------- |
+| `Master Admin` | `master-admin` | `IDP_ADMIN_USER_IDS`; otherwise the configured administrators group, never an unconfigured fallback |
+| `Socio`        | `socio`        | Direct membership of the `Soci` group in PoliNetwork Entra ID                                       |
+| `Direttivo`    | `direttivo`    | Direct membership of `PN_ENTRA_DIRETTIVO_GROUP_ID` in PoliNetwork Entra ID                          |
+| `Student`      | `student`      | A verification code delivered to an `@mail.polimi.it` address                                       |
 
 **Master Admin holds every permission that exists**, including ones created after it was
 last looked at, because it is a wildcard rather than a stored list. It therefore has no
@@ -77,8 +77,8 @@ Unlike the other three it is not proven by identity evidence and never appears a
 `states`: it comes from the deployment's own configuration, which is what keeps the service
 from being locked out of its own administration. `IDP_ADMIN_USER_IDS` is always honored.
 Set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to limit everyone else to that Microsoft Entra group.
-If the group is unset, every linked PN Entra account holds Master Admin, preserving the
-service's previous OIDC administration rule.
+If the group is unset, only the explicit allowlist can confer Master Admin. Startup fails
+without either an admin group plus complete PN Entra credentials or a nonempty allowlist.
 
 What the other three grant is still yours to choose: give them permissions, rename them,
 describe them, and place them in the hierarchy like any other role. Only their key, their
@@ -179,7 +179,7 @@ spaces between values and are empty strings when no values apply, as is
 `polinetwork_telegram_id` when no Telegram account is linked. The `/api/identity` response
 keeps the object format shown inside the URL-named claim.
 
-Managing applications needs the `idp:applications:write` permission, so it can be given to any role. Master Admin holds it, and by default anyone signed in with a PoliNetwork Entra account (the `pn-entra` provider, verified against `PN_ENTRA_TENANT_ID`) is a Master Admin. To restrict that to a stricter Microsoft 365 group than Soci, set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to that group's object ID: only its direct members, checked through the same Graph credentials, keep it. Graph answers are cached for 15 minutes per user; a failed check denies access instead of caching. `IDP_ADMIN_USER_IDS` remains a break-glass allowlist of local user IDs that always pass. Being a socio never confers administration by itself.
+Managing applications needs the `idp:applications:write` permission, so it can be given to any role. Master Admin holds it only through explicit deployment configuration. To use a Microsoft 365 administrators group distinct from Soci, set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to that group's object ID: only its direct members, checked through the same Graph credentials, keep it. Graph answers are cached for 15 minutes per user; a failed check denies access instead of caching. `IDP_ADMIN_USER_IDS` remains a break-glass allowlist of local user IDs that always pass. Being a socio never confers administration by itself.
 
 Dynamic registration and client-credentials grants are disabled. Administrators manage clients at `/applications`: create web or native apps as confidential (secret shown once) or public (PKCE only) clients, edit redirect URIs and allowed scopes, rotate secrets, pause sign-ins by disabling an app, skip the consent screen for first-party apps, and delete apps. All administrators share one client pool (the plugin's `clientReference` is a fixed value), so clients are not tied to whoever created them. Redirect URIs follow the provider's rules: web apps need `https` on a public host, native apps may use `http://localhost`, `http://127.0.0.1`, `http://[::1]`, or a reverse-domain custom scheme. Custom routes under `/api/oidc/` back the pages; creation, deletion, and secret rotation go through the Better Auth client endpoints, which enforce the same administrator check.
 
