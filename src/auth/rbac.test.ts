@@ -234,14 +234,13 @@ describe("Master Admin", () => {
     ).toBeTruthy();
   });
 
-  it("still honours an inheriting edge left in the database by an older version", () => {
+  it("denies a wildcard inherited through an edge left by an older version", () => {
     const deputy: RbacCatalog = {
       ...withMaster,
       roles: [...withMaster.roles, role("deputy", [], [MASTER_ADMIN_ROLE_KEY])],
     };
-    expect(resolveAccess(deputy, ["deputy"]).permissions).toEqual(
-      resolveAccess(withMaster, [MASTER_ADMIN_ROLE_KEY]).permissions,
-    );
+    expect(resolveAccess(deputy, ["deputy"]).permissions).toEqual([]);
+    expect(resolveAccess(deputy, ["deputy"]).roles).not.toContain(MASTER_ADMIN_ROLE_KEY);
   });
 
   it("leaves ordinary parents alone", () => {

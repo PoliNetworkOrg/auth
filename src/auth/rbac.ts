@@ -219,7 +219,9 @@ function closure(start: Iterable<string>, edges: (key: string) => readonly strin
 /** The given roles plus every role they inherit from, transitively. */
 export function expandRoleKeys(catalog: RbacCatalog, roleKeys: Iterable<string>): string[] {
   const index = indexCatalog(catalog);
-  const reachable = closure(roleKeys, (key) => index.roles.get(key)?.parents ?? []);
+  const reachable = closure(roleKeys, (key) =>
+    (index.roles.get(key)?.parents ?? []).filter((parent) => parent !== MASTER_ADMIN_ROLE_KEY),
+  );
   return [...reachable].filter((key) => index.roles.has(key)).sort();
 }
 
@@ -247,8 +249,8 @@ export function grantsAllPermissions(roleKeys: readonly string[]) {
  *
  * Master Admin is a wildcard rather than a stored list, so it keeps covering permissions
  * created after it was last edited. Nothing may inherit from it (see `validateRoleDraft`),
- * but the wildcard is still honoured through the expanded role set so that an edge left in
- * the database by an older version cannot quietly grant less than it appears to.
+ * and resolution ignores legacy inheritance edges to it as well. Only a directly conferred
+ * Master Admin role activates the wildcard.
  */
 export function resolveAccess(catalog: RbacCatalog, roleKeys: Iterable<string>): ResolvedAccess {
   const index = indexCatalog(catalog);
