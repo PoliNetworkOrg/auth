@@ -7,7 +7,7 @@ A standalone TanStack Start and Better Auth identity provider. The backend remai
 Use Node and pnpm through Vite+.
 
 1. Run `vp install`.
-2. Copy `.env.example` to `.env.local`, set a random secret, and point the `DB_*` variables at a **new, separate PostgreSQL database**.
+2. Copy `.env.example` to `.env.local`, set a random secret, point `DB_*` at a **new, separate PostgreSQL database**, and configure an explicit admin group or `IDP_ADMIN_USER_IDS` bootstrap allowlist.
 3. Set `BETTER_AUTH_URL=http://localhost:3000` for local development.
 4. Run `vp run db:migrate` to apply the checked-in migration to that database.
 5. Run `vp run dev` and open the origin set in `BETTER_AUTH_URL`.
@@ -18,7 +18,7 @@ The included `Dockerfile` builds the app and runs the same migration-first start
 
 Google and PoliNetwork Entra create accounts. Once signed in, users can add a passkey from the account page and use it for future logins. Signed-out visitors see a login form with configured providers and passkey sign-in. Email/password login is disabled. The server rejects direct Telegram sign-in requests and protects the last Google or PoliNetwork Entra account from being disconnected, including when passkeys or verifier accounts remain linked.
 
-Roles and permissions require the checked-in `0004`, `0005`, and `0006` migrations, which also move each account's single proven state into a list so one Entra identity can prove both Socio and Direttivo. `0004` carries the old `state` column into the new `states` list and seeds the built-in roles before `0005` drops it, so apply them in order and never `0005` alone. `0006` adds Master Admin and the `idp:*` permissions. Passkeys require the checked-in `0003` database migration. Run `vp run db:migrate` before using them. Their relying-party ID and origin come from `BETTER_AUTH_URL`; use that exact origin in your browser, with HTTPS in production or localhost in development. Register a passkey after signing in with Google or PoliNetwork Entra. The account page lists and removes registered passkeys.
+Roles and permissions require the checked-in `0004` through `0007` migrations, which also move each account's single proven state into a list so one Entra identity can prove both Socio and Direttivo. `0004` carries the old `state` column into the new `states` list and seeds the built-in roles before `0005` drops it, so apply them in order and never `0005` alone. `0006` adds Master Admin and the `idp:*` permissions. `0007` adds immutable RBAC audit history and rejects/quarantines unsafe managed-role links. Passkeys require the checked-in `0003` database migration. Run `vp run db:migrate` before using them. Their relying-party ID and origin come from `BETTER_AUTH_URL`; use that exact origin in your browser, with HTTPS in production or localhost in development. Register a passkey after signing in with Google or PoliNetwork Entra. The account page lists and removes registered passkeys.
 
 New registrations send `PoliNetwork Auth` as the relying-party name. The username uses the user's real email, then an email from stored Google or Microsoft ID-token claims, and falls back to the user's name if neither is available. These claims are display metadata only. Passkey labels use the authenticator's AAGUID to recognize password managers such as 1Password; unknown authenticators display `Passkey`. Existing default labels are resolved when listed, while custom names are preserved. Password managers control their own vault item titles and may still show `localhost` during development. Previously saved vault metadata is not updated by the app.
 
@@ -225,3 +225,9 @@ The integration suite covers discovery, anonymous rejection, current identity cl
 The auth schema was generated with the Better Auth CLI and includes the `account.issuer` field and issuer/subject unique index required by installed Better Auth 1.7.2. Review regeneration diffs: older CLI core schemas omit that field. Generate Drizzle SQL with `vp run db:generate` after any schema change.
 
 References: [Better Auth OAuth provider](https://better-auth.com/docs/plugins/oauth-provider), [Generic OAuth](https://better-auth.com/docs/plugins/generic-oauth), [Telegram OIDC](https://core.telegram.org/bots/telegram-login).
+
+The full RBAC security audit, findings, deployment changes and verification limits are in
+[docs/rbac-security-review.md](docs/rbac-security-review.md). The additional PostgreSQL suite
+runs when `RBAC_TEST_DATABASE_URL` points to a disposable migrated database. To run all tests
+without skips, provide that variable together with the HTTP integration variables above and
+the matching `DB_*`, `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET` and admin bootstrap configuration.
