@@ -22,6 +22,33 @@ Roles and permissions require the checked-in `0004` through `0007` migrations, w
 
 New registrations send `PoliNetwork Auth` as the relying-party name. The username uses the user's real email, then an email from stored Google or Microsoft ID-token claims, and falls back to the user's name if neither is available. These claims are display metadata only. Passkey labels use the authenticator's AAGUID to recognize password managers such as 1Password; unknown authenticators display `Passkey`. Existing default labels are resolved when listed, while custom names are preserved. Password managers control their own vault item titles and may still show `localhost` during development. Previously saved vault metadata is not updated by the app.
 
+### Upgrading an existing deployment to RBAC
+
+Merge #6 into #4 before merging #4 to `main`, and deploy the resulting code together.
+The base feature alone does not include the security fixes.
+
+Back up the database, configure the admin bootstrap, stop every old replica, and then
+start the new release with the normal migration-first command. This upgrade requires a
+maintenance window: migration `0005` removes the `state` column still used by the old
+server, so a mixed-version rolling deployment is incompatible. Rollback requires restoring
+the database backup as well as the old image. The migration lock prevents simultaneous
+migrators; it does not make old server code compatible with the new schema.
+
+The environment changes are:
+
+| Setting                         | RBAC behavior                                                                                                                                      |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PN_ENTRA_DIRETTIVO_GROUP_ID`   | New, optional group object ID for Direttivo. Unset grants nobody that evidence-backed role.                                                        |
+| `PN_ENTRA_OIDC_ADMIN_GROUP_ID`  | Existing setting now grants Master Admin. Without it, PN accounts are not administrators. Requires complete PN tenant/client credentials when set. |
+| `IDP_ADMIN_USER_IDS`            | Existing comma-separated local user IDs remain the explicit break-glass administrators. Configure at least this or the admin group before startup. |
+| `PN_ENTRA_MEMBER_REFRESH_HOURS` | Still controls persisted sign-in evidence, defaults to 24. It no longer determines authorization freshness.                                        |
+
+Authorization uses a fixed one-minute Graph cache and five-second lookup deadline, with
+no new environment knobs. Configure the PN application with Graph `GroupMember.Read.All`
+application permission and tenant admin consent. A failed lookup grants no group access;
+the local break-glass IDs remain usable. Partial provider/mail credentials and malformed
+security settings now fail validation before migrations run.
+
 ## Connect identities
 
 Sign in with Google or PoliNetwork Entra, then connect Telegram and a Polimi student email from the account page. Accounts are keyed by verified issuer and subject, with a database uniqueness constraint. Matching emails never merge users. Account links can have different email addresses. The last login method cannot be disconnected.
@@ -38,7 +65,7 @@ Register these callback URLs, replacing the origin with your deployment:
 
 PoliNetwork Entra uses a tenant-specific registration, not the `common` tenant. Google and PoliNetwork Entra are login providers. Telegram uses the official OIDC authorization-code flow with PKCE and RS256 ID tokens, but the server only permits it through the account-linking flow. Configure its allowed origin and callback in BotFather. Its bot user ID comes from the signed `id` claim, separately from its OIDC `sub`.
 
-Polimi verification accepts only the exact `mail.polimi.it` domain. Codes contain six digits, expire after 10 minutes, allow five attempts, and cannot be resent for 60 seconds. The database stores only an HMAC of each code. Successful verification creates a `polimi-email` account link and grants student status for `STUDENT_VERIFICATION_TTL_DAYS`.
+Polimi verification accepts only the exact `mail.polimi.it` domain. Codes contain six digits, expire after 10 minutes, allow five attempts, and cannot be resent for 60 seconds. The cooldown applies to both the user and recipient and survives failed guesses, consumption, and failed delivery. The database stores only an HMAC of each code. Successful verification creates a `polimi-email` account link and grants student status for `STUDENT_VERIFICATION_TTL_DAYS`.
 
 Email delivery uses the same Microsoft Graph client-credential setup as the current backend. The Azure application needs the Graph `Mail.Send` application permission and permission to send as `AZURE_EMAIL_SENDER`. These Azure credentials belong to the mail sender; they do not require access to Polimi Entra.
 
@@ -135,7 +162,10 @@ or permissions, including through custom ancestors or implications. Other writer
 change, assign, revoke or delete only access within their current effective permissions;
 neither writer permission permits self-escalation. A new permission definition confers
 nothing: Master Admin must first grant it before others can delegate it. All checks use
-current authority inside the same serialized transaction as the mutation.
+current authority inside the same serialized transaction as the mutation. Graph lookups
+finish before a database transaction starts. Inside the transaction, authorization rereads
+the actor's accounts, evidence, assigned roles and graph, using only still-valid cached
+membership answers. An account unlinked while Graph is pending cannot authorize the write.
 
 Every RBAC mutation records its actor, operation, target and before/after state in
 `rbac_audit_event`. These events commit atomically with the change and reject updates,
@@ -145,7 +175,8 @@ audit events to separately controlled storage if protection from database owners
 ### Assigning a role
 
 Roles you create are given to people from the role's page at `/access/roles`, which lists
-who holds it and searches for someone to add. An assignment lasts until it is removed.
+who holds it in pages of 100 and searches for someone to add. Searching requires
+`idp:people:read`; removing an existing member does not. An assignment lasts until it is removed.
 Deleting a role removes it from everyone who held it and from every role that inherited it.
 
 Changes take effect on the next token. Already-issued OIDC tokens expire after five

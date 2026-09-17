@@ -60,15 +60,21 @@ No known code-remediable blocker in the audited RBAC paths is deliberately defer
 
 Changed pre-existing authorization tests are deliberate: `oidc-admin.test.ts` now expects missing-group denial; `rbac.test.ts` now rejects a legacy inherited wildcard; `identity.integration.test.ts` no longer treats the fabricated issuer `pn-entra` as verified tenant evidence. Its Telegram fixture uses the canonical issuer, and valid student verification remains covered. No guard was weakened to satisfy those tests.
 
-## 5. Proposed PR #6 description
+## 5. Follow-up review of the complete stack
 
-This PR remains stacked on #4. It closes the fail-open Master Admin bootstrap and replaces root-equivalent RBAC writers with bounded delegation, approved by the owner. Repository operations require the authenticated actor; authorization, graph validation, assignment/revocation and durable audit records share the mutation transaction. Readers use consistent snapshots, historical Master Admin inheritance is rejected, and group-backed authorization has a 60-second application cache rather than 24-hour evidence/15-minute admin caches.
+The fresh review started at `87280c2`, compared the complete #4/#6 stack with `main`, and rechecked viganogabriele's report against the code. The four original security controls remain in place. Additional findings and fixes:
 
-The audit also closes permission restoration on restart, stale-tenant evidence, write-only membership disclosure, internal resource-policy defaults, and student-verification/unlink concurrency defects. Existing independent permissions and shared-pool application ownership remain intact.
+- **Graph I/O blocked unrelated security writes.** Membership refresh now happens before opening a transaction. Transactional authorization rereads current owned accounts/evidence and checks only unexpired cached group facts. It cannot authorize an account unlinked during the lookup. Lookups have a five-second deadline and share in-flight work per group/person. Concurrent valid administrators no longer supersede and deny one another's checks.
+- **Successful saves could return another transaction's state or fail after committing.** Role and permission saves now return their own transactional summary.
+- **Self-revocation could return a misleading 403 after success.** Membership writes return an acknowledgement without member data. The UI refreshes access separately.
+- **Unbounded member responses replaced the old silent cutoff.** The endpoint and UI now use cursor pagination with 100 members per page. A 505-person regression verifies complete traversal without duplicates.
+- **Confirmation could reset email resend throttling.** Consumed, exhausted and failed-delivery challenges retain their send timestamps; mismatched emails do not delete the original challenge. Five database regressions cover throttling, replay and delayed delivery failures.
+- **Delegated writers saw controls the server would always reject.** The UI now distinguishes Master Admin, makes built-in and above-authority objects read-only, limits grant choices, and respects the separate people-search permission. The server still validates the complete proposed graph.
+- **Rollout documentation omitted a schema compatibility break.** The README now requires stopping old replicas before migration `0005` removes their `state` column. Merge #6 into #4 first and deploy the combined release. Rollback requires the database backup and old image.
 
-Deployment requires explicit admin bootstrap configuration and migration 0007. Existing OIDC tokens still expire after five minutes; live Graph/provider behavior and externally retained audit logs remain operator/integration responsibilities.
+No additional environment variables or migrations are needed for these follow-up fixes. The stack still requires explicit admin bootstrap and migrations `0004` through `0007`. The [Microsoft Graph SDK cancellation guidance](https://github.com/microsoftgraph/msgraph-sdk-javascript/wiki/Microsoft-Graph-JavaScript-SDK-V3.0-Upgrade-Guide) documents the request signal used for the lookup deadline.
 
-Validation: `pnpm exec vp check`, `pnpm exec tsc --noEmit`, production build, Docker runtime build/startup checks, and full suite with real PostgreSQL plus the running compiled server: **140 passed, zero skipped**. Coverage includes signed-cookie HTTP denials, role/implication self-escalation, above-authority grants, different tenants/pools, immediate database revocation, bounded group caching, concurrent grant/revoke and cycles, restart behavior, immutable audit/rollback, and verification replay/attempt limits.
+Validation: formatting, lint, TypeScript, production build, Docker image build/startup, and the full suite against disposable PostgreSQL and the compiled HTTP server: **152 passed, zero skipped**. Upgrade rehearsals from `main` and the original RBAC branch preserve existing states and record/remove unsafe legacy links. Missing bootstrap configuration stops the container before migrations. Browser checks cover delegated read-only controls, Master Admin editing and page navigation. The integration tests include a blocked Graph lookup concurrent with an unrelated write and account unlink, proving both progress and denial of stale authority. The limits in section 3 still apply.
 
 ## Authorization model and coverage notes
 
