@@ -95,6 +95,155 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     await db.$client.end();
   });
 
+  async function delegate(permissions) {
+    const id = unique("delegate");
+    await pool.query(
+      `INSERT INTO "user" (id, name, email) VALUES ($1, $1, $1 || '@identity.invalid')`,
+      [id],
+    );
+    const role = await saveRole(root, draftRole(unique("delegated"), permissions));
+    await assignRole(root, role.id, id);
+    return { id, role };
+  }
+
+  it("denies creating a privileged role, self-assigning it, and editing one's own role", async () => {
+    const actor = await delegate(["idp:roles:write"]);
+    const high = await saveRole(root, draftRole(unique("high"), ["idp:applications:write"]));
+    const key = unique("escalation");
+    expect(
+      (
+        await post(roleSave, actor.id, {
+          action: "create",
+          actorId: root,
+          draft: draftRole(key, ["idp:applications:write"]),
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await post(members, actor.id, { action: "assign", roleId: high.id, userId: actor.id }))
+        .status,
+    ).toBe(403);
+    expect(
+      (
+        await post(roleSave, actor.id, {
+          action: "update",
+          roleId: actor.role.id,
+          draft: draftRole(actor.role.key, ["idp:roles:write", "idp:applications:write"]),
+        })
+      ).status,
+    ).toBe(403);
+    expect((await getIdentity(actor.id)).permissions).not.toContain("idp:applications:write");
+    expect((await pool.query("SELECT id FROM role WHERE key = $1", [key])).rows).toEqual([]);
+  });
+
+  it("denies transitive role grants, revocation and deletion above one's authority", async () => {
+    const actor = await delegate(["idp:roles:write"]);
+    const high = await saveRole(root, draftRole(unique("high"), ["idp:applications:write"]));
+    expect(
+      (
+        await post(roleSave, actor.id, {
+          action: "create",
+          draft: draftRole(unique("inherited"), [], [high.key]),
+        })
+      ).status,
+    ).toBe(403);
+    expect((await post(roleSave, actor.id, { action: "delete", roleId: high.id })).status).toBe(
+      403,
+    );
+    expect(
+      (await post(members, actor.id, { action: "unassign", roleId: high.id, userId: root })).status,
+    ).toBe(403);
+  });
+
+  it("denies escalation through managed and custom permission implications", async () => {
+    const own = await savePermission(root, draftPermission(unique("own")));
+    const actor = await delegate(["idp:permissions:write", own.key]);
+    const managed = (await loadCatalog()).permissions.find(
+      (entry) => entry.key === "idp:permissions:write",
+    );
+    for (const target of [managed, own]) {
+      expect(
+        (
+          await post(permissionSave, actor.id, {
+            action: "update",
+            permissionId: target.id,
+            draft: draftPermission(target.key, ["idp:applications:write"]),
+          })
+        ).status,
+      ).toBe(403);
+    }
+    expect(
+      (
+        await post(permissionSave, actor.id, {
+          action: "update",
+          permissionId: own.id,
+          draft: draftPermission(unique("renamed-authority")),
+        })
+      ).status,
+    ).toBe(403);
+    expect((await getIdentity(actor.id)).permissions).not.toContain("idp:applications:write");
+  });
+
+  it("denies bootstrapping new authority with both writer permissions", async () => {
+    const actor = await delegate(["idp:roles:write", "idp:permissions:write"]);
+    const permission = await savePermission(actor.id, draftPermission(unique("new-capability")));
+    expect(
+      (
+        await post(roleSave, actor.id, {
+          action: "create",
+          draft: draftRole(unique("new-capability"), [permission.key]),
+        })
+      ).status,
+    ).toBe(403);
+    expect((await getIdentity(actor.id)).permissions).not.toContain(permission.key);
+    expect(
+      (
+        await post(permissionSave, actor.id, {
+          action: "create",
+          draft: draftPermission(unique("laundered"), ["idp:applications:write"]),
+        })
+      ).status,
+    ).toBe(403);
+  });
+
+  it("preserves bounded delegation while refusing direct and indirect managed-role edits", async () => {
+    const own = await savePermission(root, draftPermission(unique("own")));
+    const actor = await delegate(["idp:roles:write", own.key]);
+    const low = await saveRole(actor.id, draftRole(unique("low"), [own.key]));
+    await assignRole(actor.id, low.id, ordinary);
+    expect((await getIdentity(ordinary)).permissions).toContain(own.key);
+    await unassignRole(actor.id, low.id, ordinary);
+    const managed = (await loadCatalog()).roles.find((entry) => entry.key === "socio");
+    expect(
+      (
+        await post(roleSave, actor.id, {
+          action: "update",
+          roleId: managed.id,
+          draft: draftRole(managed.key, [own.key]),
+        })
+      ).status,
+    ).toBe(403);
+    const parent = await saveRole(root, draftRole(unique("managed-parent")));
+    await saveRole(root, draftRole(managed.key, managed.permissions, [parent.key]), managed.id);
+    try {
+      expect(
+        (
+          await post(roleSave, actor.id, {
+            action: "update",
+            roleId: parent.id,
+            draft: draftRole(parent.key, [own.key]),
+          })
+        ).status,
+      ).toBe(403);
+    } finally {
+      await saveRole(
+        root,
+        draftRole(managed.key, managed.permissions, managed.parents),
+        managed.id,
+      );
+    }
+  });
+
   it("denies ordinary users at HTTP and direct repository mutation boundaries", async () => {
     const role = await saveRole(root, draftRole(unique("target")));
     const permission = await savePermission(root, draftPermission(unique("permission")));

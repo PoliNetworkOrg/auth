@@ -130,10 +130,17 @@ the navigation only offers what you hold. Because Master Admin is a wildcard ove
 permission, whoever the deployment configures as an administrator holds all of these, which
 is the bootstrap and break-glass path: there is no second kind of check beside RBAC.
 
-Granting either write permission is real delegation. Someone with `idp:roles:write` can
-give themselves any other role. Someone with `idp:permissions:write` can make a permission
-they already hold imply another managed permission. Either can therefore acquire every
-stored capability short of Master Admin's wildcard. Treat both as you would root.
+Write permissions authorize bounded delegation. Only Master Admin can edit managed roles
+or permissions, including through custom ancestors or implications. Other writers can
+change, assign, revoke or delete only access within their current effective permissions;
+neither writer permission permits self-escalation. A new permission definition confers
+nothing: Master Admin must first grant it before others can delegate it. All checks use
+current authority inside the same serialized transaction as the mutation.
+
+Every RBAC mutation records its actor, operation, target and before/after state in
+`rbac_audit_event`. These events commit atomically with the change and reject updates,
+deletes and truncation. Database owners remain trusted and can disable triggers; export
+audit events to separately controlled storage if protection from database owners is needed.
 
 ### Assigning a role
 

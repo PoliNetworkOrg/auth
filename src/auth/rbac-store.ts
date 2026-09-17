@@ -1,3 +1,4 @@
+import { mayDelegateMutation } from "./rbac-delegation";
 import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject } from "./identity-subject";
 import type { IdentityClaims } from "./policy";
@@ -212,12 +213,15 @@ async function withRbacWriteLock<T>(
     async (transaction, catalog, access) => {
       const before = await auditSnapshot(transaction, catalog, operation, targetId);
       const result = await change(transaction, catalog, access);
-      const after = await auditSnapshot(
-        transaction,
-        await readCatalog(transaction),
-        operation,
-        targetId,
-      );
+      const next = await readCatalog(transaction);
+      if (!mayDelegateMutation(catalog, next, access, operation, targetId)) {
+        logAuthorizationDenial(actorId, "rbac-store", ["bounded-delegation"]);
+        throw new RbacError(
+          403,
+          "This change exceeds your delegated authority. Ask a Master Admin.",
+        );
+      }
+      const after = await auditSnapshot(transaction, next, operation, targetId);
       await transaction
         .insert(rbacAuditEvent)
         .values({ id: randomUUID(), actorId, operation, targetId, before, after });
