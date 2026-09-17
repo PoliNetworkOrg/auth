@@ -50,7 +50,7 @@ export async function requestStudentVerification(userId: string, input: unknown)
   const email = parsePolimiStudentEmail(input);
   const code = randomInt(0, 1_000_000).toString().padStart(6, "0");
   const codeHash = hashCode(userId, email, code);
-  await db.transaction(
+  const sentAt = await db.transaction(
     async (transaction) => {
       await transaction.execute(authorizationMutationLock);
       const now = new Date();
@@ -82,6 +82,7 @@ export async function requestStudentVerification(userId: string, input: unknown)
         expiresAt: new Date(now.getTime() + CODE_LIFETIME_MS),
         lastSentAt: now,
       });
+      return now;
     },
     { isolationLevel: "read committed" },
   );
@@ -90,11 +91,13 @@ export async function requestStudentVerification(userId: string, input: unknown)
     await sendStudentVerificationEmail(email, code);
   } catch {
     await db
-      .delete(studentVerificationChallenge)
+      .update(studentVerificationChallenge)
+      .set({ codeHash: "", expiresAt: new Date() })
       .where(
         and(
           eq(studentVerificationChallenge.userId, userId),
           eq(studentVerificationChallenge.codeHash, codeHash),
+          eq(studentVerificationChallenge.lastSentAt, sentAt),
         ),
       );
     throw new StudentVerificationError(502, "The verification email could not be sent.");
@@ -121,26 +124,27 @@ export async function confirmStudentVerification(
         .from(studentVerificationChallenge)
         .where(eq(studentVerificationChallenge.userId, userId))
         .limit(1);
-      if (!challenge || challenge.email !== email || challenge.expiresAt <= new Date()) {
-        if (challenge) {
-          await transaction
-            .delete(studentVerificationChallenge)
-            .where(eq(studentVerificationChallenge.userId, userId));
-        }
+      // Keep the send timestamp after invalidation or consumption. Removing this row
+      // would let a failed confirmation reset both the user and email resend limits.
+      if (
+        !challenge ||
+        challenge.email !== email ||
+        challenge.expiresAt <= new Date() ||
+        challenge.attempts >= MAX_ATTEMPTS
+      ) {
         return new StudentVerificationError(400, "The code is invalid or expired.");
       }
 
       if (!codeMatches(challenge.codeHash, hashCode(userId, email, code.data))) {
-        if (challenge.attempts + 1 >= MAX_ATTEMPTS) {
-          await transaction
-            .delete(studentVerificationChallenge)
-            .where(eq(studentVerificationChallenge.userId, userId));
-        } else {
-          await transaction
-            .update(studentVerificationChallenge)
-            .set({ attempts: challenge.attempts + 1 })
-            .where(eq(studentVerificationChallenge.userId, userId));
-        }
+        await transaction
+          .update(studentVerificationChallenge)
+          .set({
+            attempts: challenge.attempts + 1,
+            ...(challenge.attempts + 1 >= MAX_ATTEMPTS
+              ? { codeHash: "", expiresAt: new Date() }
+              : {}),
+          })
+          .where(eq(studentVerificationChallenge.userId, userId));
         return new StudentVerificationError(400, "The code is invalid or expired.");
       }
 
@@ -197,13 +201,14 @@ export async function confirmStudentVerification(
           set: proof,
         });
       await transaction
-        .delete(studentVerificationChallenge)
+        .update(studentVerificationChallenge)
+        .set({ codeHash: "", expiresAt: now })
         .where(eq(studentVerificationChallenge.userId, userId));
       return { email, validUntil };
     },
     { isolationLevel: "read committed" },
   );
-  // Failed attempts must commit their counter/removal before returning a denial.
+  // Failed attempts must commit their counter/invalidation before returning a denial.
   if (result instanceof StudentVerificationError) throw result;
   return result;
 }
