@@ -1,6 +1,10 @@
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
 
+import { validateSecurityConfiguration } from "../scripts/security-config.mjs";
+
+validateSecurityConfiguration(process.env);
+
 export const env = createEnv({
   server: {
     DB_HOST: z.string().min(1).default("localhost"),
@@ -22,7 +26,7 @@ export const env = createEnv({
     PN_ENTRA_MEMBER_REFRESH_HOURS: z.coerce.number().int().positive().default(24),
     // Optional stricter Entra group whose direct members hold the built-in Master Admin
     // role, and through it every permission.
-    // Unset: every linked PN Entra account is a Master Admin.
+    // Unset: only the explicit break-glass allowlist can hold Master Admin.
     PN_ENTRA_OIDC_ADMIN_GROUP_ID: z.uuid().optional(),
 
     GOOGLE_CLIENT_ID: z.string().min(1).optional(),

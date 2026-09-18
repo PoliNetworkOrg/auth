@@ -7,7 +7,7 @@ vi.mock("./membership", () => ({ checkEntraGroupMember: vi.fn() }));
 import { createGroupMembershipCache, decideOidcAdmin } from "./oidc-admin";
 
 describe("OIDC administrator policy", () => {
-  it("lets any PN Entra account manage clients until a stricter group is configured", () => {
+  it("denies a linked PN Entra account when no administrator group is configured", () => {
     expect(
       decideOidcAdmin({
         allowlisted: false,
@@ -15,7 +15,7 @@ describe("OIDC administrator policy", () => {
         groupConfigured: false,
         groupMember: false,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("requires membership of the stricter group once configured", () => {
@@ -74,6 +74,62 @@ describe("group membership cache", () => {
     const isMember = createGroupMembershipCache(check, 1000, () => 0);
     expect(await isMember("group", "admin")).toBe(true);
     expect(await isMember("group", "other")).toBe(false);
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("bounded administrative revocation", () => {
+  it("denies a removed member at the cache deadline and on lookup failure", async () => {
+    let time = 0;
+    const check = vi
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(null);
+    const member = createGroupMembershipCache(check, 60_000, () => time);
+    expect(await member("admin-group", "removed-user")).toBe(true);
+    time = 60_000;
+    expect(await member("admin-group", "removed-user")).toBe(false);
+    time = 120_000;
+    expect(await member("admin-group", "removed-user")).toBe(false);
+  });
+  it("denies a positive response whose lookup outlives its authorization window", async () => {
+    let time = 0;
+    const member = createGroupMembershipCache(
+      async () => {
+        time = 60_001;
+        return true;
+      },
+      60_000,
+      () => time,
+    );
+    expect(await member("group", "user")).toBe(false);
+  });
+  it("shares a concurrent refresh and expires it at the original deadline", async () => {
+    let time = 0;
+    let finish!: (value: boolean) => void;
+    const check = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            finish = resolve;
+          }),
+      )
+      .mockResolvedValue(false);
+    const member = createGroupMembershipCache(check, 60_000, () => time);
+    const old = member("group", "user");
+    time = 10;
+    const concurrent = member("group", "user");
+    expect(member.cached("group", "user")).toBe(false);
+    expect(check).toHaveBeenCalledTimes(1);
+    finish(true);
+    expect(await old).toBe(true);
+    expect(await concurrent).toBe(true);
+    expect(member.cached("group", "user")).toBe(true);
+    time = 60_000;
+    expect(member.cached("group", "user")).toBe(false);
+    expect(await member("group", "user")).toBe(false);
     expect(check).toHaveBeenCalledTimes(2);
   });
 });

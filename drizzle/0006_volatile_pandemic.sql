@@ -1,9 +1,10 @@
 ALTER TABLE "permission" ADD COLUMN "managed" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 -- Master Admin holds every permission that exists, as a wildcard rather than a stored
 -- grant list, so it keeps covering permissions created later. Its membership comes from
--- IDP_ADMIN_USER_IDS or the configured Entra administrators group rather than from
--- identity evidence, which is why it has no source_state: that is the bootstrap path that
--- keeps the service from being locked out of its own administration.
+-- IDP_ADMIN_USER_IDS or the Entra administration policy rather than from identity evidence.
+-- Master Admin requires an explicitly configured administrators group or user allowlist.
+-- It has no source_state because deployment configuration provides the bootstrap path
+-- independently of the editable role graph.
 INSERT INTO "role" ("id", "key", "name", "description", "managed", "source_state") VALUES
 	('static-role-master-admin', 'master-admin', 'Master Admin', 'Complete control of this identity provider.', true, NULL)
 ON CONFLICT ("key") DO NOTHING;--> statement-breakpoint

@@ -14,6 +14,8 @@ import {
   validateRoleDraft,
 } from "@/auth/rbac";
 import { Field, KeyChip } from "@/components/rbac/fields";
+import { useIdpAccessContext } from "@/components/idp-access";
+import { canGrantPermission, canGrantRole } from "@/components/rbac/delegation";
 import { PickList } from "@/components/rbac/pick-list";
 import { useDraftErrors } from "@/components/rbac/use-draft-errors";
 import { Button } from "@/components/ui/button";
@@ -56,6 +58,7 @@ export function RoleForm({
   onSubmit: (draft: RoleDraft) => void;
   onCancel?: () => void;
 }) {
+  const access = useIdpAccessContext();
   const [draft, setDraft] = useState(initial);
   const [touched, setTouched] = useState(false);
   const ids = { key: useId(), name: useId(), description: useId() };
@@ -69,25 +72,38 @@ export function RoleForm({
 
   const parentOptions = catalog.roles
     .filter((entry) => entry.key !== (currentKey ?? draft.key.trim().toLowerCase()))
+    .filter(
+      (entry) => canGrantRole(access, catalog, entry.key) || draft.parents.includes(entry.key),
+    )
     .map((entry) => {
       const cycles = currentKey ? roleParentWouldCycle(catalog, currentKey, entry.key) : false;
       const wildcard = entry.key === MASTER_ADMIN_ROLE_KEY;
+      const outsideAuthority = !canGrantRole(access, catalog, entry.key);
       return {
         key: entry.key,
         label: entry.name,
         hint: entry.description ?? undefined,
-        disabled: cycles || wildcard,
+        disabled: cycles || wildcard || outsideAuthority,
         disabledReason: wildcard
           ? `${entry.name} holds every permission and is granted only by this deployment's configuration, so no role can inherit from it.`
-          : `${entry.name} already inherits from this role.`,
+          : outsideAuthority
+            ? "This role grants permissions you do not hold."
+            : `${entry.name} already inherits from this role.`,
       };
     });
 
-  const permissionOptions = catalog.permissions.map((entry) => ({
-    key: entry.key,
-    label: entry.name,
-    hint: entry.description ?? undefined,
-  }));
+  const permissionOptions = catalog.permissions
+    .filter(
+      (entry) =>
+        canGrantPermission(access, catalog, entry.key) || draft.permissions.includes(entry.key),
+    )
+    .map((entry) => ({
+      key: entry.key,
+      label: entry.name,
+      hint: entry.description ?? undefined,
+      disabled: !canGrantPermission(access, catalog, entry.key),
+      disabledReason: "You do not hold this permission or everything it grants.",
+    }));
 
   // Everything a holder would end up with once both hierarchies are followed.
   const preview = resolveAccess(
@@ -125,6 +141,12 @@ export function RoleForm({
         onSubmit(normalizeRoleDraft(draft));
       }}
     >
+      {!access.isMasterAdmin && !readOnly && (
+        <p className="text-sm text-muted-foreground">
+          You can delegate only permissions you already hold. Changes affecting built-in roles or
+          access above your own require Master Admin.
+        </p>
+      )}
       <fieldset disabled={readOnly} className="space-y-8 border-0 p-0">
         <div className="grid gap-6 sm:grid-cols-2">
           <Field

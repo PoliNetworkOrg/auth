@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import type { ManagedPermissionKey } from "@/auth/rbac";
+import { MASTER_ADMIN_ROLE_KEY, type ManagedPermissionKey } from "@/auth/rbac";
 import type { OidcAdminPolicy } from "@/auth/oidc-admin";
 
 export type IdpAccessStatus = "idle" | "loading" | "ready" | "error";
@@ -8,18 +8,21 @@ export type IdpAccess = {
   status: IdpAccessStatus;
   policy: OidcAdminPolicy | null;
   permissions: string[];
+  roles: string[];
+  isMasterAdmin: boolean;
   /** Whether the signed-in person holds a managed permission. False until loaded. */
   can: (permission: ManagedPermissionKey) => boolean;
   retry: () => void;
 };
 
-type AccessResponse = { permissions: string[]; policy: OidcAdminPolicy };
+type AccessResponse = { permissions: string[]; roles: string[]; policy: OidcAdminPolicy };
 
 /** What the signed-in person may do to the identity provider, as decided by the server. */
 export function useIdpAccess(enabled: boolean): IdpAccess {
   const [status, setStatus] = useState<IdpAccessStatus>("idle");
   const [policy, setPolicy] = useState<OidcAdminPolicy | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [roles, setRoles] = useState<string[]>([]);
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
@@ -27,6 +30,7 @@ export function useIdpAccess(enabled: boolean): IdpAccess {
       setStatus("idle");
       setPolicy(null);
       setPermissions([]);
+      setRoles([]);
       return;
     }
     const controller = new AbortController();
@@ -37,6 +41,7 @@ export function useIdpAccess(enabled: boolean): IdpAccess {
         const access: AccessResponse = await response.json();
         setPolicy(access.policy);
         setPermissions(access.permissions);
+        setRoles(access.roles);
         setStatus("ready");
       })
       .catch(() => {
@@ -49,6 +54,8 @@ export function useIdpAccess(enabled: boolean): IdpAccess {
     status,
     policy,
     permissions,
+    roles,
+    isMasterAdmin: roles.includes(MASTER_ADMIN_ROLE_KEY),
     can: useCallback(
       (permission: ManagedPermissionKey) => permissions.includes(permission),
       [permissions],

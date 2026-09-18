@@ -11,19 +11,21 @@ import {
 } from "@/components/rbac/api";
 import { KeyChip } from "@/components/rbac/fields";
 import { PermissionForm } from "@/components/rbac/permission-form";
+import { canGrantPermission } from "@/components/rbac/delegation";
+import { RequirePermission } from "@/components/rbac/require-permission";
 import { useCatalog } from "@/components/rbac/use-catalog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const Route = createFileRoute("/access/permissions/$permissionId")({
-  component: PermissionDetail,
+  component: GuardedPermissionDetail,
 });
 
 function PermissionDetail() {
   const { permissionId } = Route.useParams();
   const navigate = useNavigate();
-  const { can } = useIdpAccessContext();
-  const canWrite = can("idp:permissions:write");
+  const access = useIdpAccessContext();
+  const { can } = access;
   const { catalog, loading, error: loadError, reload } = useCatalog();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,6 +33,11 @@ function PermissionDetail() {
   const [fields, setFields] = useState<RbacDraftErrors>();
 
   const permission = catalog.permissions.find((entry) => entry.id === permissionId);
+  const canWrite =
+    can("idp:permissions:write") &&
+    !!permission &&
+    (access.isMasterAdmin || !permission.managed) &&
+    canGrantPermission(access, catalog, permission.key);
   const grantedBy = permission
     ? catalog.roles.filter((role) => role.permissions.includes(permission.key))
     : [];
@@ -132,6 +139,13 @@ function PermissionDetail() {
 
       <Card>
         <CardContent className="pt-6">
+          {can("idp:permissions:write") && !canWrite && (
+            <p className="mb-6 text-sm text-muted-foreground">
+              {permission.managed
+                ? "Only Master Admin can change a built-in permission."
+                : "You can change only permissions you already hold, including everything they grant. Ask Master Admin for access."}
+            </p>
+          )}
           <PermissionForm
             key={`${permission.id}-${permission.updatedAt ?? ""}`}
             mode="edit"
@@ -148,38 +162,40 @@ function PermissionDetail() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Roles that grant it</CardTitle>
-          <CardDescription>
-            Change these from each role's page. Roles inheriting from one of these grant it too.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {grantedBy.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No role grants this permission yet, so nobody holds it.{" "}
-              {permission.managed &&
-                "Whoever the deployment configures as an administrator holds it anyway, through Master Admin."}
-            </p>
-          ) : (
-            <ul className="divide-y rounded-xl border">
-              {grantedBy.map((role) => (
-                <li key={role.id}>
-                  <Link
-                    to="/access/roles/$roleId"
-                    params={{ roleId: role.id }}
-                    className="flex items-center justify-between gap-3 px-4 py-3 text-sm transition-colors outline-none hover:bg-accent/50 focus-visible:bg-accent/50"
-                  >
-                    <span className="font-medium">{role.name}</span>
-                    <KeyChip>{role.key}</KeyChip>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      {can("idp:roles:read") && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Roles that grant it</CardTitle>
+            <CardDescription>
+              Change these from each role's page. Roles inheriting from one of these grant it too.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {grantedBy.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No role grants this permission yet, so nobody holds it.{" "}
+                {permission.managed &&
+                  "Whoever the deployment configures as an administrator holds it anyway, through Master Admin."}
+              </p>
+            ) : (
+              <ul className="divide-y rounded-xl border">
+                {grantedBy.map((role) => (
+                  <li key={role.id}>
+                    <Link
+                      to="/access/roles/$roleId"
+                      params={{ roleId: role.id }}
+                      className="flex items-center justify-between gap-3 px-4 py-3 text-sm transition-colors outline-none hover:bg-accent/50 focus-visible:bg-accent/50"
+                    >
+                      <span className="font-medium">{role.name}</span>
+                      <KeyChip>{role.key}</KeyChip>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {!permission.managed && canWrite && (
         <Card className="border-destructive/40">
@@ -199,5 +215,13 @@ function PermissionDetail() {
         </Card>
       )}
     </div>
+  );
+}
+
+function GuardedPermissionDetail() {
+  return (
+    <RequirePermission permission="idp:permissions:read">
+      <PermissionDetail />
+    </RequirePermission>
   );
 }

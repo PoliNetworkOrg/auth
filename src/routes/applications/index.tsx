@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { AppWindow, ChevronRight, Plus, Users } from "lucide-react";
 import type { OidcClientSummary } from "@/auth/oidc-clients";
 import { CopyButton } from "@/components/copy-button";
+import { useIdpAccessContext } from "@/components/idp-access";
 import { errorMessage, fetchOidcClients } from "@/components/oidc/api";
 import { AppLogo } from "@/components/oidc/app-logo";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +73,8 @@ function IntegrationCard() {
 }
 
 function ApplicationsIndex() {
+  const { can } = useIdpAccessContext();
+  const canWrite = can("idp:applications:write");
   const [clients, setClients] = useState<OidcClientSummary[] | null>(null);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
@@ -97,12 +100,14 @@ function ApplicationsIndex() {
             Services that sign people in with PoliNetwork Identity through OpenID Connect.
           </p>
         </div>
-        <Button asChild>
-          <Link to="/applications/new">
-            <Plus aria-hidden="true" />
-            New application
-          </Link>
-        </Button>
+        {canWrite && (
+          <Button asChild>
+            <Link to="/applications/new">
+              <Plus aria-hidden="true" />
+              New application
+            </Link>
+          </Button>
+        )}
       </div>
 
       {error && (
@@ -138,12 +143,14 @@ function ApplicationsIndex() {
                     get a client ID and, for confidential apps, a secret.
                   </p>
                 </div>
-                <Button asChild>
-                  <Link to="/applications/new">
-                    <Plus aria-hidden="true" />
-                    New application
-                  </Link>
-                </Button>
+                {canWrite && (
+                  <Button asChild>
+                    <Link to="/applications/new">
+                      <Plus aria-hidden="true" />
+                      New application
+                    </Link>
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ) : clients ? (

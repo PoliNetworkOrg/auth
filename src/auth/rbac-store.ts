@@ -1,7 +1,13 @@
+import { mayDelegateMutation } from "./rbac-delegation";
+import { logAuthorizationDenial } from "./denial-log";
+import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
+import type { IdentityClaims } from "./policy";
 import { randomUUID } from "node:crypto";
-import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, count, eq, gt, ilike, or } from "drizzle-orm";
 import { db } from "../db/index";
+import { authorizationMutationLock } from "../db/security-lock";
 import {
+  rbacAuditEvent,
   permission,
   permissionImplication,
   role,
@@ -11,22 +17,21 @@ import {
   userRole,
 } from "../db/schema";
 import {
+  type ManagedPermissionKey,
+  type ResolvedAccess,
   type PermissionDraft,
   type PermissionSummary,
   type RbacCatalog,
-  type ResolvedAccess,
   type RoleDraft,
-  type RoleMember,
+  type RoleMemberPage,
   type RoleSummary,
   type UserSearchResult,
-  MANAGED_PERMISSIONS,
   MASTER_ADMIN_ROLE_KEY,
   hasDraftErrors,
+  catalogForIdpPermissions,
   normalizePermissionDraft,
   normalizeRoleDraft,
   resolveAccess,
-  STATIC_ROLES,
-  staticRolesForStates,
   validatePermissionDraft,
   validateRoleDraft,
 } from "./rbac";
@@ -39,79 +44,6 @@ export class RbacError extends Error {
   ) {
     super(message);
   }
-}
-
-/** Managed rows keep a derived, stable id so the seed is idempotent across replicas. */
-function staticRoleId(key: string) {
-  return `static-role-${key}`;
-}
-
-function managedPermissionId(key: string) {
-  return `managed-permission-${key.replace(/:/g, "-")}`;
-}
-
-let managedRecordsReady: Promise<void> | undefined;
-
-/**
- * Makes sure the roles and permissions the identity provider defines itself exist. The
- * checked-in migrations seed them; this is the safety net for a database restored from an
- * older dump. Existing rows are left alone so administrator edits to their name,
- * description, and the roles that carry them survive a restart.
- */
-export function ensureManagedRecords(): Promise<void> {
-  managedRecordsReady ??= db
-    .transaction(async (transaction) => {
-      await transaction
-        .insert(role)
-        .values(
-          STATIC_ROLES.map((entry) => ({
-            id: staticRoleId(entry.key),
-            key: entry.key,
-            name: entry.name,
-            description: entry.description,
-            managed: true,
-            sourceState: entry.state,
-          })),
-        )
-        .onConflictDoNothing({ target: role.key });
-      await transaction
-        .insert(permission)
-        .values(
-          MANAGED_PERMISSIONS.map((entry) => ({
-            id: managedPermissionId(entry.key),
-            key: entry.key,
-            name: entry.name,
-            description: entry.description,
-            managed: true,
-          })),
-        )
-        .onConflictDoNothing({ target: permission.key });
-      const implications = MANAGED_PERMISSIONS.flatMap((entry) =>
-        entry.implies.map((implied) => ({
-          permissionId: managedPermissionId(entry.key),
-          impliedPermissionId: managedPermissionId(implied),
-        })),
-      );
-      if (implications.length)
-        await transaction.insert(permissionImplication).values(implications).onConflictDoNothing();
-    })
-    .then(() => undefined)
-    .catch((cause: unknown) => {
-      managedRecordsReady = undefined;
-      throw cause;
-    });
-  return managedRecordsReady;
-}
-
-const CATALOG_TTL_MS = 15_000;
-let cached: { readAt: number; catalog: RbacCatalog } | undefined;
-
-/**
- * Drops the memoized catalog. Every writer calls this so an administrator always sees the
- * result of their own change; other replicas catch up within `CATALOG_TTL_MS`.
- */
-export function invalidateCatalog() {
-  cached = undefined;
 }
 
 /** Anything that can run the catalog queries: the pool, or an open transaction. */
@@ -200,16 +132,38 @@ async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
   };
 }
 
-export async function loadCatalog(): Promise<RbacCatalog> {
-  if (cached && Date.now() - cached.readAt < CATALOG_TTL_MS) return cached.catalog;
-  await ensureManagedRecords();
-  const catalog = await readCatalog(db);
-  cached = { readAt: Date.now(), catalog };
-  return catalog;
+/** Read guards and protected data share one database snapshot. */
+export async function withAuthorizedRbacRead<T>(
+  actorId: string,
+  required: readonly ManagedPermissionKey[],
+  read: (transaction: Transaction, catalog: RbacCatalog, access: ResolvedAccess) => Promise<T>,
+): Promise<T> {
+  await refreshIdentityMembership(actorId);
+  return db.transaction(
+    async (transaction) => {
+      const subject = await readIdentitySubject(actorId, transaction);
+      const catalog = await readCatalog(transaction);
+      const access = resolveAccess(catalog, [
+        ...(await assignedRoleKeys(actorId, catalog, transaction)),
+        ...subject.roleKeys,
+      ]);
+      if (!required.some((key) => access.permissions.includes(key))) {
+        logAuthorizationDenial(actorId, "rbac-store", required);
+        throw new RbacError(403, "You do not have permission to do that.");
+      }
+      return read(transaction, catalog, access);
+    },
+    { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
 }
 
-// Follows the convention the migration bootstrap uses for its own lock.
-const hierarchyLock = sql`select pg_advisory_xact_lock(hashtext('polinetwork-auth'), hashtext('rbac-hierarchy'))`;
+export async function loadCatalog(actorId: string): Promise<RbacCatalog> {
+  return withAuthorizedRbacRead(
+    actorId,
+    ["idp:roles:read", "idp:permissions:read"],
+    async (_transaction, catalog, access) => catalogForIdpPermissions(catalog, access.permissions),
+  );
+}
 
 /**
  * Runs a change to the role or permission graph against the graph as it actually is.
@@ -220,14 +174,86 @@ const hierarchyLock = sql`select pg_advisory_xact_lock(hashtext('polinetwork-aut
  * lock serializes these writes across every replica, and the catalog is then re-read
  * inside the transaction so the checks see the other writer's committed work.
  */
-async function withRbacWriteLock<T>(
-  change: (transaction: Transaction, catalog: RbacCatalog) => Promise<T>,
+export async function withAuthorizedRbacWrite<T>(
+  actorId: string,
+  required: Extract<ManagedPermissionKey, `${string}:write`>,
+  change: (transaction: Transaction, catalog: RbacCatalog, access: ResolvedAccess) => Promise<T>,
 ): Promise<T> {
-  await ensureManagedRecords();
-  return db.transaction(async (transaction) => {
-    await transaction.execute(hierarchyLock);
-    return change(transaction, await readCatalog(transaction));
-  });
+  await refreshIdentityMembership(actorId);
+  return db.transaction(
+    async (transaction) => {
+      await transaction.execute(authorizationMutationLock);
+      const subject = await readIdentitySubject(actorId, transaction);
+      const catalog = await readCatalog(transaction);
+      const access = resolveAccess(catalog, [
+        ...(await assignedRoleKeys(actorId, catalog, transaction)),
+        ...subject.roleKeys,
+      ]);
+      if (!access.permissions.includes(required)) {
+        logAuthorizationDenial(actorId, "rbac-store", [required]);
+        throw new RbacError(403, "You do not have permission to do that.");
+      }
+      return change(transaction, catalog, access);
+    },
+    { isolationLevel: "read committed" },
+  );
+}
+
+async function auditSnapshot(
+  transaction: Transaction,
+  catalog: RbacCatalog,
+  operation: string,
+  targetId: string,
+) {
+  if (operation.startsWith("permission.")) {
+    const target = catalog.permissions.find((entry) => entry.id === targetId);
+    return {
+      target: target ?? null,
+      roles: catalog.roles
+        .filter((entry) => target && entry.permissions.includes(target.key))
+        .map((entry) => ({ id: entry.id, permissions: entry.permissions })),
+      incoming: catalog.permissions
+        .filter((entry) => target && entry.implies.includes(target.key))
+        .map((entry) => ({ id: entry.id, implies: entry.implies })),
+    };
+  }
+  const target = catalog.roles.find((entry) => entry.id === targetId);
+  return {
+    target: target ?? null,
+    children: catalog.roles
+      .filter((entry) => target && entry.parents.includes(target.key))
+      .map((entry) => ({ id: entry.id, parents: entry.parents })),
+    assignments: await transaction.select().from(userRole).where(eq(userRole.roleId, targetId)),
+  };
+}
+
+async function withRbacWriteLock<T>(
+  actorId: string,
+  operation: string,
+  targetId: string,
+  change: (transaction: Transaction, catalog: RbacCatalog, access: ResolvedAccess) => Promise<T>,
+): Promise<T> {
+  return withAuthorizedRbacWrite(
+    actorId,
+    operation.startsWith("permission.") ? "idp:permissions:write" : "idp:roles:write",
+    async (transaction, catalog, access) => {
+      const before = await auditSnapshot(transaction, catalog, operation, targetId);
+      const result = await change(transaction, catalog, access);
+      const next = await readCatalog(transaction);
+      if (!mayDelegateMutation(catalog, next, access, operation, targetId)) {
+        logAuthorizationDenial(actorId, "rbac-store", ["bounded-delegation"]);
+        throw new RbacError(
+          403,
+          "This change exceeds your delegated authority. Ask a Master Admin.",
+        );
+      }
+      const after = await auditSnapshot(transaction, next, operation, targetId);
+      await transaction
+        .insert(rbacAuditEvent)
+        .values({ id: randomUUID(), actorId, operation, targetId, before, after });
+      return result;
+    },
+  );
 }
 
 function requireRole(catalog: RbacCatalog, roleId: string) {
@@ -264,11 +290,13 @@ function checked(errors: Record<string, string | undefined>) {
 }
 
 export async function savePermission(
+  actorId: string,
   input: PermissionDraft,
   permissionId?: string,
 ): Promise<PermissionSummary> {
   const draft = normalizePermissionDraft(input);
-  const id = await withRbacWriteLock(async (transaction, catalog) => {
+  const targetId = permissionId ?? randomUUID();
+  return withRbacWriteLock(actorId, "permission.save", targetId, async (transaction, catalog) => {
     const current = permissionId ? requirePermission(catalog, permissionId) : undefined;
     // A managed permission's key is what the identity provider's own checks look for.
     if (current?.managed && draft.key !== current.key)
@@ -276,7 +304,7 @@ export async function savePermission(
         key: "This permission is defined by the identity provider.",
       });
     checked(validatePermissionDraft(draft, { catalog, currentKey: current?.key }));
-    const id = current?.id ?? randomUUID();
+    const id = targetId;
     const impliedIds = idsForPermissionKeys(catalog, draft.implies);
     const values = {
       key: draft.key,
@@ -295,30 +323,35 @@ export async function savePermission(
         .values(
           impliedIds.map((impliedPermissionId) => ({ permissionId: id, impliedPermissionId })),
         );
-    return id;
+    return (await readCatalog(transaction)).permissions.find((entry) => entry.id === id)!;
   });
-  invalidateCatalog();
-  const saved = (await loadCatalog()).permissions.find((entry) => entry.id === id);
-  if (!saved) throw new RbacError(500, "The permission could not be read back.");
-  return saved;
 }
 
-export async function deletePermission(permissionId: string) {
-  await withRbacWriteLock(async (transaction, catalog) => {
-    const current = requirePermission(catalog, permissionId);
-    if (current.managed)
-      throw new RbacError(
-        400,
-        "Permissions defined by the identity provider cannot be deleted. Remove it from the roles that carry it instead.",
-      );
-    await transaction.delete(permission).where(eq(permission.id, permissionId));
-  });
-  invalidateCatalog();
+export async function deletePermission(actorId: string, permissionId: string) {
+  await withRbacWriteLock(
+    actorId,
+    "permission.delete",
+    permissionId,
+    async (transaction, catalog) => {
+      const current = requirePermission(catalog, permissionId);
+      if (current.managed)
+        throw new RbacError(
+          400,
+          "Permissions defined by the identity provider cannot be deleted. Remove it from the roles that carry it instead.",
+        );
+      await transaction.delete(permission).where(eq(permission.id, permissionId));
+    },
+  );
 }
 
-export async function saveRole(input: RoleDraft, roleId?: string): Promise<RoleSummary> {
+export async function saveRole(
+  actorId: string,
+  input: RoleDraft,
+  roleId?: string,
+): Promise<RoleSummary> {
   const draft = normalizeRoleDraft(input);
-  const id = await withRbacWriteLock(async (transaction, catalog) => {
+  const targetId = roleId ?? randomUUID();
+  return withRbacWriteLock(actorId, "role.save", targetId, async (transaction, catalog) => {
     const current = roleId ? requireRole(catalog, roleId) : undefined;
     // A managed role's key is what ties it to the evidence that grants it.
     if (current?.managed && draft.key !== current.key)
@@ -335,7 +368,7 @@ export async function saveRole(input: RoleDraft, roleId?: string): Promise<RoleS
         `${current.name} already holds every permission, so it needs no grants of its own.`,
       );
     checked(validateRoleDraft(draft, { catalog, currentKey: current?.key }));
-    const id = current?.id ?? randomUUID();
+    const id = targetId;
     const permissionIds = idsForPermissionKeys(catalog, draft.permissions);
     const parentIds = idsForRoleKeys(catalog, draft.parents);
     const values = {
@@ -356,78 +389,93 @@ export async function saveRole(input: RoleDraft, roleId?: string): Promise<RoleS
       await transaction
         .insert(roleParent)
         .values(parentIds.map((parentRoleId) => ({ roleId: id, parentRoleId })));
-    return id;
+    return (await readCatalog(transaction)).roles.find((entry) => entry.id === id)!;
   });
-  invalidateCatalog();
-  const saved = (await loadCatalog()).roles.find((entry) => entry.id === id);
-  if (!saved) throw new RbacError(500, "The role could not be read back.");
-  return saved;
 }
 
-export async function deleteRole(roleId: string) {
-  await withRbacWriteLock(async (transaction, catalog) => {
+export async function deleteRole(actorId: string, roleId: string) {
+  await withRbacWriteLock(actorId, "role.delete", roleId, async (transaction, catalog) => {
     const current = requireRole(catalog, roleId);
     if (current.managed)
       throw new RbacError(400, "Roles defined by the identity provider cannot be deleted.");
     await transaction.delete(role).where(eq(role.id, roleId));
   });
-  invalidateCatalog();
 }
 
-export async function listRoleMembers(roleId: string): Promise<RoleMember[]> {
-  const catalog = await loadCatalog();
-  requireRole(catalog, roleId);
-  const rows = await db
-    .select({
-      userId: user.id,
-      name: user.name,
-      email: user.email,
-      image: user.image,
-      assignedAt: userRole.assignedAt,
-      assignedBy: userRole.assignedBy,
-    })
-    .from(userRole)
-    .innerJoin(user, eq(user.id, userRole.userId))
-    .where(eq(userRole.roleId, roleId))
-    .orderBy(desc(userRole.assignedAt))
-    .limit(500);
-  return rows.map((row) => ({ ...row, assignedAt: row.assignedAt?.toISOString() ?? null }));
+export async function listRoleMembers(
+  actorId: string,
+  roleId: string,
+  after?: string,
+): Promise<RoleMemberPage> {
+  return withAuthorizedRbacRead(actorId, ["idp:roles:read"], async (transaction, catalog) => {
+    requireRole(catalog, roleId);
+    const rows = await transaction
+      .select({
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+        assignedAt: userRole.assignedAt,
+        assignedBy: userRole.assignedBy,
+      })
+      .from(userRole)
+      .innerJoin(user, eq(user.id, userRole.userId))
+      .where(and(eq(userRole.roleId, roleId), after ? gt(user.id, after) : undefined))
+      .orderBy(user.id)
+      .limit(101);
+    return {
+      members: rows.slice(0, 100).map((row) => ({
+        ...row,
+        assignedAt: row.assignedAt?.toISOString() ?? null,
+      })),
+      nextCursor: rows.length > 100 ? rows[99]!.userId : null,
+    };
+  });
 }
 
-export async function assignRole(roleId: string, userId: string, assignedBy: string) {
-  const catalog = await loadCatalog();
-  const target = requireRole(catalog, roleId);
-  // Membership of a managed role follows the evidence, never an administrator's decision.
-  if (target.managed)
-    throw new RbacError(
-      400,
-      `${target.name} is granted automatically and cannot be assigned by hand.`,
-    );
-  const [found] = await db.select({ id: user.id }).from(user).where(eq(user.id, userId)).limit(1);
-  if (!found) throw new RbacError(404, "That person was not found.");
-  await db.insert(userRole).values({ roleId, userId, assignedBy }).onConflictDoNothing();
-  invalidateCatalog();
+export async function assignRole(actorId: string, roleId: string, userId: string) {
+  await withRbacWriteLock(actorId, "role.assign", roleId, async (transaction, catalog) => {
+    const target = requireRole(catalog, roleId);
+    if (target.managed) throw new RbacError(400, "Managed roles cannot be assigned by hand.");
+    const [found] = await transaction.select({ id: user.id }).from(user).where(eq(user.id, userId));
+    if (!found) throw new RbacError(404, "That person was not found.");
+    await transaction
+      .insert(userRole)
+      .values({ roleId, userId, assignedBy: actorId })
+      .onConflictDoNothing();
+  });
 }
 
-export async function unassignRole(roleId: string, userId: string) {
-  await db.delete(userRole).where(and(eq(userRole.roleId, roleId), eq(userRole.userId, userId)));
-  invalidateCatalog();
+export async function unassignRole(actorId: string, roleId: string, userId: string) {
+  await withRbacWriteLock(actorId, "role.unassign", roleId, async (transaction, catalog) => {
+    const target = requireRole(catalog, roleId);
+    if (target.managed) throw new RbacError(400, "Managed roles cannot be revoked by hand.");
+    await transaction
+      .delete(userRole)
+      .where(and(eq(userRole.roleId, roleId), eq(userRole.userId, userId)));
+  });
 }
 
 /** People an administrator can pick when assigning a role. */
-export async function searchUsers(query: string): Promise<UserSearchResult[]> {
-  const term = `%${query.trim().replace(/[%_\\]/g, (match) => `\\${match}`)}%`;
-  return db
-    .select({ id: user.id, name: user.name, email: user.email, image: user.image })
-    .from(user)
-    .where(query.trim() ? or(ilike(user.name, term), ilike(user.email, term)) : undefined)
-    .orderBy(user.name)
-    .limit(25);
+export async function searchUsers(actorId: string, query: string): Promise<UserSearchResult[]> {
+  return withAuthorizedRbacRead(actorId, ["idp:people:read"], async (transaction) => {
+    const term = `%${query.trim().replace(/[%_\\]/g, (match) => `\\${match}`)}%`;
+    return transaction
+      .select({ id: user.id, name: user.name, email: user.email, image: user.image })
+      .from(user)
+      .where(query.trim() ? or(ilike(user.name, term), ilike(user.email, term)) : undefined)
+      .orderBy(user.name)
+      .limit(25);
+  });
 }
 
 /** The role keys a person has been given by hand, ignoring anything managed. */
-export async function assignedRoleKeys(userId: string, catalog: RbacCatalog): Promise<string[]> {
-  const rows = await db
+async function assignedRoleKeys(
+  userId: string,
+  catalog: RbacCatalog,
+  reader: CatalogReader,
+): Promise<string[]> {
+  const rows = await reader
     .select({ roleId: userRole.roleId })
     .from(userRole)
     .where(eq(userRole.userId, userId));
@@ -440,22 +488,17 @@ export async function assignedRoleKeys(userId: string, catalog: RbacCatalog): Pr
   });
 }
 
-/**
- * The roles and permissions a person currently holds: the roles assigned to them, the
- * managed roles their identity states prove, and any role conferred some other way (Master
- * Admin comes from the configured allowlist, not from evidence), expanded through both
- * hierarchies.
- */
-export async function resolveUserAccess(
-  userId: string,
-  states: readonly string[],
-  conferredRoleKeys: readonly string[] = [],
-): Promise<ResolvedAccess> {
-  const catalog = await loadCatalog();
-  const held = [
-    ...(await assignedRoleKeys(userId, catalog)),
-    ...staticRolesForStates(states),
-    ...conferredRoleKeys,
-  ];
-  return resolveAccess(catalog, held);
+/** Read identity, assignments and graph from one committed database snapshot. */
+export async function resolveUserIdentity(userId: string): Promise<IdentityClaims> {
+  await refreshIdentityMembership(userId);
+  return db.transaction(
+    async (transaction) => {
+      const subject = await readIdentitySubject(userId, transaction);
+      const catalog = await readCatalog(transaction);
+      const held = [...(await assignedRoleKeys(userId, catalog, transaction)), ...subject.roleKeys];
+      const access = resolveAccess(catalog, held);
+      return { states: subject.states, telegramId: subject.telegramId, ...access };
+    },
+    { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
 }

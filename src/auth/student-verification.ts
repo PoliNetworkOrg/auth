@@ -4,6 +4,7 @@ import { z } from "zod";
 import { account } from "../db/auth-schema";
 import { identityEvidence, studentVerificationChallenge } from "../db/evidence";
 import { db } from "../db/index";
+import { authorizationMutationLock } from "../db/security-lock";
 import { env } from "../env";
 import { sendStudentVerificationEmail, studentVerificationEmailConfigured } from "./email";
 import { hasPolimiStudentDomain } from "./policy";
@@ -47,51 +48,56 @@ export async function requestStudentVerification(userId: string, input: unknown)
     throw new StudentVerificationError(503, "Student email verification is not configured.");
   }
   const email = parsePolimiStudentEmail(input);
-  const now = new Date();
-  const [recent] = await db
-    .select({ lastSentAt: studentVerificationChallenge.lastSentAt })
-    .from(studentVerificationChallenge)
-    .where(
-      or(
-        eq(studentVerificationChallenge.userId, userId),
-        eq(studentVerificationChallenge.email, email),
-      ),
-    )
-    .orderBy(desc(studentVerificationChallenge.lastSentAt))
-    .limit(1);
-  if (recent && now.getTime() - recent.lastSentAt.getTime() < RESEND_DELAY_MS) {
-    throw new StudentVerificationError(429, "Wait one minute before requesting another code.");
-  }
-
   const code = randomInt(0, 1_000_000).toString().padStart(6, "0");
   const codeHash = hashCode(userId, email, code);
-  await db.transaction(async (transaction) => {
-    await transaction
-      .delete(studentVerificationChallenge)
-      .where(
-        or(
-          eq(studentVerificationChallenge.userId, userId),
-          eq(studentVerificationChallenge.email, email),
-        ),
-      );
-    await transaction.insert(studentVerificationChallenge).values({
-      userId,
-      email,
-      codeHash,
-      expiresAt: new Date(now.getTime() + CODE_LIFETIME_MS),
-      lastSentAt: now,
-    });
-  });
+  const sentAt = await db.transaction(
+    async (transaction) => {
+      await transaction.execute(authorizationMutationLock);
+      const now = new Date();
+      const [recent] = await transaction
+        .select({ lastSentAt: studentVerificationChallenge.lastSentAt })
+        .from(studentVerificationChallenge)
+        .where(
+          or(
+            eq(studentVerificationChallenge.userId, userId),
+            eq(studentVerificationChallenge.email, email),
+          ),
+        )
+        .orderBy(desc(studentVerificationChallenge.lastSentAt))
+        .limit(1);
+      if (recent && now.getTime() - recent.lastSentAt.getTime() < RESEND_DELAY_MS)
+        throw new StudentVerificationError(429, "Wait one minute before requesting another code.");
+      await transaction
+        .delete(studentVerificationChallenge)
+        .where(
+          or(
+            eq(studentVerificationChallenge.userId, userId),
+            eq(studentVerificationChallenge.email, email),
+          ),
+        );
+      await transaction.insert(studentVerificationChallenge).values({
+        userId,
+        email,
+        codeHash,
+        expiresAt: new Date(now.getTime() + CODE_LIFETIME_MS),
+        lastSentAt: now,
+      });
+      return now;
+    },
+    { isolationLevel: "read committed" },
+  );
 
   try {
     await sendStudentVerificationEmail(email, code);
   } catch {
     await db
-      .delete(studentVerificationChallenge)
+      .update(studentVerificationChallenge)
+      .set({ codeHash: "", expiresAt: new Date() })
       .where(
         and(
           eq(studentVerificationChallenge.userId, userId),
           eq(studentVerificationChallenge.codeHash, codeHash),
+          eq(studentVerificationChallenge.lastSentAt, sentAt),
         ),
       );
     throw new StudentVerificationError(502, "The verification email could not be sent.");
@@ -110,90 +116,99 @@ export async function confirmStudentVerification(
     .safeParse(input.code);
   if (!code.success) throw new StudentVerificationError(400, "Enter the six-digit code.");
 
-  const [challenge] = await db
-    .select()
-    .from(studentVerificationChallenge)
-    .where(eq(studentVerificationChallenge.userId, userId))
-    .limit(1);
-  if (!challenge || challenge.email !== email || challenge.expiresAt <= new Date()) {
-    if (challenge) {
-      await db
-        .delete(studentVerificationChallenge)
-        .where(eq(studentVerificationChallenge.userId, userId));
-    }
-    throw new StudentVerificationError(400, "The code is invalid or expired.");
-  }
+  const result = await db.transaction(
+    async (transaction) => {
+      await transaction.execute(authorizationMutationLock);
+      const [challenge] = await transaction
+        .select()
+        .from(studentVerificationChallenge)
+        .where(eq(studentVerificationChallenge.userId, userId))
+        .limit(1);
+      // Keep the send timestamp after invalidation or consumption. Removing this row
+      // would let a failed confirmation reset both the user and email resend limits.
+      if (
+        !challenge ||
+        challenge.email !== email ||
+        challenge.expiresAt <= new Date() ||
+        challenge.attempts >= MAX_ATTEMPTS
+      ) {
+        return new StudentVerificationError(400, "The code is invalid or expired.");
+      }
 
-  if (!codeMatches(challenge.codeHash, hashCode(userId, email, code.data))) {
-    if (challenge.attempts + 1 >= MAX_ATTEMPTS) {
-      await db
-        .delete(studentVerificationChallenge)
-        .where(eq(studentVerificationChallenge.userId, userId));
-    } else {
-      await db
-        .update(studentVerificationChallenge)
-        .set({ attempts: challenge.attempts + 1 })
-        .where(eq(studentVerificationChallenge.userId, userId));
-    }
-    throw new StudentVerificationError(400, "The code is invalid or expired.");
-  }
+      if (!codeMatches(challenge.codeHash, hashCode(userId, email, code.data))) {
+        await transaction
+          .update(studentVerificationChallenge)
+          .set({
+            attempts: challenge.attempts + 1,
+            ...(challenge.attempts + 1 >= MAX_ATTEMPTS
+              ? { codeHash: "", expiresAt: new Date() }
+              : {}),
+          })
+          .where(eq(studentVerificationChallenge.userId, userId));
+        return new StudentVerificationError(400, "The code is invalid or expired.");
+      }
 
-  const now = new Date();
-  const validUntil = new Date(
-    now.getTime() + env.STUDENT_VERIFICATION_TTL_DAYS * 24 * 60 * 60 * 1_000,
-  );
-  await db.transaction(async (transaction) => {
-    const [currentStudentAccount] = await transaction
-      .select({ accountId: account.accountId })
-      .from(account)
-      .where(and(eq(account.userId, userId), eq(account.providerId, "polimi-email")))
-      .limit(1);
-    if (currentStudentAccount && currentStudentAccount.accountId !== email) {
-      throw new StudentVerificationError(
-        409,
-        "Unlink your current Polimi email before linking another one.",
+      const now = new Date();
+      const validUntil = new Date(
+        now.getTime() + env.STUDENT_VERIFICATION_TTL_DAYS * 24 * 60 * 60 * 1_000,
       );
-    }
-    const [existingAccount] = await transaction
-      .select({ id: account.id, userId: account.userId })
-      .from(account)
-      .where(and(eq(account.issuer, POLIMI_EMAIL_ISSUER), eq(account.accountId, email)))
-      .limit(1);
-    if (existingAccount && existingAccount.userId !== userId) {
-      throw new StudentVerificationError(
-        409,
-        "This Polimi email is already connected to another account.",
-      );
-    }
-    if (!existingAccount) {
-      await transaction.insert(account).values({
-        id: randomUUID(),
-        accountId: email,
-        providerId: "polimi-email",
+      const [currentStudentAccount] = await transaction
+        .select({ accountId: account.accountId })
+        .from(account)
+        .where(and(eq(account.userId, userId), eq(account.providerId, "polimi-email")))
+        .limit(1);
+      if (currentStudentAccount && currentStudentAccount.accountId !== email) {
+        throw new StudentVerificationError(
+          409,
+          "Unlink your current Polimi email before linking another one.",
+        );
+      }
+      const [existingAccount] = await transaction
+        .select({ id: account.id, userId: account.userId })
+        .from(account)
+        .where(and(eq(account.issuer, POLIMI_EMAIL_ISSUER), eq(account.accountId, email)))
+        .limit(1);
+      if (existingAccount && existingAccount.userId !== userId) {
+        throw new StudentVerificationError(
+          409,
+          "This Polimi email is already connected to another account.",
+        );
+      }
+      if (!existingAccount) {
+        await transaction.insert(account).values({
+          id: randomUUID(),
+          accountId: email,
+          providerId: "polimi-email",
+          issuer: POLIMI_EMAIL_ISSUER,
+          userId,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      const proof = {
         issuer: POLIMI_EMAIL_ISSUER,
-        userId,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-    const proof = {
-      issuer: POLIMI_EMAIL_ISSUER,
-      subject: email,
-      providerId: "polimi-email",
-      states: ["student"],
-      validUntil,
-      telegramId: null,
-    };
-    await transaction
-      .insert(identityEvidence)
-      .values(proof)
-      .onConflictDoUpdate({
-        target: [identityEvidence.issuer, identityEvidence.subject],
-        set: proof,
-      });
-    await transaction
-      .delete(studentVerificationChallenge)
-      .where(eq(studentVerificationChallenge.userId, userId));
-  });
-  return { email, validUntil };
+        subject: email,
+        providerId: "polimi-email",
+        states: ["student"],
+        validUntil,
+        telegramId: null,
+      };
+      await transaction
+        .insert(identityEvidence)
+        .values(proof)
+        .onConflictDoUpdate({
+          target: [identityEvidence.issuer, identityEvidence.subject],
+          set: proof,
+        });
+      await transaction
+        .update(studentVerificationChallenge)
+        .set({ codeHash: "", expiresAt: now })
+        .where(eq(studentVerificationChallenge.userId, userId));
+      return { email, validUntil };
+    },
+    { isolationLevel: "read committed" },
+  );
+  // Failed attempts must commit their counter/invalidation before returning a denial.
+  if (result instanceof StudentVerificationError) throw result;
+  return result;
 }

@@ -13,6 +13,7 @@ import { RbacApiError, deleteRole, errorMessage, saveRole } from "@/components/r
 import { KeyChip } from "@/components/rbac/fields";
 import { RoleForm } from "@/components/rbac/role-form";
 import { RoleMembers } from "@/components/rbac/role-members";
+import { canGrantRole } from "@/components/rbac/delegation";
 import { RequirePermission } from "@/components/rbac/require-permission";
 import { useCatalog } from "@/components/rbac/use-catalog";
 import { Button } from "@/components/ui/button";
@@ -23,8 +24,7 @@ export const Route = createFileRoute("/access/roles/$roleId")({ component: Guard
 function RoleDetail() {
   const { roleId } = Route.useParams();
   const navigate = useNavigate();
-  const { can } = useIdpAccessContext();
-  const canWrite = can("idp:roles:write");
+  const access = useIdpAccessContext();
   const { catalog, loading, error: loadError, reload } = useCatalog();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -32,6 +32,11 @@ function RoleDetail() {
   const [fields, setFields] = useState<RbacDraftErrors>();
 
   const role = catalog.roles.find((entry) => entry.id === roleId);
+  const canWrite =
+    access.can("idp:roles:write") &&
+    !!role &&
+    (access.isMasterAdmin || !role.managed) &&
+    canGrantRole(access, catalog, role.key);
 
   async function save(draft: RoleDraft) {
     setBusy(true);
@@ -113,7 +118,8 @@ function RoleDetail() {
           <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
           <p>
             <strong className="font-medium">Granted automatically.</strong> {inferred.evidence}{" "}
-            Nobody can be given or refused this role by hand; choose what it grants below.
+            Nobody can be given or refused this role by hand.
+            {canWrite && " Choose what it grants below."}
           </p>
         </div>
       )}
@@ -135,6 +141,13 @@ function RoleDetail() {
 
       <Card>
         <CardContent className="pt-6">
+          {access.can("idp:roles:write") && !canWrite && (
+            <p className="mb-6 text-sm text-muted-foreground">
+              {role.managed
+                ? "Only Master Admin can change a built-in role."
+                : "This role grants permissions you do not hold. Ask Master Admin to change it or manage its members."}
+            </p>
+          )}
           <RoleForm
             key={`${role.id}-${role.updatedAt ?? ""}`}
             mode="edit"
@@ -170,7 +183,7 @@ function RoleDetail() {
               list to edit here.
             </p>
           ) : (
-            <RoleMembers roleId={role.id} roleName={role.name} canWrite={canWrite} />
+            <RoleMembers key={role.id} roleId={role.id} roleName={role.name} canWrite={canWrite} />
           )}
         </CardContent>
       </Card>

@@ -8,7 +8,7 @@
 // the versions bundled into .output, which matters for Sentry in particular.
 import { readFileSync, writeFileSync } from "node:fs";
 
-const runtimePackages = ["@sentry/tanstackstart-react", "drizzle-orm", "pg"];
+const runtimePackages = ["@sentry/tanstackstart-react", "drizzle-orm", "pg", "zod"];
 
 const dependencies = Object.fromEntries(
   runtimePackages.map((name) => {

@@ -6,6 +6,7 @@ import {
   MANAGED_PERMISSIONS,
   MASTER_ADMIN_ROLE_KEY,
   STATIC_ROLES,
+  catalogForIdpPermissions,
   effectiveRolePermissions,
   expandPermissionKeys,
   expandRoleKeys,
@@ -233,14 +234,13 @@ describe("Master Admin", () => {
     ).toBeTruthy();
   });
 
-  it("still honours an inheriting edge left in the database by an older version", () => {
+  it("denies a wildcard inherited through an edge left by an older version", () => {
     const deputy: RbacCatalog = {
       ...withMaster,
       roles: [...withMaster.roles, role("deputy", [], [MASTER_ADMIN_ROLE_KEY])],
     };
-    expect(resolveAccess(deputy, ["deputy"]).permissions).toEqual(
-      resolveAccess(withMaster, [MASTER_ADMIN_ROLE_KEY]).permissions,
-    );
+    expect(resolveAccess(deputy, ["deputy"]).permissions).toEqual([]);
+    expect(resolveAccess(deputy, ["deputy"]).roles).not.toContain(MASTER_ADMIN_ROLE_KEY);
   });
 
   it("leaves ordinary parents alone", () => {
@@ -316,5 +316,18 @@ describe("permissions the identity provider defines itself", () => {
         { catalog: managedCatalog, currentKey: "idp:roles:write" },
       ).key,
     ).toBeTruthy();
+  });
+});
+
+describe("administration catalog visibility", () => {
+  it("does not disclose roles to someone who may only read permissions", () => {
+    const visible = catalogForIdpPermissions(catalog, ["idp:permissions:read"]);
+    expect(visible.permissions).toBe(catalog.permissions);
+    expect(visible.roles).toEqual([]);
+  });
+
+  it("keeps the permission graph available when explaining roles", () => {
+    const visible = catalogForIdpPermissions(catalog, ["idp:roles:read"]);
+    expect(visible).toEqual(catalog);
   });
 });

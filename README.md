@@ -7,7 +7,7 @@ A standalone TanStack Start and Better Auth identity provider. The backend remai
 Use Node and pnpm through Vite+.
 
 1. Run `vp install`.
-2. Copy `.env.example` to `.env.local`, set a random secret, and point the `DB_*` variables at a **new, separate PostgreSQL database**.
+2. Copy `.env.example` to `.env.local`, set a random secret, point `DB_*` at a **new, separate PostgreSQL database**, and configure an explicit admin group or `IDP_ADMIN_USER_IDS` bootstrap allowlist.
 3. Set `BETTER_AUTH_URL=http://localhost:3000` for local development.
 4. Run `vp run db:migrate` to apply the checked-in migration to that database.
 5. Run `vp run dev` and open the origin set in `BETTER_AUTH_URL`.
@@ -18,9 +18,36 @@ The included `Dockerfile` builds the app and runs the same migration-first start
 
 Google and PoliNetwork Entra create accounts. Once signed in, users can add a passkey from the account page and use it for future logins. Signed-out visitors see a login form with configured providers and passkey sign-in. Email/password login is disabled. The server rejects direct Telegram sign-in requests and protects the last Google or PoliNetwork Entra account from being disconnected, including when passkeys or verifier accounts remain linked.
 
-Roles and permissions require the checked-in `0004`, `0005`, and `0006` migrations, which also move each account's single proven state into a list so one Entra identity can prove both Socio and Direttivo. `0004` carries the old `state` column into the new `states` list and seeds the built-in roles before `0005` drops it, so apply them in order and never `0005` alone. `0006` adds Master Admin and the `idp:*` permissions. Passkeys require the checked-in `0003` database migration. Run `vp run db:migrate` before using them. Their relying-party ID and origin come from `BETTER_AUTH_URL`; use that exact origin in your browser, with HTTPS in production or localhost in development. Register a passkey after signing in with Google or PoliNetwork Entra. The account page lists and removes registered passkeys.
+Roles and permissions require the checked-in `0004` through `0007` migrations, which also move each account's single proven state into a list so one Entra identity can prove both Socio and Direttivo. `0004` carries the old `state` column into the new `states` list and seeds the built-in roles before `0005` drops it, so apply them in order and never `0005` alone. `0006` adds Master Admin and the `idp:*` permissions. `0007` adds immutable RBAC audit history and rejects/quarantines unsafe managed-role links. Passkeys require the checked-in `0003` database migration. Run `vp run db:migrate` before using them. Their relying-party ID and origin come from `BETTER_AUTH_URL`; use that exact origin in your browser, with HTTPS in production or localhost in development. Register a passkey after signing in with Google or PoliNetwork Entra. The account page lists and removes registered passkeys.
 
 New registrations send `PoliNetwork Auth` as the relying-party name. The username uses the user's real email, then an email from stored Google or Microsoft ID-token claims, and falls back to the user's name if neither is available. These claims are display metadata only. Passkey labels use the authenticator's AAGUID to recognize password managers such as 1Password; unknown authenticators display `Passkey`. Existing default labels are resolved when listed, while custom names are preserved. Password managers control their own vault item titles and may still show `localhost` during development. Previously saved vault metadata is not updated by the app.
+
+### Upgrading an existing deployment to RBAC
+
+Merge #6 into #4 before merging #4 to `main`, and deploy the resulting code together.
+The base feature alone does not include the security fixes.
+
+Back up the database, configure the admin bootstrap, stop every old replica, and then
+start the new release with the normal migration-first command. This upgrade requires a
+maintenance window: migration `0005` removes the `state` column still used by the old
+server, so a mixed-version rolling deployment is incompatible. Rollback requires restoring
+the database backup as well as the old image. The migration lock prevents simultaneous
+migrators; it does not make old server code compatible with the new schema.
+
+The environment changes are:
+
+| Setting                         | RBAC behavior                                                                                                                                      |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PN_ENTRA_DIRETTIVO_GROUP_ID`   | New, optional group object ID for Direttivo. Unset grants nobody that evidence-backed role.                                                        |
+| `PN_ENTRA_OIDC_ADMIN_GROUP_ID`  | Existing setting now grants Master Admin. Without it, PN accounts are not administrators. Requires complete PN tenant/client credentials when set. |
+| `IDP_ADMIN_USER_IDS`            | Existing comma-separated local user IDs remain the explicit break-glass administrators. Configure at least this or the admin group before startup. |
+| `PN_ENTRA_MEMBER_REFRESH_HOURS` | Still controls persisted sign-in evidence, defaults to 24. It no longer determines authorization freshness.                                        |
+
+Authorization uses a fixed one-minute Graph cache and five-second lookup deadline, with
+no new environment knobs. Configure the PN application with Graph `GroupMember.Read.All`
+application permission and tenant admin consent. A failed lookup grants no group access;
+the local break-glass IDs remain usable. Partial provider/mail credentials and malformed
+security settings now fail validation before migrations run.
 
 ## Connect identities
 
@@ -38,7 +65,7 @@ Register these callback URLs, replacing the origin with your deployment:
 
 PoliNetwork Entra uses a tenant-specific registration, not the `common` tenant. Google and PoliNetwork Entra are login providers. Telegram uses the official OIDC authorization-code flow with PKCE and RS256 ID tokens, but the server only permits it through the account-linking flow. Configure its allowed origin and callback in BotFather. Its bot user ID comes from the signed `id` claim, separately from its OIDC `sub`.
 
-Polimi verification accepts only the exact `mail.polimi.it` domain. Codes contain six digits, expire after 10 minutes, allow five attempts, and cannot be resent for 60 seconds. The database stores only an HMAC of each code. Successful verification creates a `polimi-email` account link and grants student status for `STUDENT_VERIFICATION_TTL_DAYS`.
+Polimi verification accepts only the exact `mail.polimi.it` domain. Codes contain six digits, expire after 10 minutes, allow five attempts, and cannot be resent for 60 seconds. The cooldown applies to both the user and recipient and survives failed guesses, consumption, and failed delivery. The database stores only an HMAC of each code. Successful verification creates a `polimi-email` account link and grants student status for `STUDENT_VERIFICATION_TTL_DAYS`.
 
 Email delivery uses the same Microsoft Graph client-credential setup as the current backend. The Azure application needs the Graph `Mail.Send` application permission and permission to send as `AZURE_EMAIL_SENDER`. These Azure credentials belong to the mail sender; they do not require access to Polimi Entra.
 
@@ -62,12 +89,12 @@ inherit from each other or two permissions grant each other.
 Four roles always exist and are never created, deleted, or handed out by an administrator.
 Their membership is conferred by the identity provider itself:
 
-| Role           | Key            | Granted by                                                                 |
-| -------------- | -------------- | -------------------------------------------------------------------------- |
-| `Master Admin` | `master-admin` | `IDP_ADMIN_USER_IDS` or the configured Entra administrators group          |
-| `Socio`        | `socio`        | Direct membership of the `Soci` group in PoliNetwork Entra ID              |
-| `Direttivo`    | `direttivo`    | Direct membership of `PN_ENTRA_DIRETTIVO_GROUP_ID` in PoliNetwork Entra ID |
-| `Student`      | `student`      | A verification code delivered to an `@mail.polimi.it` address              |
+| Role           | Key            | Granted by                                                                                          |
+| -------------- | -------------- | --------------------------------------------------------------------------------------------------- |
+| `Master Admin` | `master-admin` | `IDP_ADMIN_USER_IDS`; otherwise the configured administrators group, never an unconfigured fallback |
+| `Socio`        | `socio`        | Direct membership of the `Soci` group in PoliNetwork Entra ID                                       |
+| `Direttivo`    | `direttivo`    | Direct membership of `PN_ENTRA_DIRETTIVO_GROUP_ID` in PoliNetwork Entra ID                          |
+| `Student`      | `student`      | A verification code delivered to an `@mail.polimi.it` address                                       |
 
 **Master Admin holds every permission that exists**, including ones created after it was
 last looked at, because it is a wildcard rather than a stored list. It therefore has no
@@ -75,8 +102,10 @@ grant list of its own to edit, and no role may inherit from it: that would laund
 wildcard nobody can be given into a role an administrator could hand to anyone.
 Unlike the other three it is not proven by identity evidence and never appears among the
 `states`: it comes from the deployment's own configuration, which is what keeps the service
-from being locked out of its own administration. Set `IDP_ADMIN_USER_IDS`, or
-`PN_ENTRA_OIDC_ADMIN_GROUP_ID` to a Microsoft Entra group, to decide who holds it.
+from being locked out of its own administration. `IDP_ADMIN_USER_IDS` is always honored.
+Set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to limit everyone else to that Microsoft Entra group.
+If the group is unset, only the explicit allowlist can confer Master Admin. Startup fails
+without either an admin group plus complete PN Entra credentials or a nonempty allowlist.
 
 What the other three grant is still yours to choose: give them permissions, rename them,
 describe them, and place them in the hierarchy like any other role. Only their key, their
@@ -86,9 +115,9 @@ grants `membership:read` and `student` grants `student:verified`.
 
 `PN_ENTRA_DIRETTIVO_GROUP_ID` is optional and has no default. Until you set it to the
 board's Entra group object ID, nobody is inferred as Direttivo. Both group checks reuse the
-`PN_ENTRA_*` Graph credentials, run together on sign-in, and are rechecked after
-`PN_ENTRA_MEMBER_REFRESH_HOURS`. If either check fails, the evidence expires immediately
-rather than being cached as a confirmed loss of membership, and the next request retries.
+`PN_ENTRA_*` Graph credentials. Authorization rechecks membership with a fixed 60-second
+cache measured from lookup start. Stored sign-in evidence and `PN_ENTRA_MEMBER_REFRESH_HOURS`
+do not extend authorization. Failed or overlong checks grant nothing.
 
 Membership of the built-in roles is not a role assignment: nothing is written to
 `user_role` for them, and evidence contributes only when joined to an account owned by the
@@ -110,7 +139,7 @@ keys; which roles carry them is entirely up to you.
 | Permission               | Covers                                                     |
 | ------------------------ | ---------------------------------------------------------- |
 | `idp:people:read`        | Searching the people registered here                       |
-| `idp:permissions:read`   | Seeing permissions, and the `/access` section at all       |
+| `idp:permissions:read`   | Seeing permissions in the `/access` section                |
 | `idp:permissions:write`  | Creating, changing, and deleting permissions               |
 | `idp:roles:read`         | Seeing roles, what they grant, and who holds them          |
 | `idp:roles:write`        | Creating and changing roles, and giving them to people     |
@@ -128,20 +157,34 @@ the navigation only offers what you hold. Because Master Admin is a wildcard ove
 permission, whoever the deployment configures as an administrator holds all of these, which
 is the bootstrap and break-glass path: there is no second kind of check beside RBAC.
 
-Granting these is real delegation. Someone with `idp:roles:write` can give themselves any
-other role, and so effectively holds everything short of Master Admin. Treat it as you
-would root.
+Write permissions authorize bounded delegation. Only Master Admin can edit managed roles
+or permissions, including through custom ancestors or implications. Other writers can
+change, assign, revoke or delete only access within their current effective permissions;
+neither writer permission permits self-escalation. A new permission definition confers
+nothing: Master Admin must first grant it before others can delegate it. All checks use
+current authority inside the same serialized transaction as the mutation. Graph lookups
+finish before a database transaction starts. Inside the transaction, authorization rereads
+the actor's accounts, evidence, assigned roles and graph, using only still-valid cached
+membership answers. An account unlinked while Graph is pending cannot authorize the write.
+
+Every RBAC mutation records its actor, operation, target and before/after state in
+`rbac_audit_event`. These events commit atomically with the change and reject updates,
+deletes and truncation. Database owners remain trusted and can disable triggers; export
+audit events to separately controlled storage if protection from database owners is needed.
 
 ### Assigning a role
 
 Roles you create are given to people from the role's page at `/access/roles`, which lists
-who holds it and searches for someone to add. An assignment lasts until it is removed.
+who holds it in pages of 100 and searches for someone to add. Searching requires
+`idp:people:read`; removing an existing member does not. An assignment lasts until it is removed.
 Deleting a role removes it from everyone who held it and from every role that inherited it.
 
 Changes take effect on the next token. Already-issued OIDC tokens expire after five
 minutes, so consumers must account for that revocation delay; `/api/identity` and UserInfo
-compute current access on each request. Each replica caches the role graph for 15 seconds,
-so a change made on one replica reaches the others within that window.
+compute current access on each request. The role graph and assignments are read from one committed snapshot without a catalog
+cache. Requests starting after a database revocation commits see it. Group removal takes
+at most 60 seconds to affect new authorization decisions (subject to Graph propagation);
+a token issued just before expiry can remain valid for another five minutes.
 
 A linked Telegram identity grants no role and no permission. Existing backend Telegram
 roles and group assignments remain authoritative and are not copied or queried here.
@@ -176,7 +219,7 @@ spaces between values and are empty strings when no values apply, as is
 `polinetwork_telegram_id` when no Telegram account is linked. The `/api/identity` response
 keeps the object format shown inside the URL-named claim.
 
-Managing applications needs the `idp:applications:write` permission, so it can be given to any role. Master Admin holds it, and by default anyone signed in with a PoliNetwork Entra account (the `pn-entra` provider, verified against `PN_ENTRA_TENANT_ID`) is a Master Admin. To restrict that to a stricter Microsoft 365 group than Soci, set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to that group's object ID: only its direct members, checked through the same Graph credentials, keep it. Graph answers are cached for 15 minutes per user; a failed check denies access instead of caching. `IDP_ADMIN_USER_IDS` remains a break-glass allowlist of local user IDs that always pass. Being a socio never confers administration by itself.
+Managing applications needs the `idp:applications:write` permission, so it can be given to any role. Master Admin holds it only through explicit deployment configuration. To use a Microsoft 365 administrators group distinct from Soci, set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to that group's object ID: only its direct members, checked through the same Graph credentials, keep it. Graph answers are cached for at most 60 seconds from lookup start per user; a failed check denies access instead of caching. `IDP_ADMIN_USER_IDS` remains a break-glass allowlist of local user IDs that always pass. Being a socio never confers administration by itself.
 
 Dynamic registration and client-credentials grants are disabled. Administrators manage clients at `/applications`: create web or native apps as confidential (secret shown once) or public (PKCE only) clients, edit redirect URIs and allowed scopes, rotate secrets, pause sign-ins by disabling an app, skip the consent screen for first-party apps, and delete apps. All administrators share one client pool (the plugin's `clientReference` is a fixed value), so clients are not tied to whoever created them. Redirect URIs follow the provider's rules: web apps need `https` on a public host, native apps may use `http://localhost`, `http://127.0.0.1`, `http://[::1]`, or a reverse-domain custom scheme. Custom routes under `/api/oidc/` back the pages; creation, deletion, and secret rotation go through the Better Auth client endpoints, which enforce the same administrator check.
 
@@ -213,3 +256,9 @@ The integration suite covers discovery, anonymous rejection, current identity cl
 The auth schema was generated with the Better Auth CLI and includes the `account.issuer` field and issuer/subject unique index required by installed Better Auth 1.7.2. Review regeneration diffs: older CLI core schemas omit that field. Generate Drizzle SQL with `vp run db:generate` after any schema change.
 
 References: [Better Auth OAuth provider](https://better-auth.com/docs/plugins/oauth-provider), [Generic OAuth](https://better-auth.com/docs/plugins/generic-oauth), [Telegram OIDC](https://core.telegram.org/bots/telegram-login).
+
+The full RBAC security audit, findings, deployment changes and verification limits are in
+[docs/rbac-security-review.md](docs/rbac-security-review.md). The additional PostgreSQL suite
+runs when `RBAC_TEST_DATABASE_URL` points to a disposable migrated database. To run all tests
+without skips, provide that variable together with the HTTP integration variables above and
+the matching `DB_*`, `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET` and admin bootstrap configuration.

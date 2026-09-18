@@ -19,10 +19,17 @@ vi.mock("@azure/identity", () => ({
   },
 }));
 vi.mock("@microsoft/microsoft-graph-client", () => ({
-  Client: { initWithMiddleware: () => ({ api: () => ({ get: mocks.get }) }) },
+  Client: {
+    initWithMiddleware: () => ({ api: () => ({ option: () => ({ get: mocks.get }) }) }),
+  },
 }));
 
-import { checkPnGroupStates, membershipEvidence, readGroupMembership } from "./membership";
+import {
+  GRAPH_CHECK_TIMEOUT_MS,
+  checkPnGroupStates,
+  membershipEvidence,
+  readGroupMembership,
+} from "./membership";
 
 describe("PN membership verification", () => {
   beforeEach(() => {
@@ -77,6 +84,20 @@ describe("PN membership verification", () => {
     expect(await checkPnGroupStates("member")).toEqual(["socio"]);
   });
 
+  it("starts both configured group checks together", async () => {
+    const resolve: ((page: { value: { id: string }[] }) => void)[] = [];
+    mocks.get.mockImplementation(
+      () =>
+        new Promise<{ value: { id: string }[] }>((done) => {
+          resolve.push(done);
+        }),
+    );
+    const result = checkPnGroupStates("member");
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+    for (const done of resolve) done({ value: [{ id: "member" }] });
+    await expect(result).resolves.toEqual(["socio", "direttivo"]);
+  });
+
   it("does not cache failed checks for a full membership interval", () => {
     const now = new Date("2026-09-07T00:00:00Z");
     expect(membershipEvidence(null, now)).toEqual({ states: [], validUntil: now });
@@ -88,5 +109,19 @@ describe("PN membership verification", () => {
       states: [],
       validUntil: new Date("2026-09-08T00:00:00Z"),
     });
+  });
+
+  it("bounds a stalled Graph lookup and denies group evidence", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      mocks.get.mockImplementation(() => new Promise(() => {}));
+      const result = checkPnGroupStates("member");
+      await vi.advanceTimersByTimeAsync(GRAPH_CHECK_TIMEOUT_MS);
+      await expect(result).resolves.toBeNull();
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

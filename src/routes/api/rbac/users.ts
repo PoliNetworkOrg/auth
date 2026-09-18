@@ -9,7 +9,7 @@ export const Route = createFileRoute("/api/rbac/users")({
         const guard = await requireIdpPermission(request, "idp:people:read");
         if ("response" in guard) return guard.response;
         const query = new URL(request.url).searchParams.get("q") ?? "";
-        return Response.json(await searchUsers(query), { headers: noStore });
+        return Response.json(await searchUsers(guard.session.userId, query), { headers: noStore });
       },
     },
   },

@@ -1,5 +1,9 @@
 import { fileURLToPath } from "node:url";
 
+import { validateSecurityConfiguration } from "./security-config.mjs";
+
+validateSecurityConfiguration(process.env);
+
 import { migrateDatabase } from "./migrate.mjs";
 
 function requiredEnvironmentVariable(name) {

@@ -31,6 +31,8 @@ type ClientFormProps = {
   /** Confidential clients receive a secret. Only selectable when creating. */
   confidential?: boolean;
   onConfidentialChange?: (confidential: boolean) => void;
+  /** Shows the registered settings without offering controls that will be rejected. */
+  readOnly?: boolean;
   busy: boolean;
   serverErrors?: OidcClientDraftErrors;
   submitLabel: string;
@@ -206,6 +208,7 @@ export function ClientForm({
   initial,
   confidential = true,
   onConfidentialChange,
+  readOnly = false,
   busy,
   serverErrors,
   submitLabel,
@@ -509,17 +512,19 @@ export function ClientForm({
         </p>
       )}
 
-      <div className="flex flex-col-reverse gap-3 border-t pt-6 sm:flex-row sm:justify-end">
-        {onCancel && (
-          <Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>
-            Cancel
+      {!readOnly && (
+        <div className="flex flex-col-reverse gap-3 border-t pt-6 sm:flex-row sm:justify-end">
+          {onCancel && (
+            <Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>
+              Cancel
+            </Button>
+          )}
+          <Button type="submit" disabled={busy}>
+            {busy && <LoaderCircle className="animate-spin" aria-hidden="true" />}
+            {submitLabel}
           </Button>
-        )}
-        <Button type="submit" disabled={busy}>
-          {busy && <LoaderCircle className="animate-spin" aria-hidden="true" />}
-          {submitLabel}
-        </Button>
-      </div>
+        </div>
+      )}
     </form>
   );
 }

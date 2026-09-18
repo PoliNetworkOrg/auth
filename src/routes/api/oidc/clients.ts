@@ -9,7 +9,9 @@ export const Route = createFileRoute("/api/oidc/clients")({
         const guard = await requireIdpPermission(request, "idp:applications:read");
         if ("response" in guard) return guard.response;
         const clientId = new URL(request.url).searchParams.get("client_id") ?? undefined;
-        return Response.json(await listOidcClients(clientId), { headers: noStore });
+        return Response.json(await listOidcClients(guard.session.userId, clientId), {
+          headers: noStore,
+        });
       },
     },
   },
