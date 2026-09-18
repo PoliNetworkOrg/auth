@@ -9,8 +9,13 @@ const schema = z
       .default("https://auth.polinetwork.org")
       .refine((value) => {
         const url = new URL(value);
-        return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password;
-      }, "BETTER_AUTH_URL must be an HTTP(S) URL without credentials."),
+        if (url.username || url.password) return false;
+        // Cleartext HTTP would expose sessions and identity claims, so it is only ever
+        // tolerated for local development.
+        if (url.protocol === "http:")
+          return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+        return url.protocol === "https:";
+      }, "BETTER_AUTH_URL must be an HTTPS URL without credentials, or HTTP on localhost."),
     BETTER_AUTH_SECRET: z.string().trim().min(32),
     PN_ENTRA_MEMBER_GROUP_ID: optional(z.uuid()),
     PN_ENTRA_DIRETTIVO_GROUP_ID: optional(z.uuid()),

@@ -64,7 +64,8 @@ function ApplicationsLayout() {
     <div className="min-h-screen">
       <AppHeader active="applications" access={access} />
       <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
-        {access.status === "ready" && access.can("idp:applications:read") ? (
+        {access.status === "ready" &&
+        (access.can("idp:applications:read") || access.can("idp:applications:write")) ? (
           <IdpAccessProvider access={access}>
             <Outlet />
           </IdpAccessProvider>

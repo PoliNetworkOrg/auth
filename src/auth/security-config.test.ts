@@ -45,10 +45,21 @@ describe("security configuration startup validation", () => {
     { PN_ENTRA_MEMBER_REFRESH_HOURS: "NaN" },
     { STUDENT_VERIFICATION_TTL_DAYS: "-1" },
     { BETTER_AUTH_URL: "javascript:alert(1)" },
+    { BETTER_AUTH_URL: "http://auth.polinetwork.org" },
+    { BETTER_AUTH_URL: "http://localhost.attacker.example" },
+    { BETTER_AUTH_URL: "https://user:secret@auth.polinetwork.org" },
     { GOOGLE_CLIENT_ID: "partial" },
   ])("rejects malformed security settings before startup: %j", (invalid) => {
     expect(() =>
       validateSecurityConfiguration({ IDP_ADMIN_USER_IDS: "root", ...invalid }),
     ).toThrow();
   });
+  it.each(["http://localhost:3000", "http://127.0.0.1:3000", "http://[::1]:3000"])(
+    "accepts cleartext HTTP only for local development: %s",
+    (BETTER_AUTH_URL) => {
+      expect(() =>
+        validateSecurityConfiguration({ IDP_ADMIN_USER_IDS: "root", BETTER_AUTH_URL }),
+      ).not.toThrow();
+    },
+  );
 });

@@ -13,12 +13,19 @@ export function AppHeader({ active, access }: { active: Section; access?: IdpAcc
   const ownAccess = useIdpAccess(!!session && !access);
   const { can } = access ?? ownAccess;
   const links: {
-    to: "/" | "/applications" | "/access/roles" | "/access/permissions";
+    to: "/" | "/applications" | "/applications/new" | "/access/roles" | "/access/permissions";
     label: string;
     section: Section;
   }[] = [{ to: "/", label: "Account", section: "account" }];
-  if (can("idp:applications:read"))
-    links.push({ to: "/applications", label: "Applications", section: "applications" });
+  const canReadApplications = can("idp:applications:read");
+  // Someone who may register applications without seeing the existing ones goes straight
+  // to the form, rather than to a list they would be refused.
+  if (canReadApplications || can("idp:applications:write"))
+    links.push({
+      to: canReadApplications ? "/applications" : "/applications/new",
+      label: "Applications",
+      section: "applications",
+    });
   // Straight to the tab they can actually read, rather than a page that would refuse them.
   const accessTab = firstAccessTab(can);
   if (accessTab) links.push({ to: accessTab.to, label: "Access", section: "access" });

@@ -3,7 +3,7 @@ import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
 import type { IdentityClaims } from "./policy";
 import { randomUUID } from "node:crypto";
-import { and, count, eq, gt, ilike, or } from "drizzle-orm";
+import { and, count, eq, gt, ilike, or, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import { authorizationMutationLock } from "../db/security-lock";
 import {
@@ -456,17 +456,46 @@ export async function unassignRole(actorId: string, roleId: string, userId: stri
   });
 }
 
-/** People an administrator can pick when assigning a role. */
-export async function searchUsers(actorId: string, query: string): Promise<UserSearchResult[]> {
-  return withAuthorizedRbacRead(actorId, ["idp:people:read"], async (transaction) => {
-    const term = `%${query.trim().replace(/[%_\\]/g, (match) => `\\${match}`)}%`;
-    return transaction
-      .select({ id: user.id, name: user.name, email: user.email, image: user.image })
-      .from(user)
-      .where(query.trim() ? or(ilike(user.name, term), ilike(user.email, term)) : undefined)
-      .orderBy(user.name)
-      .limit(25);
-  });
+/**
+ * People an administrator can pick when assigning a role.
+ *
+ * Scoping the search to a role marks everyone who already holds it, so the caller can tell
+ * them apart without paging through the whole membership list. Who holds a role is role
+ * data, so that answer is only given to someone who may read roles.
+ */
+export async function searchUsers(
+  actorId: string,
+  query: string,
+  roleId?: string,
+): Promise<UserSearchResult[]> {
+  return withAuthorizedRbacRead(
+    actorId,
+    ["idp:people:read"],
+    async (transaction, catalog, access) => {
+      if (roleId) {
+        if (!access.permissions.includes("idp:roles:read")) {
+          logAuthorizationDenial(actorId, "rbac-store", ["idp:roles:read"]);
+          throw new RbacError(403, "You do not have permission to do that.");
+        }
+        requireRole(catalog, roleId);
+      }
+      const term = `%${query.trim().replace(/[%_\\]/g, (match) => `\\${match}`)}%`;
+      return transaction
+        .select({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          image: user.image,
+          holdsRole: roleId
+            ? sql<boolean>`exists (select 1 from ${userRole} where ${userRole.userId} = ${user.id} and ${userRole.roleId} = ${roleId})`
+            : sql<boolean>`false`,
+        })
+        .from(user)
+        .where(query.trim() ? or(ilike(user.name, term), ilike(user.email, term)) : undefined)
+        .orderBy(user.name)
+        .limit(25);
+    },
+  );
 }
 
 /** The role keys a person has been given by hand, ignoring anything managed. */

@@ -93,8 +93,11 @@ export function changeRoleMember(action: "assign" | "unassign", roleId: string, 
   );
 }
 
-export function searchUsers(query: string, signal?: AbortSignal) {
-  return fetch(`/api/rbac/users?q=${encodeURIComponent(query)}`, { signal }).then((response) =>
+/** Scoped to a role, each result says whether that person already holds it. */
+export function searchUsers(query: string, signal?: AbortSignal, roleId?: string) {
+  const params = new URLSearchParams({ q: query });
+  if (roleId) params.set("role_id", roleId);
+  return fetch(`/api/rbac/users?${params}`, { signal }).then((response) =>
     readJson<UserSearchResult[]>(response, "Unable to search people."),
   );
 }

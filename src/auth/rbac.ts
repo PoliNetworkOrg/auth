@@ -477,4 +477,11 @@ export type RoleMember = {
   assignedBy: string | null;
 };
 
-export type UserSearchResult = { id: string; name: string; email: string; image: string | null };
+export type UserSearchResult = {
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
+  /** Whether the person already holds the role the search was scoped to. */
+  holdsRole: boolean;
+};

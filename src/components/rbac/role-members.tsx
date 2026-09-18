@@ -77,7 +77,7 @@ export function RoleMembers({
     const controller = new AbortController();
     setSearching(true);
     const timer = setTimeout(() => {
-      searchUsers(term, controller.signal)
+      searchUsers(term, controller.signal, roleId)
         .then((found) => {
           setResults(found);
           setSearching(false);
@@ -92,7 +92,9 @@ export function RoleMembers({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [query, canSearch]);
+    // Revision refreshes the results after a change, so someone just taken off the role
+    // becomes assignable again without retyping.
+  }, [query, canSearch, roleId, revision]);
 
   async function change(action: "assign" | "unassign", userId: string) {
     setBusyUser(userId);
@@ -112,8 +114,8 @@ export function RoleMembers({
 
   // Refresh access and the current page after each successful change.
   const changing = busyUser !== "";
-  const held = new Set(members?.map((member) => member.userId));
-  const candidates = results.filter((person) => !held.has(person.id));
+  // The search marks every holder of the role, not just the ones on the page shown below.
+  const candidates = results.filter((person) => !person.holdsRole);
 
   return (
     <div className="space-y-5">
