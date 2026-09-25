@@ -19,6 +19,23 @@ const config = defineConfig({
     options: { typeAware: true, typeCheck: true },
   },
   resolve: { tsconfigPaths: true },
+  // Better Auth carries the in-flight OpenID Connect request across the upstream
+  // provider redirect in per-request state, keyed by module-private tokens that
+  // `defineRequestState()` mints once per module evaluation. Left alone, the server
+  // build inlines `better-auth` into the SSR bundle while giving each
+  // `@better-auth/*` plugin its own chunk with a second copy inlined, so the plugin
+  // writes the pending request under one key and Better Auth reads another. Nothing
+  // fails loudly: sign-in succeeds, the authorization is silently dropped, and the
+  // application that sent the user here never receives its code. Bundling them
+  // together keeps one module instance, and one set of keys.
+  ssr: {
+    noExternal: [
+      "better-auth",
+      "@better-auth/core",
+      "@better-auth/oauth-provider",
+      "@better-auth/passkey",
+    ],
+  },
   plugins: lazyPlugins(() =>
     process.env.VITEST
       ? []
