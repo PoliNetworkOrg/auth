@@ -27,14 +27,11 @@ const config = defineConfig({
   // writes the pending request under one key and Better Auth reads another. Nothing
   // fails loudly: sign-in succeeds, the authorization is silently dropped, and the
   // application that sent the user here never receives its code. Bundling them
-  // together keeps one module instance, and one set of keys.
+  // together keeps one module instance, and one set of keys. Match by pattern so a
+  // newly installed `@better-auth/*` plugin is covered without editing this list;
+  // `scripts/check-server-bundle.mjs` fails the build if anything is duplicated anyway.
   ssr: {
-    noExternal: [
-      "better-auth",
-      "@better-auth/core",
-      "@better-auth/oauth-provider",
-      "@better-auth/passkey",
-    ],
+    noExternal: [/^better-auth(\/|$)/, /^@better-auth\//],
   },
   plugins: lazyPlugins(() =>
     process.env.VITEST
