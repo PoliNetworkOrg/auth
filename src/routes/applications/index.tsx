@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { AppWindow, ChevronRight, Plus, Users } from "lucide-react";
 import type { OidcClientSummary } from "@/auth/oidc-clients";
 import { CopyButton } from "@/components/copy-button";
+import { useIdpAccessContext } from "@/components/idp-access";
 import { errorMessage, fetchOidcClients } from "@/components/oidc/api";
 import { AppLogo } from "@/components/oidc/app-logo";
 import { Badge } from "@/components/ui/badge";
@@ -72,11 +73,16 @@ function IntegrationCard() {
 }
 
 function ApplicationsIndex() {
+  const { can } = useIdpAccessContext();
+  const canRead = can("idp:applications:read");
+  const canWrite = can("idp:applications:write");
   const [clients, setClients] = useState<OidcClientSummary[] | null>(null);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
+    // Someone who may only register applications would be refused this list.
+    if (!canRead) return;
     const controller = new AbortController();
     setError("");
     fetchOidcClients(undefined, controller.signal)
@@ -86,7 +92,7 @@ function ApplicationsIndex() {
           setError(errorMessage(cause, "Unable to load applications."));
       });
     return () => controller.abort();
-  }, [revision]);
+  }, [revision, canRead]);
 
   return (
     <div className="space-y-8">
@@ -97,12 +103,14 @@ function ApplicationsIndex() {
             Services that sign people in with PoliNetwork Identity through OpenID Connect.
           </p>
         </div>
-        <Button asChild>
-          <Link to="/applications/new">
-            <Plus aria-hidden="true" />
-            New application
-          </Link>
-        </Button>
+        {canWrite && (
+          <Button asChild>
+            <Link to="/applications/new">
+              <Plus aria-hidden="true" />
+              New application
+            </Link>
+          </Button>
+        )}
       </div>
 
       {error && (
@@ -119,7 +127,28 @@ function ApplicationsIndex() {
 
       <div className="grid items-start gap-8 lg:grid-cols-[1fr_340px]">
         <div>
-          {clients === null && !error ? (
+          {!canRead ? (
+            <Card>
+              <CardContent className="flex flex-col items-center gap-4 px-6 py-14 text-center">
+                <div className="flex size-14 items-center justify-center rounded-2xl border bg-background text-primary">
+                  <AppWindow className="size-6" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold">Register an application</h2>
+                  <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+                    Your access covers registering applications. Ask an administrator for view
+                    access to see the ones already registered.
+                  </p>
+                </div>
+                <Button asChild>
+                  <Link to="/applications/new">
+                    <Plus aria-hidden="true" />
+                    New application
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : clients === null && !error ? (
             <ul aria-busy="true" aria-label="Loading applications" className="space-y-3">
               {[0, 1, 2].map((index) => (
                 <li key={index} className="h-20 animate-pulse rounded-2xl border bg-card" />
@@ -138,12 +167,14 @@ function ApplicationsIndex() {
                     get a client ID and, for confidential apps, a secret.
                   </p>
                 </div>
-                <Button asChild>
-                  <Link to="/applications/new">
-                    <Plus aria-hidden="true" />
-                    New application
-                  </Link>
-                </Button>
+                {canWrite && (
+                  <Button asChild>
+                    <Link to="/applications/new">
+                      <Plus aria-hidden="true" />
+                      New application
+                    </Link>
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ) : clients ? (

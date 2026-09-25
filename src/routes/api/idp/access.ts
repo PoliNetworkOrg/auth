@@ -1,18 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { auth } from "@/auth";
-import { canManageOidcClients, oidcAdminPolicy } from "@/auth/oidc-admin";
+import { noStore } from "@/auth/api-guard";
+import { getIdentity } from "@/auth/identity";
+import { oidcAdminPolicy } from "@/auth/oidc-admin";
 
-const noStore = { "Cache-Control": "no-store" };
-
-export const Route = createFileRoute("/api/oidc/access")({
+/** What the signed-in person may do to the identity provider, so the UI can match it. */
+export const Route = createFileRoute("/api/idp/access")({
   server: {
     handlers: {
       GET: async ({ request }) => {
         const session = await auth.api.getSession({ headers: request.headers });
         if (!session)
           return Response.json({ error: "Unauthorized." }, { status: 401, headers: noStore });
+        const { permissions, roles } = await getIdentity(session.user.id);
         return Response.json(
-          { allowed: await canManageOidcClients(session.user.id), policy: oidcAdminPolicy() },
+          { permissions, roles, policy: oidcAdminPolicy() },
           { headers: noStore },
         );
       },
