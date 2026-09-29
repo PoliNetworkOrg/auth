@@ -1,5 +1,6 @@
 import { and, countDistinct, desc, eq } from "drizzle-orm";
 import { db } from "../db/index";
+import { withAuthorizedRbacRead, withAuthorizedRbacWrite } from "./rbac-store";
 import { oauthClient, oauthConsent } from "../db/schema";
 import {
   grantTypesForScopes,
@@ -33,21 +34,33 @@ function toSummary(row: ClientRow, authorizedUsers: number): OidcClientSummary {
 }
 
 /** Clients in the shared PoliNetwork pool, newest first, with how many people authorized each. */
-export async function listOidcClients(clientId?: string): Promise<OidcClientSummary[]> {
+async function readOidcClients(
+  reader: Pick<typeof db, "select">,
+  clientId?: string,
+): Promise<OidcClientSummary[]> {
   const filter = clientId
     ? and(eq(oauthClient.referenceId, OIDC_CLIENT_REFERENCE), eq(oauthClient.clientId, clientId))
     : eq(oauthClient.referenceId, OIDC_CLIENT_REFERENCE);
-  const rows = await db
+  const rows = await reader
     .select()
     .from(oauthClient)
     .where(filter)
     .orderBy(desc(oauthClient.createdAt));
-  const consents = await db
+  const consents = await reader
     .select({ clientId: oauthConsent.clientId, users: countDistinct(oauthConsent.userId) })
     .from(oauthConsent)
     .groupBy(oauthConsent.clientId);
   const usersByClient = new Map(consents.map((entry) => [entry.clientId, entry.users]));
   return rows.map((row) => toSummary(row, usersByClient.get(row.clientId) ?? 0));
+}
+
+export async function listOidcClients(
+  actorId: string,
+  clientId?: string,
+): Promise<OidcClientSummary[]> {
+  return withAuthorizedRbacRead(actorId, ["idp:applications:read"], (transaction) =>
+    readOidcClients(transaction, clientId),
+  );
 }
 
 export type OidcClientPatch = {
@@ -58,36 +71,39 @@ export type OidcClientPatch = {
 
 /** Applies validated settings to a pooled client. Returns null when the client is not in the pool. */
 export async function updateOidcClient(
+  actorId: string,
   clientId: string,
   patch: OidcClientPatch,
 ): Promise<OidcClientSummary | null> {
-  const values: Partial<typeof oauthClient.$inferInsert> = { updatedAt: new Date() };
-  if (patch.draft) {
-    const draft = patch.draft;
-    values.name = draft.name;
-    values.uri = draft.uri || null;
-    values.icon = draft.logo || null;
-    values.redirectUris = draft.redirectUris;
-    values.postLogoutRedirectUris = draft.postLogoutRedirectUris.length
-      ? draft.postLogoutRedirectUris
-      : null;
-    values.contacts = draft.contacts.length ? draft.contacts : null;
-    values.tos = draft.tosUri || null;
-    values.policy = draft.policyUri || null;
-    values.scopes = draft.scopes;
-    values.grantTypes = grantTypesForScopes(draft.scopes);
-    values.applicationType = draft.applicationType;
-  }
-  if (patch.disabled !== undefined) values.disabled = patch.disabled;
-  if (patch.skipConsent !== undefined) values.skipConsent = patch.skipConsent;
-  const [updated] = await db
-    .update(oauthClient)
-    .set(values)
-    .where(
-      and(eq(oauthClient.clientId, clientId), eq(oauthClient.referenceId, OIDC_CLIENT_REFERENCE)),
-    )
-    .returning();
-  if (!updated) return null;
-  const [summary] = await listOidcClients(clientId);
-  return summary ?? toSummary(updated, 0);
+  return withAuthorizedRbacWrite(actorId, "idp:applications:write", async (transaction) => {
+    const values: Partial<typeof oauthClient.$inferInsert> = { updatedAt: new Date() };
+    if (patch.draft) {
+      const draft = patch.draft;
+      values.name = draft.name;
+      values.uri = draft.uri || null;
+      values.icon = draft.logo || null;
+      values.redirectUris = draft.redirectUris;
+      values.postLogoutRedirectUris = draft.postLogoutRedirectUris.length
+        ? draft.postLogoutRedirectUris
+        : null;
+      values.contacts = draft.contacts.length ? draft.contacts : null;
+      values.tos = draft.tosUri || null;
+      values.policy = draft.policyUri || null;
+      values.scopes = draft.scopes;
+      values.grantTypes = grantTypesForScopes(draft.scopes);
+      values.applicationType = draft.applicationType;
+    }
+    if (patch.disabled !== undefined) values.disabled = patch.disabled;
+    if (patch.skipConsent !== undefined) values.skipConsent = patch.skipConsent;
+    const [updated] = await transaction
+      .update(oauthClient)
+      .set(values)
+      .where(
+        and(eq(oauthClient.clientId, clientId), eq(oauthClient.referenceId, OIDC_CLIENT_REFERENCE)),
+      )
+      .returning();
+    if (!updated) return null;
+    const [summary] = await readOidcClients(transaction, clientId);
+    return summary ?? toSummary(updated, 0);
+  });
 }

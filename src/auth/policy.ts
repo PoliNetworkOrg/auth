@@ -1,36 +1,43 @@
 export type IdentityEvidence = {
   providerId: string;
-  state: string | null;
+  states: string[];
   validUntil: Date;
   telegramId: string | null;
 };
 
-export function identityClaims(evidence: IdentityEvidence[], now = new Date()) {
+/** Which provider is trusted to prove which state. Evidence from anywhere else is ignored. */
+const STATE_PROVIDERS: Record<string, string> = {
+  socio: "pn-entra",
+  direttivo: "pn-entra",
+  student: "polimi-email",
+};
+
+/** The states a person's linked accounts currently prove, plus their Telegram identity. */
+export function identityStates(evidence: IdentityEvidence[], now = new Date()) {
   const states = new Set<string>();
   let telegramId: string | null = null;
   for (const proof of evidence) {
     if (proof.providerId === "telegram") telegramId = proof.telegramId;
-    if (
-      proof.validUntil > now &&
-      ((proof.providerId === "pn-entra" && proof.state === "socio") ||
-        (proof.providerId === "polimi-email" && proof.state === "student"))
-    )
-      states.add(proof.state);
+    if (proof.validUntil <= now) continue;
+    for (const state of proof.states)
+      if (STATE_PROVIDERS[state] === proof.providerId) states.add(state);
   }
-  return {
-    states: [...states].sort(),
-    telegramId,
-    permissions: [
-      ...(states.has("socio") ? ["membership:read"] : []),
-      ...(states.has("student") ? ["student:verified"] : []),
-    ],
-  };
+  return { states: [...states].sort(), telegramId };
 }
 
-export function oidcIdentityClaims(claimName: string, claims: ReturnType<typeof identityClaims>) {
+/** What `/api/identity`, the ID token, and UserInfo report about a person. */
+export type IdentityClaims = {
+  states: string[];
+  roles: string[];
+  permissions: string[];
+  telegramId: string | null;
+};
+
+export function oidcIdentityClaims(claimName: string, claims: IdentityClaims) {
   return {
     [claimName]: claims,
     polinetwork_states: claims.states.join(" "),
+    polinetwork_roles: claims.roles.join(" "),
     polinetwork_permissions: claims.permissions.join(" "),
     polinetwork_telegram_id: claims.telegramId ?? "",
   };

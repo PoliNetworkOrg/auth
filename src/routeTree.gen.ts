@@ -10,23 +10,41 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AccessRouteRouteImport } from './routes/access/route'
 import { Route as ApplicationsRouteRouteImport } from './routes/applications/route'
 import { Route as ConsentRouteImport } from './routes/consent'
+import { Route as AccessIndexRouteImport } from './routes/access/index'
 import { Route as ApiIdentityRouteImport } from './routes/api/identity'
 import { Route as ApiProvidersRouteImport } from './routes/api/providers'
 import { Route as ApiStudentVerificationRouteImport } from './routes/api/student-verification'
 import { Route as ApplicationsIndexRouteImport } from './routes/applications/index'
 import { Route as ApplicationsClientIdRouteImport } from './routes/applications/$clientId'
 import { Route as ApplicationsNewRouteImport } from './routes/applications/new'
+import { Route as AccessPermissionsIndexRouteImport } from './routes/access/permissions/index'
+import { Route as AccessPermissionsPermissionIdRouteImport } from './routes/access/permissions/$permissionId'
+import { Route as AccessPermissionsNewRouteImport } from './routes/access/permissions/new'
+import { Route as AccessRolesIndexRouteImport } from './routes/access/roles/index'
+import { Route as AccessRolesRoleIdRouteImport } from './routes/access/roles/$roleId'
+import { Route as AccessRolesNewRouteImport } from './routes/access/roles/new'
 import { Route as ApiAccountsUnlinkRouteImport } from './routes/api/accounts/unlink'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as ApiOidcAccessRouteImport } from './routes/api/oidc/access'
+import { Route as ApiIdpAccessRouteImport } from './routes/api/idp/access'
 import { Route as ApiOidcClientUpdateRouteImport } from './routes/api/oidc/client-update'
 import { Route as ApiOidcClientsRouteImport } from './routes/api/oidc/clients'
+import { Route as ApiRbacCatalogRouteImport } from './routes/api/rbac/catalog'
+import { Route as ApiRbacPermissionSaveRouteImport } from './routes/api/rbac/permission-save'
+import { Route as ApiRbacRoleMembersRouteImport } from './routes/api/rbac/role-members'
+import { Route as ApiRbacRoleSaveRouteImport } from './routes/api/rbac/role-save'
+import { Route as ApiRbacUsersRouteImport } from './routes/api/rbac/users'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccessRouteRoute = AccessRouteRouteImport.update({
+  id: '/access',
+  path: '/access',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApplicationsRouteRoute = ApplicationsRouteRouteImport.update({
@@ -38,6 +56,11 @@ const ConsentRoute = ConsentRouteImport.update({
   id: '/consent',
   path: '/consent',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AccessIndexRoute = AccessIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AccessRouteRoute,
 } as any)
 const ApiIdentityRoute = ApiIdentityRouteImport.update({
   id: '/api/identity',
@@ -69,6 +92,37 @@ const ApplicationsNewRoute = ApplicationsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => ApplicationsRouteRoute,
 } as any)
+const AccessPermissionsIndexRoute = AccessPermissionsIndexRouteImport.update({
+  id: '/permissions/',
+  path: '/permissions/',
+  getParentRoute: () => AccessRouteRoute,
+} as any)
+const AccessPermissionsPermissionIdRoute =
+  AccessPermissionsPermissionIdRouteImport.update({
+    id: '/permissions/$permissionId',
+    path: '/permissions/$permissionId',
+    getParentRoute: () => AccessRouteRoute,
+  } as any)
+const AccessPermissionsNewRoute = AccessPermissionsNewRouteImport.update({
+  id: '/permissions/new',
+  path: '/permissions/new',
+  getParentRoute: () => AccessRouteRoute,
+} as any)
+const AccessRolesIndexRoute = AccessRolesIndexRouteImport.update({
+  id: '/roles/',
+  path: '/roles/',
+  getParentRoute: () => AccessRouteRoute,
+} as any)
+const AccessRolesRoleIdRoute = AccessRolesRoleIdRouteImport.update({
+  id: '/roles/$roleId',
+  path: '/roles/$roleId',
+  getParentRoute: () => AccessRouteRoute,
+} as any)
+const AccessRolesNewRoute = AccessRolesNewRouteImport.update({
+  id: '/roles/new',
+  path: '/roles/new',
+  getParentRoute: () => AccessRouteRoute,
+} as any)
 const ApiAccountsUnlinkRoute = ApiAccountsUnlinkRouteImport.update({
   id: '/api/accounts/unlink',
   path: '/api/accounts/unlink',
@@ -79,9 +133,9 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiOidcAccessRoute = ApiOidcAccessRouteImport.update({
-  id: '/api/oidc/access',
-  path: '/api/oidc/access',
+const ApiIdpAccessRoute = ApiIdpAccessRouteImport.update({
+  id: '/api/idp/access',
+  path: '/api/idp/access',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiOidcClientUpdateRoute = ApiOidcClientUpdateRouteImport.update({
@@ -94,9 +148,35 @@ const ApiOidcClientsRoute = ApiOidcClientsRouteImport.update({
   path: '/api/oidc/clients',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRbacCatalogRoute = ApiRbacCatalogRouteImport.update({
+  id: '/api/rbac/catalog',
+  path: '/api/rbac/catalog',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRbacPermissionSaveRoute = ApiRbacPermissionSaveRouteImport.update({
+  id: '/api/rbac/permission-save',
+  path: '/api/rbac/permission-save',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRbacRoleMembersRoute = ApiRbacRoleMembersRouteImport.update({
+  id: '/api/rbac/role-members',
+  path: '/api/rbac/role-members',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRbacRoleSaveRoute = ApiRbacRoleSaveRouteImport.update({
+  id: '/api/rbac/role-save',
+  path: '/api/rbac/role-save',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRbacUsersRoute = ApiRbacUsersRouteImport.update({
+  id: '/api/rbac/users',
+  path: '/api/rbac/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/access': typeof AccessRouteRouteWithChildren
   '/applications': typeof ApplicationsRouteRouteWithChildren
   '/consent': typeof ConsentRoute
   '/api/identity': typeof ApiIdentityRoute
@@ -104,12 +184,24 @@ export interface FileRoutesByFullPath {
   '/api/student-verification': typeof ApiStudentVerificationRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
+  '/access/': typeof AccessIndexRoute
   '/applications/': typeof ApplicationsIndexRoute
+  '/access/permissions/$permissionId': typeof AccessPermissionsPermissionIdRoute
+  '/access/permissions/new': typeof AccessPermissionsNewRoute
+  '/access/roles/$roleId': typeof AccessRolesRoleIdRoute
+  '/access/roles/new': typeof AccessRolesNewRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/oidc/access': typeof ApiOidcAccessRoute
+  '/api/idp/access': typeof ApiIdpAccessRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
   '/api/oidc/clients': typeof ApiOidcClientsRoute
+  '/api/rbac/catalog': typeof ApiRbacCatalogRoute
+  '/api/rbac/permission-save': typeof ApiRbacPermissionSaveRoute
+  '/api/rbac/role-members': typeof ApiRbacRoleMembersRoute
+  '/api/rbac/role-save': typeof ApiRbacRoleSaveRoute
+  '/api/rbac/users': typeof ApiRbacUsersRoute
+  '/access/permissions/': typeof AccessPermissionsIndexRoute
+  '/access/roles/': typeof AccessRolesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -119,16 +211,29 @@ export interface FileRoutesByTo {
   '/api/student-verification': typeof ApiStudentVerificationRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
+  '/access': typeof AccessIndexRoute
   '/applications': typeof ApplicationsIndexRoute
+  '/access/permissions/$permissionId': typeof AccessPermissionsPermissionIdRoute
+  '/access/permissions/new': typeof AccessPermissionsNewRoute
+  '/access/roles/$roleId': typeof AccessRolesRoleIdRoute
+  '/access/roles/new': typeof AccessRolesNewRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/oidc/access': typeof ApiOidcAccessRoute
+  '/api/idp/access': typeof ApiIdpAccessRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
   '/api/oidc/clients': typeof ApiOidcClientsRoute
+  '/api/rbac/catalog': typeof ApiRbacCatalogRoute
+  '/api/rbac/permission-save': typeof ApiRbacPermissionSaveRoute
+  '/api/rbac/role-members': typeof ApiRbacRoleMembersRoute
+  '/api/rbac/role-save': typeof ApiRbacRoleSaveRoute
+  '/api/rbac/users': typeof ApiRbacUsersRoute
+  '/access/permissions': typeof AccessPermissionsIndexRoute
+  '/access/roles': typeof AccessRolesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/access': typeof AccessRouteRouteWithChildren
   '/applications': typeof ApplicationsRouteRouteWithChildren
   '/consent': typeof ConsentRoute
   '/api/identity': typeof ApiIdentityRoute
@@ -136,17 +241,30 @@ export interface FileRoutesById {
   '/api/student-verification': typeof ApiStudentVerificationRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
+  '/access/': typeof AccessIndexRoute
   '/applications/': typeof ApplicationsIndexRoute
+  '/access/permissions/$permissionId': typeof AccessPermissionsPermissionIdRoute
+  '/access/permissions/new': typeof AccessPermissionsNewRoute
+  '/access/roles/$roleId': typeof AccessRolesRoleIdRoute
+  '/access/roles/new': typeof AccessRolesNewRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/oidc/access': typeof ApiOidcAccessRoute
+  '/api/idp/access': typeof ApiIdpAccessRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
   '/api/oidc/clients': typeof ApiOidcClientsRoute
+  '/api/rbac/catalog': typeof ApiRbacCatalogRoute
+  '/api/rbac/permission-save': typeof ApiRbacPermissionSaveRoute
+  '/api/rbac/role-members': typeof ApiRbacRoleMembersRoute
+  '/api/rbac/role-save': typeof ApiRbacRoleSaveRoute
+  '/api/rbac/users': typeof ApiRbacUsersRoute
+  '/access/permissions/': typeof AccessPermissionsIndexRoute
+  '/access/roles/': typeof AccessRolesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/access'
     | '/applications'
     | '/consent'
     | '/api/identity'
@@ -154,12 +272,24 @@ export interface FileRouteTypes {
     | '/api/student-verification'
     | '/applications/$clientId'
     | '/applications/new'
+    | '/access/'
     | '/applications/'
+    | '/access/permissions/$permissionId'
+    | '/access/permissions/new'
+    | '/access/roles/$roleId'
+    | '/access/roles/new'
     | '/api/accounts/unlink'
     | '/api/auth/$'
-    | '/api/oidc/access'
+    | '/api/idp/access'
     | '/api/oidc/client-update'
     | '/api/oidc/clients'
+    | '/api/rbac/catalog'
+    | '/api/rbac/permission-save'
+    | '/api/rbac/role-members'
+    | '/api/rbac/role-save'
+    | '/api/rbac/users'
+    | '/access/permissions/'
+    | '/access/roles/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -169,15 +299,28 @@ export interface FileRouteTypes {
     | '/api/student-verification'
     | '/applications/$clientId'
     | '/applications/new'
+    | '/access'
     | '/applications'
+    | '/access/permissions/$permissionId'
+    | '/access/permissions/new'
+    | '/access/roles/$roleId'
+    | '/access/roles/new'
     | '/api/accounts/unlink'
     | '/api/auth/$'
-    | '/api/oidc/access'
+    | '/api/idp/access'
     | '/api/oidc/client-update'
     | '/api/oidc/clients'
+    | '/api/rbac/catalog'
+    | '/api/rbac/permission-save'
+    | '/api/rbac/role-members'
+    | '/api/rbac/role-save'
+    | '/api/rbac/users'
+    | '/access/permissions'
+    | '/access/roles'
   id:
     | '__root__'
     | '/'
+    | '/access'
     | '/applications'
     | '/consent'
     | '/api/identity'
@@ -185,16 +328,29 @@ export interface FileRouteTypes {
     | '/api/student-verification'
     | '/applications/$clientId'
     | '/applications/new'
+    | '/access/'
     | '/applications/'
+    | '/access/permissions/$permissionId'
+    | '/access/permissions/new'
+    | '/access/roles/$roleId'
+    | '/access/roles/new'
     | '/api/accounts/unlink'
     | '/api/auth/$'
-    | '/api/oidc/access'
+    | '/api/idp/access'
     | '/api/oidc/client-update'
     | '/api/oidc/clients'
+    | '/api/rbac/catalog'
+    | '/api/rbac/permission-save'
+    | '/api/rbac/role-members'
+    | '/api/rbac/role-save'
+    | '/api/rbac/users'
+    | '/access/permissions/'
+    | '/access/roles/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccessRouteRoute: typeof AccessRouteRouteWithChildren
   ApplicationsRouteRoute: typeof ApplicationsRouteRouteWithChildren
   ConsentRoute: typeof ConsentRoute
   ApiIdentityRoute: typeof ApiIdentityRoute
@@ -202,9 +358,14 @@ export interface RootRouteChildren {
   ApiStudentVerificationRoute: typeof ApiStudentVerificationRoute
   ApiAccountsUnlinkRoute: typeof ApiAccountsUnlinkRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
-  ApiOidcAccessRoute: typeof ApiOidcAccessRoute
+  ApiIdpAccessRoute: typeof ApiIdpAccessRoute
   ApiOidcClientUpdateRoute: typeof ApiOidcClientUpdateRoute
   ApiOidcClientsRoute: typeof ApiOidcClientsRoute
+  ApiRbacCatalogRoute: typeof ApiRbacCatalogRoute
+  ApiRbacPermissionSaveRoute: typeof ApiRbacPermissionSaveRoute
+  ApiRbacRoleMembersRoute: typeof ApiRbacRoleMembersRoute
+  ApiRbacRoleSaveRoute: typeof ApiRbacRoleSaveRoute
+  ApiRbacUsersRoute: typeof ApiRbacUsersRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -214,6 +375,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/access': {
+      id: '/access'
+      path: '/access'
+      fullPath: '/access'
+      preLoaderRoute: typeof AccessRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/applications': {
@@ -229,6 +397,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/consent'
       preLoaderRoute: typeof ConsentRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/access/': {
+      id: '/access/'
+      path: '/'
+      fullPath: '/access/'
+      preLoaderRoute: typeof AccessIndexRouteImport
+      parentRoute: typeof AccessRouteRoute
     }
     '/api/identity': {
       id: '/api/identity'
@@ -272,6 +447,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApplicationsNewRouteImport
       parentRoute: typeof ApplicationsRouteRoute
     }
+    '/access/permissions/': {
+      id: '/access/permissions/'
+      path: '/permissions'
+      fullPath: '/access/permissions/'
+      preLoaderRoute: typeof AccessPermissionsIndexRouteImport
+      parentRoute: typeof AccessRouteRoute
+    }
+    '/access/permissions/$permissionId': {
+      id: '/access/permissions/$permissionId'
+      path: '/permissions/$permissionId'
+      fullPath: '/access/permissions/$permissionId'
+      preLoaderRoute: typeof AccessPermissionsPermissionIdRouteImport
+      parentRoute: typeof AccessRouteRoute
+    }
+    '/access/permissions/new': {
+      id: '/access/permissions/new'
+      path: '/permissions/new'
+      fullPath: '/access/permissions/new'
+      preLoaderRoute: typeof AccessPermissionsNewRouteImport
+      parentRoute: typeof AccessRouteRoute
+    }
+    '/access/roles/': {
+      id: '/access/roles/'
+      path: '/roles'
+      fullPath: '/access/roles/'
+      preLoaderRoute: typeof AccessRolesIndexRouteImport
+      parentRoute: typeof AccessRouteRoute
+    }
+    '/access/roles/$roleId': {
+      id: '/access/roles/$roleId'
+      path: '/roles/$roleId'
+      fullPath: '/access/roles/$roleId'
+      preLoaderRoute: typeof AccessRolesRoleIdRouteImport
+      parentRoute: typeof AccessRouteRoute
+    }
+    '/access/roles/new': {
+      id: '/access/roles/new'
+      path: '/roles/new'
+      fullPath: '/access/roles/new'
+      preLoaderRoute: typeof AccessRolesNewRouteImport
+      parentRoute: typeof AccessRouteRoute
+    }
     '/api/accounts/unlink': {
       id: '/api/accounts/unlink'
       path: '/api/accounts/unlink'
@@ -286,11 +503,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/oidc/access': {
-      id: '/api/oidc/access'
-      path: '/api/oidc/access'
-      fullPath: '/api/oidc/access'
-      preLoaderRoute: typeof ApiOidcAccessRouteImport
+    '/api/idp/access': {
+      id: '/api/idp/access'
+      path: '/api/idp/access'
+      fullPath: '/api/idp/access'
+      preLoaderRoute: typeof ApiIdpAccessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/oidc/client-update': {
@@ -307,8 +524,67 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiOidcClientsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/rbac/catalog': {
+      id: '/api/rbac/catalog'
+      path: '/api/rbac/catalog'
+      fullPath: '/api/rbac/catalog'
+      preLoaderRoute: typeof ApiRbacCatalogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/rbac/permission-save': {
+      id: '/api/rbac/permission-save'
+      path: '/api/rbac/permission-save'
+      fullPath: '/api/rbac/permission-save'
+      preLoaderRoute: typeof ApiRbacPermissionSaveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/rbac/role-members': {
+      id: '/api/rbac/role-members'
+      path: '/api/rbac/role-members'
+      fullPath: '/api/rbac/role-members'
+      preLoaderRoute: typeof ApiRbacRoleMembersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/rbac/role-save': {
+      id: '/api/rbac/role-save'
+      path: '/api/rbac/role-save'
+      fullPath: '/api/rbac/role-save'
+      preLoaderRoute: typeof ApiRbacRoleSaveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/rbac/users': {
+      id: '/api/rbac/users'
+      path: '/api/rbac/users'
+      fullPath: '/api/rbac/users'
+      preLoaderRoute: typeof ApiRbacUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
+
+interface AccessRouteRouteChildren {
+  AccessIndexRoute: typeof AccessIndexRoute
+  AccessPermissionsPermissionIdRoute: typeof AccessPermissionsPermissionIdRoute
+  AccessPermissionsNewRoute: typeof AccessPermissionsNewRoute
+  AccessRolesRoleIdRoute: typeof AccessRolesRoleIdRoute
+  AccessRolesNewRoute: typeof AccessRolesNewRoute
+  AccessPermissionsIndexRoute: typeof AccessPermissionsIndexRoute
+  AccessRolesIndexRoute: typeof AccessRolesIndexRoute
+}
+
+const AccessRouteRouteChildren: AccessRouteRouteChildren = {
+  AccessIndexRoute: AccessIndexRoute,
+  AccessPermissionsPermissionIdRoute: AccessPermissionsPermissionIdRoute,
+  AccessPermissionsNewRoute: AccessPermissionsNewRoute,
+  AccessRolesRoleIdRoute: AccessRolesRoleIdRoute,
+  AccessRolesNewRoute: AccessRolesNewRoute,
+  AccessPermissionsIndexRoute: AccessPermissionsIndexRoute,
+  AccessRolesIndexRoute: AccessRolesIndexRoute,
+}
+
+const AccessRouteRouteWithChildren = AccessRouteRoute._addFileChildren(
+  AccessRouteRouteChildren,
+)
 
 interface ApplicationsRouteRouteChildren {
   ApplicationsClientIdRoute: typeof ApplicationsClientIdRoute
@@ -327,6 +603,7 @@ const ApplicationsRouteRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccessRouteRoute: AccessRouteRouteWithChildren,
   ApplicationsRouteRoute: ApplicationsRouteRouteWithChildren,
   ConsentRoute: ConsentRoute,
   ApiIdentityRoute: ApiIdentityRoute,
@@ -334,9 +611,14 @@ const rootRouteChildren: RootRouteChildren = {
   ApiStudentVerificationRoute: ApiStudentVerificationRoute,
   ApiAccountsUnlinkRoute: ApiAccountsUnlinkRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
-  ApiOidcAccessRoute: ApiOidcAccessRoute,
+  ApiIdpAccessRoute: ApiIdpAccessRoute,
   ApiOidcClientUpdateRoute: ApiOidcClientUpdateRoute,
   ApiOidcClientsRoute: ApiOidcClientsRoute,
+  ApiRbacCatalogRoute: ApiRbacCatalogRoute,
+  ApiRbacPermissionSaveRoute: ApiRbacPermissionSaveRoute,
+  ApiRbacRoleMembersRoute: ApiRbacRoleMembersRoute,
+  ApiRbacRoleSaveRoute: ApiRbacRoleSaveRoute,
+  ApiRbacUsersRoute: ApiRbacUsersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

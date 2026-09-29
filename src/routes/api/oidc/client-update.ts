@@ -1,12 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { auth } from "@/auth";
-import { canManageOidcClients } from "@/auth/oidc-admin";
+import { noStore, requireIdpPermission } from "@/auth/api-guard";
 import { hasDraftErrors, normalizeClientDraft, validateClientDraft } from "@/auth/oidc-clients";
 import { updateOidcClient } from "@/auth/oidc-registry";
-import { env } from "@/env";
-
-const noStore = { "Cache-Control": "no-store" };
 
 const draftSchema = z.object({
   name: z.string(),
@@ -32,16 +28,10 @@ export const Route = createFileRoute("/api/oidc/client-update")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        if (request.headers.get("origin") !== new URL(env.BETTER_AUTH_URL).origin)
-          return Response.json({ error: "Invalid origin." }, { status: 403 });
-        const session = await auth.api.getSession({ headers: request.headers });
-        if (!session)
-          return Response.json({ error: "Unauthorized." }, { status: 401, headers: noStore });
-        if (!(await canManageOidcClients(session.user.id)))
-          return Response.json(
-            { error: "You cannot manage applications." },
-            { status: 403, headers: noStore },
-          );
+        const guard = await requireIdpPermission(request, "idp:applications:write", {
+          write: true,
+        });
+        if ("response" in guard) return guard.response;
         const parsed = inputSchema.safeParse(await request.json().catch(() => null));
         if (!parsed.success)
           return Response.json({ error: "Invalid request." }, { status: 400, headers: noStore });
@@ -56,7 +46,11 @@ export const Route = createFileRoute("/api/oidc/client-update")({
               { status: 400, headers: noStore },
             );
         }
-        const client = await updateOidcClient(clientId, { draft, disabled, skipConsent });
+        const client = await updateOidcClient(guard.session.userId, clientId, {
+          draft,
+          disabled,
+          skipConsent,
+        });
         if (!client)
           return Response.json(
             { error: "Application not found." },

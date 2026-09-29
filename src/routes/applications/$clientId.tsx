@@ -19,6 +19,7 @@ import {
   type OidcClientSummary,
 } from "@/auth/oidc-clients";
 import { CopyButton } from "@/components/copy-button";
+import { useIdpAccessContext } from "@/components/idp-access";
 import { ApiError, errorMessage, fetchOidcClients, saveOidcClient } from "@/components/oidc/api";
 import { AppLogo } from "@/components/oidc/app-logo";
 import { ClientForm } from "@/components/oidc/client-form";
@@ -78,6 +79,8 @@ function ToggleRow({
 function ApplicationDetail() {
   const { clientId } = Route.useParams();
   const navigate = useNavigate();
+  const { can } = useIdpAccessContext();
+  const canWrite = can("idp:applications:write");
   const [client, setClient] = useState<OidcClientSummary | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -309,44 +312,49 @@ function ApplicationDetail() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ClientForm
-                key={formKey}
-                mode="edit"
-                initial={draftFromClient(client)}
-                confidential={client.confidential}
-                busy={busy === "save"}
-                serverErrors={fieldErrors}
-                submitLabel="Save changes"
-                onSubmit={(draft) => void save(draft)}
-              />
+              <fieldset disabled={!canWrite} className="border-0 p-0">
+                <ClientForm
+                  key={formKey}
+                  mode="edit"
+                  initial={draftFromClient(client)}
+                  confidential={client.confidential}
+                  readOnly={!canWrite}
+                  busy={busy === "save"}
+                  serverErrors={fieldErrors}
+                  submitLabel="Save changes"
+                  onSubmit={(draft) => void save(draft)}
+                />
+              </fieldset>
             </CardContent>
           </Card>
 
-          <Card className="border-destructive/40">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-destructive">
-                <TriangleAlert className="size-4" aria-hidden="true" />
-                Danger zone
-              </CardTitle>
-              <CardDescription>
-                Deleting removes the client, every consent, and all of its tokens. People who used
-                it will have to be set up again in a new application.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap items-center justify-between gap-4">
-              <p className="text-sm">
-                Prefer a pause? Disable the application instead; it can be re-enabled anytime.
-              </p>
-              <Button
-                variant="destructive"
-                disabled={busy !== null}
-                onClick={() => setDeleteOpen(true)}
-              >
-                <Trash2 aria-hidden="true" />
-                Delete application
-              </Button>
-            </CardContent>
-          </Card>
+          {canWrite && (
+            <Card className="border-destructive/40">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-destructive">
+                  <TriangleAlert className="size-4" aria-hidden="true" />
+                  Danger zone
+                </CardTitle>
+                <CardDescription>
+                  Deleting removes the client, every consent, and all of its tokens. People who used
+                  it will have to be set up again in a new application.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap items-center justify-between gap-4">
+                <p className="text-sm">
+                  Prefer a pause? Disable the application instead; it can be re-enabled anytime.
+                </p>
+                <Button
+                  variant="destructive"
+                  disabled={busy !== null}
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash2 aria-hidden="true" />
+                  Delete application
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <aside className="space-y-6">
@@ -380,15 +388,17 @@ function ApplicationDetail() {
                     <code className="font-mono text-sm tracking-widest text-muted-foreground">
                       ••••••••••••••••
                     </code>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={busy !== null}
-                      onClick={() => setRotateOpen(true)}
-                    >
-                      <RefreshCw aria-hidden="true" />
-                      Rotate
-                    </Button>
+                    {canWrite && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={busy !== null}
+                        onClick={() => setRotateOpen(true)}
+                      >
+                        <RefreshCw aria-hidden="true" />
+                        Rotate
+                      </Button>
+                    )}
                   </div>
                   <p className="mt-2 text-xs leading-5 text-muted-foreground">
                     Secrets are stored hashed and cannot be shown again. Rotating issues a new one
@@ -421,7 +431,7 @@ function ApplicationDetail() {
                     : "People can sign in through this application."
                 }
                 checked={!client.disabled}
-                disabled={busy !== null}
+                disabled={!canWrite || busy !== null}
                 onCheckedChange={(checked) => void toggle({ disabled: !checked })}
               />
               <ToggleRow
@@ -429,7 +439,7 @@ function ApplicationDetail() {
                 title="Skip consent screen"
                 description="For first-party PoliNetwork apps only. People are signed in without reviewing the requested permissions."
                 checked={client.skipConsent}
-                disabled={busy !== null}
+                disabled={!canWrite || busy !== null}
                 onCheckedChange={(checked) => void toggle({ skipConsent: checked })}
               />
             </CardContent>

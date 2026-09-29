@@ -1,4 +1,3 @@
-import type { OidcAdminPolicy } from "@/auth/oidc-admin";
 import type {
   OidcClientDraft,
   OidcClientDraftErrors,
@@ -25,14 +24,6 @@ async function readJson<T>(response: Response, fallback: string): Promise<T> {
     throw new ApiError(details.error ?? fallback, response.status, details.fields);
   }
   return body as T;
-}
-
-export type OidcAccess = { allowed: boolean; policy: OidcAdminPolicy };
-
-export function fetchOidcAccess(signal?: AbortSignal) {
-  return fetch("/api/oidc/access", { signal }).then((response) =>
-    readJson<OidcAccess>(response, "Unable to check your access."),
-  );
 }
 
 export function fetchOidcClients(clientId?: string, signal?: AbortSignal) {

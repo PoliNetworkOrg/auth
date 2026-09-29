@@ -1,10 +1,9 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { ArrowLeft, Building2, ShieldOff } from "lucide-react";
-import type { OidcAdminPolicy } from "@/auth/oidc-admin";
 import { authClient } from "@/auth/client";
 import { AppHeader } from "@/components/app-header";
 import { LoginLayout, LoginPage } from "@/components/login-page";
-import { useOidcAccess } from "@/components/oidc/use-oidc-access";
+import { IdpAccessProvider, useIdpAccess } from "@/components/idp-access";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/applications")({
@@ -12,7 +11,7 @@ export const Route = createFileRoute("/applications")({
   component: ApplicationsLayout,
 });
 
-function NoAccess({ policy }: { policy: OidcAdminPolicy | null }) {
+function NoAccess() {
   return (
     <div className="mx-auto max-w-lg py-10 text-center">
       <div className="mx-auto flex size-14 items-center justify-center rounded-2xl border bg-card text-muted-foreground">
@@ -22,9 +21,7 @@ function NoAccess({ policy }: { policy: OidcAdminPolicy | null }) {
         Applications are managed by PoliNetwork staff
       </h1>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">
-        {policy === "entra-group"
-          ? "Managing sign-in applications is limited to members of the PoliNetwork Entra administrators group. Ask an administrator to add your PoliNetwork Microsoft account."
-          : "Managing sign-in applications requires a PoliNetwork Microsoft account. Link your PoliNetwork APS account from your account page, then come back here."}
+        Access requires application permissions. Ask an administrator to grant the appropriate role.
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-3">
         <Button asChild>
@@ -40,7 +37,7 @@ function NoAccess({ policy }: { policy: OidcAdminPolicy | null }) {
 
 function ApplicationsLayout() {
   const { data: session, isPending, error, refetch } = authClient.useSession();
-  const access = useOidcAccess(!!session);
+  const access = useIdpAccess(!!session);
 
   if (isPending) {
     return (
@@ -67,10 +64,13 @@ function ApplicationsLayout() {
     <div className="min-h-screen">
       <AppHeader active="applications" access={access} />
       <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
-        {access.status === "allowed" ? (
-          <Outlet />
-        ) : access.status === "denied" ? (
-          <NoAccess policy={access.policy} />
+        {access.status === "ready" &&
+        (access.can("idp:applications:read") || access.can("idp:applications:write")) ? (
+          <IdpAccessProvider access={access}>
+            <Outlet />
+          </IdpAccessProvider>
+        ) : access.status === "ready" ? (
+          <NoAccess />
         ) : access.status === "error" ? (
           <div className="mx-auto max-w-lg space-y-4 py-10 text-center">
             <p role="alert">We couldn't check whether you can manage applications.</p>

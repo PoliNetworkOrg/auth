@@ -3,7 +3,7 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import { identityEvidence } from "../db/evidence";
 import { db } from "../db/index";
 import { env } from "../env";
-import { checkPnMemberGroup, membershipEvidence } from "./membership";
+import { checkPnGroupStates, membershipEvidence } from "./membership";
 
 type ProviderSettings = {
   clientId: string;
@@ -56,8 +56,8 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
       if (!telegram && typeof payload.oid !== "string")
         throw new Error("Missing Entra object ID for membership verification");
       const membership = telegram
-        ? { state: null, validUntil: new Date(payload.exp * 1000) }
-        : membershipEvidence(await checkPnMemberGroup(payload.oid as string));
+        ? { states: [], validUntil: new Date(payload.exp * 1000) }
+        : membershipEvidence(await checkPnGroupStates(payload.oid as string));
       const proof = {
         issuer,
         subject: payload.sub,

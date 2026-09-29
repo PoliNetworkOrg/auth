@@ -17,7 +17,8 @@ export const identityEvidence = pgTable(
     subject: text().notNull(),
     providerId: text("provider_id").notNull(),
     externalId: text("external_id"),
-    state: text(),
+    // Every state this account currently proves, for example ['socio', 'direttivo'].
+    states: text().array().notNull().default([]),
     validUntil: timestamp("valid_until", { withTimezone: true }).notNull(),
     telegramId: text("telegram_id"),
   },

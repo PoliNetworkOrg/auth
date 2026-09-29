@@ -11,12 +11,13 @@ import {
 import { errorMessage } from "@/components/oidc/api";
 import { ClientForm } from "@/components/oidc/client-form";
 import { CredentialsReveal } from "@/components/oidc/secret-reveal";
+import { RequirePermission } from "@/components/rbac/require-permission";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 export const Route = createFileRoute("/applications/new")({
   head: () => ({ meta: [{ title: "New application · PoliNetwork Auth" }] }),
-  component: NewApplication,
+  component: GuardedNewApplication,
 });
 
 type Created = { clientId: string; clientSecret: string | null; name: string };
@@ -147,5 +148,17 @@ function NewApplication() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function GuardedNewApplication() {
+  return (
+    <RequirePermission
+      permission="idp:applications:write"
+      backTo="/applications"
+      backLabel="Back to applications"
+    >
+      <NewApplication />
+    </RequirePermission>
   );
 }
