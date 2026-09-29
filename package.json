@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "dotenv -e .env.local -- env NODE_OPTIONS='--import ./instrument.server.mjs' vp dev",
     "generate-routes": "tsr generate",
-    "build": "vp build && cp instrument.server.mjs .output/server",
+    "build": "vp build && node scripts/check-server-bundle.mjs && cp instrument.server.mjs .output/server",
     "preview": "vp preview",
     "start": "node --import ./.output/server/instrument.server.mjs scripts/start.mjs",
     "db:generate": "drizzle-kit generate",
