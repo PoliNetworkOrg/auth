@@ -8,6 +8,7 @@ import {
   type RbacDraftErrors,
   expandPermissionKeys,
   hasDraftErrors,
+  intrinsicImplications,
   normalizePermissionDraft,
   permissionImplicationWouldCycle,
   validatePermissionDraft,
@@ -68,6 +69,7 @@ export function PermissionForm({
         canGrantPermission(access, catalog, entry.key) || draft.implies.includes(entry.key),
     )
     .map((entry) => {
+      const intrinsic = intrinsicImplications(currentKey ?? "").includes(entry.key);
       const cycles = currentKey
         ? permissionImplicationWouldCycle(catalog, currentKey, entry.key)
         : false;
@@ -75,10 +77,12 @@ export function PermissionForm({
         key: entry.key,
         label: entry.name,
         hint: entry.description ?? undefined,
-        disabled: cycles || !canGrantPermission(access, catalog, entry.key),
-        disabledReason: cycles
-          ? `${entry.name} already grants this permission.`
-          : "You do not hold this permission or everything it grants.",
+        disabled: intrinsic || cycles || !canGrantPermission(access, catalog, entry.key),
+        disabledReason: intrinsic
+          ? "Changing this always requires seeing what exists, so it always grants this."
+          : cycles
+            ? `${entry.name} already grants this permission.`
+            : "You do not hold this permission or everything it grants.",
       };
     });
 
@@ -118,6 +122,7 @@ export function PermissionForm({
               value={draft.name}
               maxLength={MAX_NAME_LENGTH}
               aria-invalid={!!errors.name}
+              aria-describedby={errors.name ? `${ids.name}-error` : `${ids.name}-hint`}
               placeholder="Read the member list"
               onChange={(event) => change({ name: event.target.value })}
             />
@@ -142,6 +147,7 @@ export function PermissionForm({
               maxLength={64}
               disabled={managed || (mode === "edit" && !access.isMasterAdmin)}
               aria-invalid={!!errors.key}
+              aria-describedby={errors.key ? `${ids.key}-error` : `${ids.key}-hint`}
               className="font-mono"
               placeholder="membership:read"
               onChange={(event) => change({ key: event.target.value })}
@@ -160,6 +166,9 @@ export function PermissionForm({
             maxLength={MAX_DESCRIPTION_LENGTH}
             rows={2}
             aria-invalid={!!errors.description}
+            aria-describedby={
+              errors.description ? `${ids.description}-error` : `${ids.description}-hint`
+            }
             onChange={(event) => change({ description: event.target.value })}
           />
         </Field>

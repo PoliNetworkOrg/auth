@@ -17,6 +17,7 @@ import {
   staticRolesForStates,
   validatePermissionDraft,
   validateRoleDraft,
+  withIntrinsicImplications,
 } from "./rbac";
 
 function permission(key: string, implies: string[] = [], managed = false): PermissionSummary {
@@ -316,6 +317,37 @@ describe("permissions the identity provider defines itself", () => {
         { catalog: managedCatalog, currentKey: "idp:roles:write" },
       ).key,
     ).toBeTruthy();
+  });
+
+  it("always lets managing roles or permissions see them, whatever is stored", () => {
+    const stripped: RbacCatalog = {
+      roles: [role("roles", ["idp:roles:write"]), role("permissions", ["idp:permissions:write"])],
+      permissions: MANAGED_PERMISSIONS.map((entry) =>
+        permission(entry.key, withIntrinsicImplications(entry.key, []), true),
+      ),
+    };
+    expect(resolveAccess(stripped, ["roles"]).permissions).toContain("idp:roles:read");
+    expect(resolveAccess(stripped, ["permissions"]).permissions).toContain("idp:permissions:read");
+    expect(withIntrinsicImplications("idp:applications:write", [])).toEqual([]);
+    expect(withIntrinsicImplications("constructor", [])).toEqual([]);
+  });
+
+  it("refuses to drop the read a write permission always grants", () => {
+    for (const [key, read] of [
+      ["idp:roles:write", "idp:roles:read"],
+      ["idp:permissions:write", "idp:permissions:read"],
+    ]) {
+      const implies = managedCatalog.permissions.find((entry) => entry.key === key)!.implies;
+      const draft = { key, name: key, description: "", implies };
+      const context = { catalog: managedCatalog, currentKey: key };
+      expect(validatePermissionDraft(draft, context).implies).toBeUndefined();
+      expect(
+        validatePermissionDraft(
+          { ...draft, implies: implies.filter((implied) => implied !== read) },
+          context,
+        ).implies,
+      ).toBeTruthy();
+    }
   });
 });
 

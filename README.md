@@ -150,7 +150,11 @@ They use the permission hierarchy themselves: each `write` grants its `read`,
 `idp:roles:write` also grants `idp:people:read` so a role manager can find who to give a
 role to, and `idp:roles:read` grants `idp:permissions:read` because a role is meaningless
 without seeing the permissions it carries. A role with `idp:roles:write` therefore ends up
-with four permissions and still cannot touch applications.
+with four permissions and still cannot touch applications. `idp:roles:write` granting
+`idp:roles:read` and `idp:permissions:write` granting `idp:permissions:read` are fixed in
+code: they apply even if the stored edge is missing, and cannot be removed, because
+changing either without seeing what already exists makes no sense. The other implications
+are seeded defaults you can edit.
 
 Every administration endpoint and every page checks the specific permission it needs, and
 the navigation only offers what you hold. Because Master Admin is a wildcard over every

@@ -140,6 +140,25 @@ export function managedPermission(key: string): ManagedPermission | undefined {
   return MANAGED_PERMISSIONS.find((entry) => entry.key === key);
 }
 
+/**
+ * Implications that hold whatever the stored graph says, because changing roles or
+ * permissions without seeing what already exists makes no sense. The other seeded
+ * implications of managed permissions stay editable.
+ */
+const INTRINSIC_IMPLICATIONS = new Map<string, readonly ManagedPermissionKey[]>([
+  ["idp:permissions:write", ["idp:permissions:read"]],
+  ["idp:roles:write", ["idp:roles:read"]],
+]);
+
+export function intrinsicImplications(key: string): readonly string[] {
+  return INTRINSIC_IMPLICATIONS.get(key) ?? [];
+}
+
+/** A permission's stored implications plus the ones it always carries, sorted. */
+export function withIntrinsicImplications(key: string, implies: readonly string[]): string[] {
+  return [...new Set([...implies, ...intrinsicImplications(key)])].sort();
+}
+
 export type PermissionSummary = {
   id: string;
   key: string;
@@ -428,6 +447,8 @@ export function validatePermissionDraft(
     draft.implies.some((implied) => permissionImplicationWouldCycle(catalog, currentKey, implied))
   )
     errors.implies = "That would make two permissions grant each other.";
+  else if (intrinsicImplications(key).some((implied) => !draft.implies.includes(implied)))
+    errors.implies = "Changing this always requires seeing what exists, so it keeps that grant.";
   return errors;
 }
 

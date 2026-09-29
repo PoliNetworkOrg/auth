@@ -160,6 +160,7 @@ export function RoleForm({
               value={draft.name}
               maxLength={MAX_NAME_LENGTH}
               aria-invalid={!!errors.name}
+              aria-describedby={errors.name ? `${ids.name}-error` : `${ids.name}-hint`}
               placeholder="Group moderator"
               onChange={(event) => change({ name: event.target.value })}
             />
@@ -182,6 +183,7 @@ export function RoleForm({
               maxLength={64}
               disabled={managed}
               aria-invalid={!!errors.key}
+              aria-describedby={errors.key ? `${ids.key}-error` : `${ids.key}-hint`}
               className="font-mono"
               placeholder="group-moderator"
               onChange={(event) => change({ key: event.target.value })}
@@ -200,6 +202,9 @@ export function RoleForm({
             maxLength={MAX_DESCRIPTION_LENGTH}
             rows={2}
             aria-invalid={!!errors.description}
+            aria-describedby={
+              errors.description ? `${ids.description}-error` : `${ids.description}-hint`
+            }
             onChange={(event) => change({ description: event.target.value })}
           />
         </Field>

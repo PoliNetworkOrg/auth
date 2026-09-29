@@ -34,6 +34,7 @@ import {
   resolveAccess,
   validatePermissionDraft,
   validateRoleDraft,
+  withIntrinsicImplications,
 } from "./rbac";
 
 export class RbacError extends Error {
@@ -124,7 +125,7 @@ async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
       name: row.name,
       description: row.description,
       managed: row.managed,
-      implies: impliedByPermission.get(row.id) ?? [],
+      implies: withIntrinsicImplications(row.key, impliedByPermission.get(row.id) ?? []),
       roleCount: rolesPerPermission.get(row.key) ?? 0,
       createdAt: row.createdAt?.toISOString() ?? null,
       updatedAt: row.updatedAt?.toISOString() ?? null,
