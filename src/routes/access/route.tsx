@@ -9,7 +9,7 @@ import { ACCESS_TABS } from "@/components/rbac/access-tabs";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/access")({
-  head: () => ({ meta: [{ title: "Roles and permissions · PoliNetwork Auth" }] }),
+  head: () => ({ meta: [{ title: "eRBACo · PoliNetwork Auth" }] }),
   component: AccessLayout,
 });
 
@@ -75,26 +75,29 @@ function AccessLayout() {
       <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
         {access.status === "ready" && visibleTabs.length > 0 ? (
           <div className="space-y-8">
-            <nav aria-label="Access administration" className="flex gap-1 border-b">
-              {visibleTabs.map((tab) => {
-                const current = pathname.startsWith(tab.to);
-                return (
-                  <Link
-                    key={tab.to}
-                    to={tab.to}
-                    aria-current={current ? "page" : undefined}
-                    className={cn(
-                      "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      current
-                        ? "border-primary text-foreground"
-                        : "border-transparent text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {tab.label}
-                  </Link>
-                );
-              })}
-            </nav>
+            <div className="space-y-6">
+              <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">eRBACo</h1>
+              <nav aria-label="eRBACo administration" className="flex gap-1 border-b">
+                {visibleTabs.map((tab) => {
+                  const current = pathname.startsWith(tab.to);
+                  return (
+                    <Link
+                      key={tab.to}
+                      to={tab.to}
+                      aria-current={current ? "page" : undefined}
+                      className={cn(
+                        "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        current
+                          ? "border-primary text-foreground"
+                          : "border-transparent text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {tab.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
             <IdpAccessProvider access={access}>
               <Outlet />
             </IdpAccessProvider>

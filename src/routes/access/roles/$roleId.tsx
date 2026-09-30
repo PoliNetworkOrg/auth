@@ -94,7 +94,7 @@ function RoleDetail() {
   const effective = effectiveRolePermissions(catalog, role.key);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
+    <div className="space-y-8">
       <div>
         <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" asChild>
           <Link to="/access/roles">
@@ -102,7 +102,7 @@ function RoleDetail() {
             Roles
           </Link>
         </Button>
-        <h1 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">{role.name}</h1>
+        <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">{role.name}</h2>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
           <KeyChip>{role.key}</KeyChip>
           <span className="ml-2">
