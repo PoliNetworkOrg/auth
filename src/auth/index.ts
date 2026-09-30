@@ -10,6 +10,7 @@ import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { db } from "../db";
 import * as schema from "../db/schema";
 import { env } from "../env";
+import { AUTH_COOKIE_PREFIX } from "./cookies";
 import { getOidcClaims } from "./identity";
 import { logAuthorizationDenial } from "./denial-log";
 import { hasIdpPermission } from "./idp-access";
@@ -80,6 +81,7 @@ export const auth = betterAuth({
     },
   },
   session: { cookieCache: { enabled: false } },
+  advanced: { cookiePrefix: AUTH_COOKIE_PREFIX },
   rateLimit: { enabled: true, storage: "database" },
   plugins: [
     passkey({
