@@ -3,6 +3,7 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import { identityEvidence } from "../db/evidence";
 import { db } from "../db/index";
 import { env } from "../env";
+import { claimEmail } from "./contact-email";
 import { checkPnGroupStates, membershipEvidence } from "./membership";
 
 type ProviderSettings = {
@@ -65,6 +66,9 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
         externalId: typeof payload.oid === "string" ? payload.oid : null,
         ...membership,
         telegramId,
+        // Saved on every sign-in, so people who signed up before this was kept get it the
+        // next time they sign in.
+        email: telegram ? null : (claimEmail(payload) ?? null),
       };
       await db
         .insert(identityEvidence)

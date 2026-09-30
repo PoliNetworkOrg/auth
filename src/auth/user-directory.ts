@@ -17,6 +17,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "../db/index";
 import { account, identityEvidence, passkey, role, user, userRole } from "../db/schema";
 import { env } from "../env";
+import { contactEmails } from "./contact-email";
 import { logAuthorizationDenial } from "./denial-log";
 import { groupMembers } from "./group-listing";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
@@ -31,7 +32,6 @@ import {
   type UserTrait,
   USER_PAGE_SIZE,
   USER_TRAITS,
-  isPlaceholderEmail,
 } from "./users";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -164,6 +164,10 @@ function searchCondition(transaction: Transaction, query: string) {
     ),
     ownsEvidence(
       transaction,
+      and(eq(account.providerId, "pn-entra"), ilike(identityEvidence.email, term)),
+    ),
+    ownsEvidence(
+      transaction,
       and(
         eq(account.providerId, "telegram"),
         eq(account.issuer, TELEGRAM_ISSUER),
@@ -288,6 +292,8 @@ export async function listUsers(actorId: string, search: UserSearch): Promise<Us
               .orderBy(role.key)
           : [];
 
+      const emails = await contactEmails(transaction, rows);
+
       return {
         users: rows.map((row) => {
           const telegram = linked.find(
@@ -299,7 +305,7 @@ export async function listUsers(actorId: string, search: UserSearch): Promise<Us
           return {
             id: row.id,
             name: row.name,
-            email: isPlaceholderEmail(row.email) ? null : row.email,
+            email: emails.get(row.id) ?? null,
             image: row.image,
             createdAt: row.createdAt.toISOString(),
             traits: {
@@ -381,6 +387,7 @@ export async function getUserDetail(actorId: string, userId: string): Promise<Us
         .from(passkey)
         .where(eq(passkey.userId, userId));
       const subject = await readIdentitySubject(userId, transaction);
+      const emails = await contactEmails(transaction, [person]);
 
       const canReadRoles = access.permissions.includes("idp:roles:read");
       const canReadPermissions =
@@ -410,7 +417,7 @@ export async function getUserDetail(actorId: string, userId: string): Promise<Us
       return {
         id: person.id,
         name: person.name,
-        email: isPlaceholderEmail(person.email) ? null : person.email,
+        email: emails.get(person.id) ?? null,
         image: person.image,
         createdAt: person.createdAt.toISOString(),
         updatedAt: person.updatedAt.toISOString(),

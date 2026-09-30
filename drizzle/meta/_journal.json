@@ -71,6 +71,13 @@
       "when": 1790782389732,
       "tag": "0009_idp_users_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790808684017,
+      "tag": "0010_identity_evidence_email",
+      "breakpoints": true
     }
   ]
 }

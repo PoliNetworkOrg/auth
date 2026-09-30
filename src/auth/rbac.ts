@@ -508,7 +508,8 @@ export function hasDraftErrors(errors: RbacDraftErrors) {
 export type RoleMember = {
   userId: string;
   name: string;
-  email: string;
+  /** Null when no real address is known, only a placeholder. */
+  email: string | null;
   image: string | null;
   assignedAt: string | null;
   assignedBy: string | null;
@@ -517,7 +518,8 @@ export type RoleMember = {
 export type UserSearchResult = {
   id: string;
   name: string;
-  email: string;
+  /** Null when no real address is known, only a placeholder. */
+  email: string | null;
   image: string | null;
   /** Whether the person already holds the role the search was scoped to. */
   holdsRole: boolean;
