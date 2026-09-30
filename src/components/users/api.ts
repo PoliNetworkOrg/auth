@@ -17,3 +17,12 @@ export function fetchUser(userId: string, signal?: AbortSignal) {
     readJson<UserDetail>(response, "Unable to load this person."),
   );
 }
+
+/** Permanent. `confirm` must repeat the person's name exactly. */
+export function deleteUser(userId: string, confirm: string) {
+  return fetch(`/api/users/${encodeURIComponent(userId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "delete", confirm }),
+  }).then((response) => readJson<{ deleted: true }>(response, "Unable to delete this person."));
+}

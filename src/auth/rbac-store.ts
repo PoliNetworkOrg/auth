@@ -177,7 +177,7 @@ export async function loadCatalog(actorId: string): Promise<RbacCatalog> {
  */
 export async function withAuthorizedRbacWrite<T>(
   actorId: string,
-  required: Extract<ManagedPermissionKey, `${string}:write`>,
+  required: Extract<ManagedPermissionKey, `${string}:write` | `${string}:delete`>,
   change: (transaction: Transaction, catalog: RbacCatalog, access: ResolvedAccess) => Promise<T>,
 ): Promise<T> {
   await refreshIdentityMembership(actorId);

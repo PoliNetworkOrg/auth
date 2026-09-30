@@ -1,6 +1,7 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ArrowLeft, Clock, KeyRound, Mail, RefreshCw } from "lucide-react";
+import { authClient } from "@/auth/client";
 import type { UserDetail, UserTrait } from "@/auth/users";
 import { CopyButton } from "@/components/copy-button";
 import { useIdpAccessContext } from "@/components/idp-access";
@@ -8,6 +9,7 @@ import { errorMessage } from "@/components/rbac/api";
 import { KeyChip } from "@/components/rbac/fields";
 import { useCatalog } from "@/components/rbac/use-catalog";
 import { fetchUser } from "@/components/users/api";
+import { DeleteUser } from "@/components/users/delete-user";
 import { StatusBadges, TRAIT_ICONS } from "@/components/users/traits";
 import { UserRoles } from "@/components/users/user-roles";
 import { Button } from "@/components/ui/button";
@@ -88,6 +90,8 @@ function LinkedAccounts({ person }: { person: UserDetail }) {
 function UserDetailPage() {
   const { userId } = Route.useParams();
   const { can } = useIdpAccessContext();
+  const { data: session } = authClient.useSession();
+  const navigate = useNavigate();
   const canReadCatalog = can("idp:roles:read") || can("idp:permissions:read");
   const { catalog, reload: reloadCatalog } = useCatalog(canReadCatalog);
   const [person, setPerson] = useState<UserDetail | null>(null);
@@ -233,6 +237,15 @@ function UserDetailPage() {
                 )}
               </CardContent>
             </Card>
+          )}
+
+          {can("idp:users:delete") && (
+            <DeleteUser
+              userId={person.id}
+              userName={person.name}
+              isSelf={session?.user.id === person.id}
+              onDeleted={() => void navigate({ to: "/users" })}
+            />
           )}
         </div>
 

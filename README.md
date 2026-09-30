@@ -18,7 +18,7 @@ The included `Dockerfile` builds the app and runs the same migration-first start
 
 Google and PoliNetwork Entra create accounts. Once signed in, users can add a passkey from the account page and use it for future logins. Signed-out visitors see a login form with configured providers and passkey sign-in. Email/password login is disabled. The server rejects direct Telegram sign-in requests and protects the last Google or PoliNetwork Entra account from being disconnected, including when passkeys or verifier accounts remain linked.
 
-Roles and permissions require the checked-in `0004` through `0008` migrations, which also move each account's single proven state into a list so one Entra identity can prove both Socio and Direttivo. `0004` carries the old `state` column into the new `states` list and seeds the built-in roles before `0005` drops it, so apply them in order and never `0005` alone. `0006` adds Master Admin and the `idp:*` permissions. `0007` adds immutable RBAC audit history and rejects/quarantines unsafe managed-role links. `0008` adds the `idp:users:read` permission behind the user directory. Passkeys require the checked-in `0003` database migration. Run `vp run db:migrate` before using them. Their relying-party ID and origin come from `BETTER_AUTH_URL`; use that exact origin in your browser, with HTTPS in production or localhost in development. Register a passkey after signing in with Google or PoliNetwork Entra. The account page lists and removes registered passkeys.
+Roles and permissions require the checked-in `0004` through `0009` migrations, which also move each account's single proven state into a list so one Entra identity can prove both Socio and Direttivo. `0004` carries the old `state` column into the new `states` list and seeds the built-in roles before `0005` drops it, so apply them in order and never `0005` alone. `0006` adds Master Admin and the `idp:*` permissions. `0007` adds immutable RBAC audit history and rejects/quarantines unsafe managed-role links. `0008` adds the `idp:users:read` permission behind the user directory, and `0009` adds `idp:users:delete`. Passkeys require the checked-in `0003` database migration. Run `vp run db:migrate` before using them. Their relying-party ID and origin come from `BETTER_AUTH_URL`; use that exact origin in your browser, with HTTPS in production or localhost in development. Register a passkey after signing in with Google or PoliNetwork Entra. The account page lists and removes registered passkeys.
 
 New registrations send `PoliNetwork Auth` as the relying-party name. The username uses the user's real email, then an email from stored Google or Microsoft ID-token claims, and falls back to the user's name if neither is available. These claims are display metadata only. Passkey labels use the authenticator's AAGUID to recognize password managers such as 1Password; unknown authenticators display `Passkey`. Existing default labels are resolved when listed, while custom names are preserved. Password managers control their own vault item titles and may still show `localhost` during development. Previously saved vault metadata is not updated by the app.
 
@@ -132,7 +132,7 @@ when that is what you mean.
 ### Permissions the identity provider defines itself
 
 Administering this service is expressed as permissions like any other capability, so it can
-be delegated to a role instead of being wired to a single group. These eight always exist
+be delegated to a role instead of being wired to a single group. These nine always exist
 and can never be created, deleted, or rekeyed, because the code checks for these exact
 keys; which roles carry them is entirely up to you.
 
@@ -140,6 +140,7 @@ keys; which roles carry them is entirely up to you.
 | ------------------------ | ---------------------------------------------------------- |
 | `idp:people:read`        | Searching the people registered here                       |
 | `idp:users:read`         | Browsing the user directory at `/users`                    |
+| `idp:users:delete`       | Permanently deleting someone's account                     |
 | `idp:permissions:read`   | Seeing permissions in the `/access` section                |
 | `idp:permissions:write`  | Creating, changing, and deleting permissions               |
 | `idp:roles:read`         | Seeing roles, what they grant, and who holds them          |
@@ -152,8 +153,8 @@ They use the permission hierarchy themselves: each `write` grants its `read`,
 role to, `idp:users:read` grants `idp:people:read` because browsing everyone includes finding them, and `idp:roles:read` grants `idp:permissions:read` because a role is meaningless
 without seeing the permissions it carries. A role with `idp:roles:write` therefore ends up
 with four permissions and still cannot touch applications. `idp:roles:write` granting
-`idp:roles:read` and `idp:permissions:write` granting `idp:permissions:read` are fixed in
-code: they apply even if the stored edge is missing, and cannot be removed, because
+`idp:roles:read`, `idp:permissions:write` granting `idp:permissions:read` and
+`idp:users:delete` granting `idp:users:read` are fixed in code: they apply even if the stored edge is missing, and cannot be removed, because
 changing either without seeing what already exists makes no sense. The other implications
 are seeded defaults you can edit.
 
@@ -199,6 +200,29 @@ and permissions are only returned to someone holding `idp:roles:read`
 (`idp:permissions:read` is enough for the permission list). With `idp:roles:write`, the same
 page gives and removes roles through the same endpoint and bounded delegation as a role's
 member list: nobody can hand out, or take away, access they do not hold themselves.
+
+### Deleting an account
+
+Someone holding `idp:users:delete` can permanently delete a person from their page in the
+directory. It is a separate permission from everything else, only Master Admin holds it
+until it is granted, and it is guarded more strictly than any other change:
+
+- Nobody can delete their own account, and the request must repeat the person's name.
+- Master Admins cannot be deleted, whether configured through `IDP_ADMIN_USER_IDS` or the
+  administrators group. Remove them from the configuration first.
+- Anyone other than a Master Admin can only delete people whose permissions they already
+  hold themselves, so deletion never removes access from someone more privileged.
+- The person's PoliNetwork groups are confirmed with Graph at that moment rather than read
+  from a cache. If Graph cannot answer, nothing is deleted. An Entra account linked while
+  checking also stops the deletion.
+- The permission is rechecked inside the same serialized transaction as the deletion.
+
+Deletion removes the person with their linked accounts, the identity evidence those
+accounts carried, passkeys, sessions, OAuth tokens and consents, and role assignments.
+Applications stay in the shared pool. Tokens already issued expire within minutes. The
+`rbac_audit_event` row records the actor, which kinds of account were linked, and the
+states, roles and permissions removed, without names, emails or external identifiers,
+since the append-only history must not keep the personal data the deletion erases.
 
 ### Assigning a role
 

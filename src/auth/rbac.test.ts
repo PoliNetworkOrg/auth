@@ -276,6 +276,7 @@ describe("permissions the identity provider defines itself", () => {
     expect(MANAGED_PERMISSIONS.map((entry) => entry.key)).toEqual([
       "idp:people:read",
       "idp:users:read",
+      "idp:users:delete",
       "idp:permissions:read",
       "idp:permissions:write",
       "idp:roles:read",
@@ -340,6 +341,7 @@ describe("permissions the identity provider defines itself", () => {
     };
     expect(resolveAccess(stripped, ["roles"]).permissions).toContain("idp:roles:read");
     expect(resolveAccess(stripped, ["permissions"]).permissions).toContain("idp:permissions:read");
+    expect(withIntrinsicImplications("idp:users:delete", [])).toEqual(["idp:users:read"]);
     expect(withIntrinsicImplications("idp:applications:write", [])).toEqual([]);
     expect(withIntrinsicImplications("constructor", [])).toEqual([]);
   });
@@ -348,6 +350,7 @@ describe("permissions the identity provider defines itself", () => {
     for (const [key, read] of [
       ["idp:roles:write", "idp:roles:read"],
       ["idp:permissions:write", "idp:permissions:read"],
+      ["idp:users:delete", "idp:users:read"],
     ]) {
       const implies = managedCatalog.permissions.find((entry) => entry.key === key)!.implies;
       const draft = { key, name: key, description: "", implies };
