@@ -43,7 +43,7 @@ vi.mock("./index", () => ({
 }));
 
 import { db } from "../db/index";
-import { assignRole, saveRole } from "./rbac-store";
+import { assignRole, saveRole, searchUsers } from "./rbac-store";
 import { getUserDetail, listUsers } from "./user-directory";
 import { Route as usersRoute } from "../routes/api/users/index";
 import { Route as userRoute } from "../routes/api/users/$userId";
@@ -77,18 +77,22 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
   const chiara = unique("chiara");
   let moderator;
 
-  async function account(userId, providerId, issuer, accountId) {
+  async function account(userId, providerId, issuer, accountId, idToken = null) {
     await pool.query(
-      `INSERT INTO account (id, account_id, provider_id, issuer, user_id, updated_at)
-       VALUES ($1, $2, $3, $4, $5, now())`,
-      [randomUUID(), accountId, providerId, issuer, userId],
+      `INSERT INTO account (id, account_id, provider_id, issuer, user_id, id_token, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now())`,
+      [randomUUID(), accountId, providerId, issuer, userId, idToken],
     );
   }
 
+  // Only the claims are read, so the header and signature are placeholders.
+  const idToken = (claims) =>
+    `${Buffer.from('{"alg":"RS256"}').toString("base64url")}.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`;
+
   async function evidence(issuer, subject, providerId, fields) {
     await pool.query(
-      `INSERT INTO identity_evidence (issuer, subject, provider_id, external_id, states, valid_until, telegram_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      `INSERT INTO identity_evidence (issuer, subject, provider_id, external_id, states, valid_until, telegram_id, email)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
         issuer,
         subject,
@@ -97,6 +101,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
         fields.states ?? [],
         fields.validUntil ?? new Date(Date.now() + 86_400_000),
         fields.telegramId ?? null,
+        fields.email ?? null,
       ],
     );
   }
@@ -112,10 +117,19 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
       [root, ordinary, ada, bruno, chiara, tag],
     );
     // Ada: PoliNetwork account recorded as Socio, Telegram, and a current Polimi verification.
-    await account(ada, "pn-entra", ENTRA_ISSUER, `${ada}-entra`);
+    // Her stored email is a placeholder. Her last sign-in saved her real address, which
+    // wins over the older one in her saved token.
+    await account(
+      ada,
+      "pn-entra",
+      ENTRA_ISSUER,
+      `${ada}-entra`,
+      idToken({ preferred_username: `${ada}.old@polinetwork.example` }),
+    );
     await evidence(ENTRA_ISSUER, `${ada}-entra`, "pn-entra", {
       externalId: `${ada}-oid`,
       states: ["socio"],
+      email: `${ada}@polinetwork.example`,
     });
     await account(ada, "telegram", "https://oauth.telegram.org", `${ada}-telegram`);
     await evidence("https://oauth.telegram.org", `${ada}-telegram`, "telegram", {
@@ -191,7 +205,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
     expect(page.total).toBe(3);
     const [first, second, third] = page.users;
     expect(first).toMatchObject({
-      email: null,
+      email: `${ada}@polinetwork.example`,
       telegramId: "4242424242",
       polimiEmail: `${ada}@mail.polimi.it`,
       traits: { student: true, telegram: true, polinetwork: true, google: false, passkey: false },
@@ -215,8 +229,12 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
     expect(names(await listUsers(root, { q: tag, sort: "newest", page: 2 }))).toEqual([]);
   });
 
-  it("finds people by Telegram ID, Polimi address, and user ID", async () => {
+  it("finds people by Telegram ID, Polimi address, PoliNetwork address, and user ID", async () => {
     expect(names(await listUsers(root, { q: "4242424242" }))).toEqual([ada]);
+    expect(names(await listUsers(root, { q: `${ada}@polinetwork` }))).toEqual([ada]);
+    expect(
+      (await searchUsers(root, `${ada}@polinetwork`)).map((person) => [person.id, person.email]),
+    ).toEqual([[ada, `${ada}@polinetwork.example`]]);
     expect(names(await listUsers(root, { q: `${bruno}@mail.polimi` }))).toEqual([bruno]);
     expect(names(await listUsers(root, { q: chiara }))).toEqual([chiara]);
     // Wildcards are searched for literally.
@@ -255,6 +273,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
   it("shows one person's accounts, live status, and every role they hold", async () => {
     mocks.graph.mockImplementation(async (groupId, objectId) => objectId === `${ada}-oid`);
     const detail = await getUserDetail(root, ada);
+    expect(detail.email).toBe(`${ada}@polinetwork.example`);
     expect(detail.states).toEqual(["socio", "student"]);
     expect(detail.telegramId).toBe("4242424242");
     expect(detail.roles).toEqual(["socio", "student"]);

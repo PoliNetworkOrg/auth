@@ -21,6 +21,8 @@ export const identityEvidence = pgTable(
     states: text().array().notNull().default([]),
     validUntil: timestamp("valid_until", { withTimezone: true }).notNull(),
     telegramId: text("telegram_id"),
+    // The address the account signs in with, saved at each sign-in. For display and search only.
+    email: text(),
   },
   (table) => [primaryKey({ columns: [table.issuer, table.subject] })],
 );

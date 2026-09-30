@@ -1,38 +1,9 @@
 import { getAuthenticatorName } from "@better-auth/passkey";
-import { decodeJwt } from "jose";
 import { z } from "zod";
+import { type SignInToken, contactEmail } from "./contact-email";
 
-function realEmail(value: unknown) {
-  const parsed = z.email().safeParse(value);
-  return parsed.success && !parsed.data.toLowerCase().endsWith("@identity.invalid")
-    ? parsed.data
-    : undefined;
-}
-
-// These stored tokens were accepted during OAuth sign-in. Their claims are used
-// only as display labels, never to identify a user or grant permissions.
-export function passkeyUsername(
-  user: { email: string; name: string },
-  accounts: { providerId: string; idToken: string | null }[],
-) {
-  const email = realEmail(user.email);
-  if (email) return email;
-  for (const provider of ["google", "pn-entra"]) {
-    for (const account of accounts) {
-      if (account.providerId !== provider || !account.idToken) continue;
-      let claims;
-      try {
-        claims = decodeJwt(account.idToken);
-      } catch {
-        continue;
-      }
-      for (const candidate of [claims.email, claims.preferred_username, claims.upn]) {
-        const address = realEmail(candidate);
-        if (address) return address;
-      }
-    }
-  }
-  return user.name;
+export function passkeyUsername(user: { email: string; name: string }, tokens: SignInToken[]) {
+  return contactEmail(user.email, tokens) ?? user.name;
 }
 
 export function passkeyLabel(passkey: { name?: string | null; aaguid?: string | null }) {

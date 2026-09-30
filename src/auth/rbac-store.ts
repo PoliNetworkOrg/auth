@@ -1,12 +1,15 @@
+import { contactEmails } from "./contact-email";
 import { mayDelegateMutation } from "./rbac-delegation";
 import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
 import type { IdentityClaims } from "./policy";
 import { randomUUID } from "node:crypto";
-import { and, count, eq, gt, ilike, or, sql } from "drizzle-orm";
+import { and, count, eq, exists, gt, ilike, or, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import { authorizationMutationLock } from "../db/security-lock";
 import {
+  account,
+  identityEvidence,
   rbacAuditEvent,
   permission,
   permissionImplication,
@@ -424,9 +427,15 @@ export async function listRoleMembers(
       .where(and(eq(userRole.roleId, roleId), after ? gt(user.id, after) : undefined))
       .orderBy(user.id)
       .limit(101);
+    const members = rows.slice(0, 100);
+    const emails = await contactEmails(
+      transaction,
+      members.map((row) => ({ id: row.userId, email: row.email })),
+    );
     return {
-      members: rows.slice(0, 100).map((row) => ({
+      members: members.map((row) => ({
         ...row,
+        email: emails.get(row.userId) ?? null,
         assignedAt: row.assignedAt?.toISOString() ?? null,
       })),
       nextCursor: rows.length > 100 ? rows[99]!.userId : null,
@@ -481,7 +490,7 @@ export async function searchUsers(
         requireRole(catalog, roleId);
       }
       const term = `%${query.trim().replace(/[%_\\]/g, (match) => `\\${match}`)}%`;
-      return transaction
+      const people = await transaction
         .select({
           id: user.id,
           name: user.name,
@@ -492,9 +501,39 @@ export async function searchUsers(
             : sql<boolean>`false`,
         })
         .from(user)
-        .where(query.trim() ? or(ilike(user.name, term), ilike(user.email, term)) : undefined)
+        .where(
+          query.trim()
+            ? or(
+                ilike(user.name, term),
+                ilike(user.email, term),
+                // The PoliNetwork address saved at sign-in, since the stored email is a placeholder.
+                exists(
+                  transaction
+                    .select({ found: sql`1` })
+                    .from(account)
+                    .innerJoin(
+                      identityEvidence,
+                      and(
+                        eq(account.issuer, identityEvidence.issuer),
+                        eq(account.accountId, identityEvidence.subject),
+                        eq(account.providerId, identityEvidence.providerId),
+                      ),
+                    )
+                    .where(
+                      and(
+                        eq(account.userId, user.id),
+                        eq(account.providerId, "pn-entra"),
+                        ilike(identityEvidence.email, term),
+                      ),
+                    ),
+                ),
+              )
+            : undefined,
+        )
         .orderBy(user.name)
         .limit(25);
+      const emails = await contactEmails(transaction, people);
+      return people.map((person) => ({ ...person, email: emails.get(person.id) ?? null }));
     },
   );
 }

@@ -12,7 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/user-avatar";
 
-function Person({ name, email, image }: { name: string; email: string; image: string | null }) {
+function Person({
+  name,
+  email,
+  image,
+}: {
+  name: string;
+  email: string | null;
+  image: string | null;
+}) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-3">
       <div className="size-9 shrink-0 overflow-hidden rounded-full border bg-muted text-xs font-semibold text-muted-foreground">
@@ -20,7 +28,7 @@ function Person({ name, email, image }: { name: string; email: string; image: st
       </div>
       <div className="min-w-0">
         <p className="truncate text-sm font-medium">{name}</p>
-        <p className="truncate text-xs text-muted-foreground">{email}</p>
+        <p className="truncate text-xs text-muted-foreground">{email ?? "No email on file"}</p>
       </div>
     </div>
   );
