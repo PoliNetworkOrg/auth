@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
+import { AUTH_COOKIE_PREFIX } from "./cookies";
 
 const baseURL = process.env.IDENTITY_TEST_URL;
 const databaseURL = process.env.IDENTITY_TEST_DATABASE_URL;
@@ -8,7 +9,7 @@ const secret = process.env.IDENTITY_TEST_SECRET;
 
 function sessionHeaders(token: string) {
   return {
-    Cookie: `better-auth.session_token=${encodeURIComponent(
+    Cookie: `${AUTH_COOKIE_PREFIX}.session_token=${encodeURIComponent(
       `${token}.${createHmac("sha256", secret ?? "unused")
         .update(token)
         .digest("base64")}`,
