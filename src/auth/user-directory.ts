@@ -133,7 +133,10 @@ function traitConditions(
         gt(identityEvidence.validUntil, now),
       ),
     ),
-    telegram: ownsAccount(transaction, eq(account.providerId, "telegram")),
+    telegram: ownsAccount(
+      transaction,
+      and(eq(account.providerId, "telegram"), eq(account.issuer, TELEGRAM_ISSUER)),
+    ),
     google: ownsAccount(transaction, eq(account.providerId, "google")),
     polinetwork: ownsAccount(transaction, eq(account.providerId, "pn-entra")),
     passkey: exists(
@@ -153,7 +156,11 @@ function searchCondition(transaction: Transaction, query: string) {
     eq(user.id, query),
     ownsAccount(
       transaction,
-      and(eq(account.providerId, "polimi-email"), ilike(account.accountId, term)),
+      and(
+        eq(account.providerId, "polimi-email"),
+        eq(account.issuer, POLIMI_EMAIL_ISSUER),
+        ilike(account.accountId, term),
+      ),
     ),
     ownsEvidence(
       transaction,
@@ -407,21 +414,22 @@ export async function getUserDetail(actorId: string, userId: string): Promise<Us
         image: person.image,
         createdAt: person.createdAt.toISOString(),
         updatedAt: person.updatedAt.toISOString(),
-        accounts: accounts.map((entry) => ({
-          id: entry.id,
-          providerId: entry.providerId,
-          identifier:
-            entry.providerId === "telegram" && entry.issuer === TELEGRAM_ISSUER
-              ? entry.telegramId
-              : entry.providerId === "polimi-email"
-                ? entry.accountId
-                : null,
-          linkedAt: entry.createdAt.toISOString(),
-          validUntil:
-            entry.providerId === "polimi-email" && entry.validUntil
-              ? entry.validUntil.toISOString()
-              : null,
-        })),
+        accounts: accounts.map((entry) => {
+          const polimi =
+            entry.providerId === "polimi-email" && entry.issuer === POLIMI_EMAIL_ISSUER;
+          return {
+            id: entry.id,
+            providerId: entry.providerId,
+            identifier:
+              entry.providerId === "telegram" && entry.issuer === TELEGRAM_ISSUER
+                ? entry.telegramId
+                : polimi
+                  ? entry.accountId
+                  : null,
+            linkedAt: entry.createdAt.toISOString(),
+            validUntil: polimi && entry.validUntil ? entry.validUntil.toISOString() : null,
+          };
+        }),
         passkeys,
         telegramId: subject.telegramId,
         states: subject.states,
