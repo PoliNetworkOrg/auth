@@ -19,18 +19,31 @@ export async function readGroupMembership(
   return false;
 }
 
+/** Every direct member's object ID, following every page. */
+export async function readGroupMembers(
+  getPage: (path: string) => Promise<MembersPage>,
+  groupId: string,
+): Promise<Set<string>> {
+  const members = new Set<string>();
+  let path: string | undefined = `/groups/${groupId}/members?$select=id&$top=999`;
+  while (path) {
+    const page = await getPage(path);
+    for (const member of page.value) members.add(member.id);
+    path = page["@odata.nextLink"];
+  }
+  return members;
+}
+
 let graphClient: Client | undefined;
 export const GRAPH_CHECK_TIMEOUT_MS = 5_000;
 
 /**
- * Checks whether an Entra object is a direct member of a group through Microsoft Graph.
- * Returns null when the check could not be performed; callers must not treat that as
- * confirmed nonmembership.
+ * Runs a read against Microsoft Graph with the PN credentials and a deadline. Returns null
+ * when it could not be completed; callers must not treat that as an empty answer.
  */
-export async function checkEntraGroupMember(
-  groupId: string,
-  objectId: string,
-): Promise<boolean | null> {
+async function readGraph<T>(
+  read: (getPage: (path: string) => Promise<MembersPage>) => Promise<T>,
+): Promise<T | null> {
   if (!env.PN_ENTRA_TENANT_ID || !env.PN_ENTRA_CLIENT_ID || !env.PN_ENTRA_CLIENT_SECRET) {
     console.warn("Entra group check unavailable: configure PN_ENTRA credentials.");
     return null;
@@ -53,11 +66,7 @@ export async function checkEntraGroupMember(
     }
     const client = graphClient;
     return await Promise.race([
-      readGroupMembership(
-        (path) => client.api(path).option("signal", controller.signal).get(),
-        groupId,
-        objectId,
-      ),
+      read((path) => client.api(path).option("signal", controller.signal).get()),
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
           controller.abort();
@@ -79,6 +88,26 @@ export async function checkEntraGroupMember(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Checks whether an Entra object is a direct member of a group through Microsoft Graph.
+ * Returns null when the check could not be performed; callers must not treat that as
+ * confirmed nonmembership.
+ */
+export async function checkEntraGroupMember(
+  groupId: string,
+  objectId: string,
+): Promise<boolean | null> {
+  return readGraph((getPage) => readGroupMembership(getPage, groupId, objectId));
+}
+
+/**
+ * Every direct member of a group, for showing many people's membership at once. Returns
+ * null when the listing could not be completed, never a partial set.
+ */
+export async function listEntraGroupMembers(groupId: string): Promise<Set<string> | null> {
+  return readGraph((getPage) => readGroupMembers(getPage, groupId));
 }
 
 /**

@@ -500,7 +500,7 @@ export async function searchUsers(
 }
 
 /** The role keys a person has been given by hand, ignoring anything managed. */
-async function assignedRoleKeys(
+export async function assignedRoleKeys(
   userId: string,
   catalog: RbacCatalog,
   reader: CatalogReader,

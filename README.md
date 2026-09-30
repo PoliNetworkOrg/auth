@@ -18,7 +18,7 @@ The included `Dockerfile` builds the app and runs the same migration-first start
 
 Google and PoliNetwork Entra create accounts. Once signed in, users can add a passkey from the account page and use it for future logins. Signed-out visitors see a login form with configured providers and passkey sign-in. Email/password login is disabled. The server rejects direct Telegram sign-in requests and protects the last Google or PoliNetwork Entra account from being disconnected, including when passkeys or verifier accounts remain linked.
 
-Roles and permissions require the checked-in `0004` through `0007` migrations, which also move each account's single proven state into a list so one Entra identity can prove both Socio and Direttivo. `0004` carries the old `state` column into the new `states` list and seeds the built-in roles before `0005` drops it, so apply them in order and never `0005` alone. `0006` adds Master Admin and the `idp:*` permissions. `0007` adds immutable RBAC audit history and rejects/quarantines unsafe managed-role links. Passkeys require the checked-in `0003` database migration. Run `vp run db:migrate` before using them. Their relying-party ID and origin come from `BETTER_AUTH_URL`; use that exact origin in your browser, with HTTPS in production or localhost in development. Register a passkey after signing in with Google or PoliNetwork Entra. The account page lists and removes registered passkeys.
+Roles and permissions require the checked-in `0004` through `0008` migrations, which also move each account's single proven state into a list so one Entra identity can prove both Socio and Direttivo. `0004` carries the old `state` column into the new `states` list and seeds the built-in roles before `0005` drops it, so apply them in order and never `0005` alone. `0006` adds Master Admin and the `idp:*` permissions. `0007` adds immutable RBAC audit history and rejects/quarantines unsafe managed-role links. `0008` adds the `idp:users:read` permission behind the user directory. Passkeys require the checked-in `0003` database migration. Run `vp run db:migrate` before using them. Their relying-party ID and origin come from `BETTER_AUTH_URL`; use that exact origin in your browser, with HTTPS in production or localhost in development. Register a passkey after signing in with Google or PoliNetwork Entra. The account page lists and removes registered passkeys.
 
 New registrations send `PoliNetwork Auth` as the relying-party name. The username uses the user's real email, then an email from stored Google or Microsoft ID-token claims, and falls back to the user's name if neither is available. These claims are display metadata only. Passkey labels use the authenticator's AAGUID to recognize password managers such as 1Password; unknown authenticators display `Passkey`. Existing default labels are resolved when listed, while custom names are preserved. Password managers control their own vault item titles and may still show `localhost` during development. Previously saved vault metadata is not updated by the app.
 
@@ -132,13 +132,14 @@ when that is what you mean.
 ### Permissions the identity provider defines itself
 
 Administering this service is expressed as permissions like any other capability, so it can
-be delegated to a role instead of being wired to a single group. These seven always exist
+be delegated to a role instead of being wired to a single group. These eight always exist
 and can never be created, deleted, or rekeyed, because the code checks for these exact
 keys; which roles carry them is entirely up to you.
 
 | Permission               | Covers                                                     |
 | ------------------------ | ---------------------------------------------------------- |
 | `idp:people:read`        | Searching the people registered here                       |
+| `idp:users:read`         | Browsing the user directory at `/users`                    |
 | `idp:permissions:read`   | Seeing permissions in the `/access` section                |
 | `idp:permissions:write`  | Creating, changing, and deleting permissions               |
 | `idp:roles:read`         | Seeing roles, what they grant, and who holds them          |
@@ -148,7 +149,7 @@ keys; which roles carry them is entirely up to you.
 
 They use the permission hierarchy themselves: each `write` grants its `read`,
 `idp:roles:write` also grants `idp:people:read` so a role manager can find who to give a
-role to, and `idp:roles:read` grants `idp:permissions:read` because a role is meaningless
+role to, `idp:users:read` grants `idp:people:read` because browsing everyone includes finding them, and `idp:roles:read` grants `idp:permissions:read` because a role is meaningless
 without seeing the permissions it carries. A role with `idp:roles:write` therefore ends up
 with four permissions and still cannot touch applications. `idp:roles:write` granting
 `idp:roles:read` and `idp:permissions:write` granting `idp:permissions:read` are fixed in
@@ -175,6 +176,29 @@ Every RBAC mutation records its actor, operation, target and before/after state 
 `rbac_audit_event`. These events commit atomically with the change and reject updates,
 deletes and truncation. Database owners remain trusted and can disable triggers; export
 audit events to separately controlled storage if protection from database owners is needed.
+
+### The user directory
+
+`/users` lists everyone registered here, 50 at a time, for anyone holding `idp:users:read`.
+Each row shows Socio, Direttivo and Student status, the linked Telegram ID, which sign-in
+methods the person has (Google, PoliNetwork Entra, passkey) and, for role readers, the
+roles given to them by hand. Search matches name, email, Polimi address, Telegram ID or
+user ID, and every property can be filtered to "yes" or "no"; the filters live in the URL,
+so a filtered view can be shared or bookmarked.
+
+Socio and Direttivo come from listing each Entra group once through Graph, cached for at
+most 60 seconds like the per-person checks, and matched against people's linked accounts
+from the configured tenant. If Graph cannot list a group, the directory falls back to what
+each person's last PoliNetwork sign-in recorded and says so on the page. A person's own
+page at `/users/<id>` always checks them live, the same way their next token would, and
+shows every linked account, the roles and permissions they end up with, and who gave them
+each hand-made role.
+
+Who holds a role is role data, so the roles column, the role filter and a person's roles
+and permissions are only returned to someone holding `idp:roles:read`
+(`idp:permissions:read` is enough for the permission list). With `idp:roles:write`, the same
+page gives and removes roles through the same endpoint and bounded delegation as a role's
+member list: nobody can hand out, or take away, access they do not hold themselves.
 
 ### Assigning a role
 

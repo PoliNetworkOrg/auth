@@ -89,6 +89,13 @@ export const MANAGED_PERMISSIONS = [
     implies: [],
   },
   {
+    key: "idp:users:read",
+    name: "View users",
+    description:
+      "Browse everyone registered with this identity provider, with their linked accounts and verified status.",
+    implies: ["idp:people:read"],
+  },
+  {
     key: "idp:permissions:read",
     name: "View permissions",
     description: "See the permissions this identity provider defines.",

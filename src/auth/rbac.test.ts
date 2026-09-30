@@ -275,6 +275,7 @@ describe("permissions the identity provider defines itself", () => {
   it("covers roles, permissions, applications, and people", () => {
     expect(MANAGED_PERMISSIONS.map((entry) => entry.key)).toEqual([
       "idp:people:read",
+      "idp:users:read",
       "idp:permissions:read",
       "idp:permissions:write",
       "idp:roles:read",
@@ -292,6 +293,17 @@ describe("permissions the identity provider defines itself", () => {
       "idp:permissions:read",
       "idp:roles:read",
       "idp:roles:write",
+    ]);
+  });
+
+  it("lets browsing users find people but not see or change roles", () => {
+    const browsing: RbacCatalog = {
+      ...managedCatalog,
+      roles: [role("support", ["idp:users:read"])],
+    };
+    expect(resolveAccess(browsing, ["support"]).permissions).toEqual([
+      "idp:people:read",
+      "idp:users:read",
     ]);
   });
 
