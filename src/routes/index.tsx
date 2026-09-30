@@ -374,7 +374,7 @@ function AccountPage() {
         </div>
         <footer className="mt-12 flex flex-wrap items-start justify-between gap-4 border-t pt-6 text-xs leading-5 text-muted-foreground">
           <p>PoliNetwork APS</p>
-          <p className="max-w-md sm:text-right">
+          <p className="sm:text-right">
             Identity is in preview. Existing PoliNetwork services still use their current sign-in.
           </p>
         </footer>

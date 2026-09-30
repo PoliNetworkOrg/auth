@@ -1,9 +1,13 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import { cn } from "cn";
+import { LogOut, UserRound } from "lucide-react";
+import { Popover } from "radix-ui";
 import { authClient } from "@/auth/client";
 import { type IdpAccess, useIdpAccess } from "@/components/idp-access";
 import { firstAccessTab } from "@/components/rbac/access-tabs";
 import { ThemeSwitch } from "@/components/theme-switch";
+import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/user-avatar";
 
 type Section = "account" | "users" | "applications" | "access";
@@ -74,14 +78,79 @@ export function AppHeader({ active, access }: { active: Section; access?: IdpAcc
         </div>
         <div className="flex items-center gap-3">
           <ThemeSwitch />
-          {session && (
-            <div className="size-9 overflow-hidden rounded-full border bg-muted text-xs font-semibold text-muted-foreground">
-              <UserAvatar name={session.user.name} image={session.user.image} />
-            </div>
-          )}
+          {session && <AccountMenu user={session.user} />}
         </div>
       </div>
       {nav("flex gap-1 overflow-x-auto px-5 pb-3 sm:hidden")}
     </header>
+  );
+}
+
+function AccountMenu({ user }: { user: { name: string; email: string; image?: string | null } }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <Popover.Root
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setError(null);
+      }}
+    >
+      <Popover.Trigger
+        aria-label="Open account menu"
+        className="size-9 overflow-hidden rounded-full border bg-muted text-xs font-semibold text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <UserAvatar name={user.name} image={user.image} />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          align="end"
+          sideOffset={8}
+          className="z-50 w-64 rounded-2xl border bg-card p-4 text-card-foreground shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+        >
+          <div className="flex items-center gap-3">
+            <div className="size-11 shrink-0 overflow-hidden rounded-full border bg-muted text-sm font-semibold text-muted-foreground">
+              <UserAvatar name={user.name} image={user.image} />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">{user.name}</p>
+              <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-1 border-t pt-3">
+            <Button asChild variant="ghost" size="sm" className="justify-start">
+              <Link to="/" onClick={() => setOpen(false)}>
+                <UserRound />
+                Your account
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="justify-start text-muted-foreground"
+              onClick={async () => {
+                const result = await authClient.signOut();
+                if (result.error) {
+                  setError(result.error.message ?? "Unable to sign out.");
+                  return;
+                }
+                setOpen(false);
+                void navigate({ to: "/" });
+              }}
+            >
+              <LogOut />
+              Sign out
+            </Button>
+          </div>
+          {error && (
+            <p role="alert" className="mt-2 text-xs text-destructive">
+              {error}
+            </p>
+          )}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

@@ -91,7 +91,7 @@ function UsersLayout() {
         )}
         <footer className="mt-12 flex flex-wrap items-start justify-between gap-4 border-t pt-6 text-xs leading-5 text-muted-foreground">
           <p>PoliNetwork APS</p>
-          <p className="max-w-md sm:text-right">
+          <p className="sm:text-right">
             Role changes apply to new sign-ins immediately. Already-issued tokens expire within
             minutes.
           </p>

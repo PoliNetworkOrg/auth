@@ -77,6 +77,9 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
   const ada = unique("ada");
   const bruno = unique("bruno");
   const chiara = unique("chiara");
+  // Outside the tagged fixtures, so the queries scoped to `tag` do not see him.
+  const dario = unique("dario");
+  const darioMail = `${dario}@mail.polimi.it`;
   let moderator;
 
   async function account(userId, providerId, issuer, accountId, idToken = null) {
@@ -160,6 +163,17 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
       externalId: `${chiara}-oid`,
       states: ["socio"],
     });
+    // Dario: Telegram and Polimi accounts from issuers those providers never use.
+    await pool.query(
+      `INSERT INTO "user" (id, name, email) VALUES ($1, $1, $1 || '@gmail.example')`,
+      [dario],
+    );
+    await account(dario, "telegram", "https://telegram.example", `${dario}-telegram`);
+    await evidence("https://telegram.example", `${dario}-telegram`, "telegram", {
+      telegramId: "5151515151",
+    });
+    await account(dario, "polimi-email", "https://mail.example", darioMail);
+    await evidence("https://mail.example", darioMail, "polimi-email", { states: ["student"] });
     moderator = await saveRole(root, draftRole(unique("moderator")));
     await assignRole(root, moderator.id, bruno);
   });
@@ -278,6 +292,27 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
     } finally {
       await unassignRole(root, moderator.id, ordinary);
     }
+  });
+
+  it("ignores Telegram and Polimi accounts from issuers those providers never use", async () => {
+    const [row] = (await listUsers(root, { q: dario })).users;
+    expect(row).toMatchObject({
+      telegramId: null,
+      polimiEmail: null,
+      traits: { telegram: false, student: false },
+    });
+    expect(names(await listUsers(root, { q: dario, telegram: "yes" }))).toEqual([]);
+    expect(names(await listUsers(root, { q: dario, telegram: "no" }))).toEqual([dario]);
+    expect(names(await listUsers(root, { q: darioMail }))).toEqual([]);
+    expect(names(await listUsers(root, { q: "5151515151" }))).toEqual([]);
+
+    const detail = await getUserDetail(root, dario);
+    expect(
+      detail.accounts.map((entry) => [entry.providerId, entry.identifier, entry.validUntil]),
+    ).toEqual([
+      ["telegram", null, null],
+      ["polimi-email", null, null],
+    ]);
   });
 
   it("falls back to recorded membership only while Graph cannot list the group", async () => {
