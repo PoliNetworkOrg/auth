@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { AppWindow, ChevronRight, Plus, Users } from "lucide-react";
+import { AppWindow, ChevronRight, ExternalLink, Plus, Users } from "lucide-react";
 import type { OidcClientSummary } from "@/auth/oidc-clients";
 import { CopyButton } from "@/components/copy-button";
 import { useIdpAccessContext } from "@/components/idp-access";
@@ -181,38 +181,63 @@ function ApplicationsIndex() {
             <Card>
               <ul className="divide-y" aria-label="Applications">
                 {clients.map((client) => (
-                  <li key={client.clientId}>
-                    <Link
-                      to="/applications/$clientId"
-                      params={{ clientId: client.clientId }}
-                      className="flex items-center gap-4 px-5 py-4 transition-colors outline-none hover:bg-accent/50 focus-visible:bg-accent/50"
-                    >
-                      <AppLogo
-                        name={client.name}
-                        logo={client.logo}
-                        className={client.disabled ? "opacity-50 grayscale" : undefined}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          <h2 className="truncate text-sm font-semibold">{client.name}</h2>
-                          <ClientBadges client={client} />
-                        </div>
-                        <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                          {client.clientId}
-                        </p>
+                  <li
+                    key={client.clientId}
+                    className="relative flex items-center gap-4 px-5 py-4 transition-colors hover:bg-accent/50 has-[a[data-row-link]:focus-visible]:bg-accent/50"
+                  >
+                    <AppLogo
+                      name={client.name}
+                      logo={client.logo}
+                      className={client.disabled ? "opacity-50 grayscale" : undefined}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <h2 className="truncate text-sm font-semibold">
+                          <Link
+                            to="/applications/$clientId"
+                            params={{ clientId: client.clientId }}
+                            data-row-link
+                            className="outline-none after:absolute after:inset-0"
+                          >
+                            {client.name}
+                          </Link>
+                        </h2>
+                        <ClientBadges client={client} />
                       </div>
-                      <div className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
-                        <Users className="size-3.5" aria-hidden="true" />
-                        <span>
-                          {client.authorizedUsers}{" "}
-                          {client.authorizedUsers === 1 ? "person" : "people"}
-                        </span>
-                      </div>
-                      <ChevronRight
-                        className="size-4 shrink-0 text-muted-foreground"
-                        aria-hidden="true"
-                      />
-                    </Link>
+                      <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                        {client.clientId}
+                      </p>
+                    </div>
+                    <div className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
+                      <Users className="size-3.5" aria-hidden="true" />
+                      <span>
+                        {client.authorizedUsers}{" "}
+                        {client.authorizedUsers === 1 ? "person" : "people"}
+                      </span>
+                    </div>
+                    {client.uri && (
+                      // Sits above the row's stretched link so it opens the app, not its settings.
+                      <Button
+                        asChild
+                        variant="ghost"
+                        size="icon-sm"
+                        className="relative z-10 text-muted-foreground"
+                      >
+                        <a
+                          href={client.uri}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={`Open ${client.name}`}
+                          aria-label={`Open ${client.name}`}
+                        >
+                          <ExternalLink aria-hidden="true" />
+                        </a>
+                      </Button>
+                    )}
+                    <ChevronRight
+                      className="size-4 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
                   </li>
                 ))}
               </ul>
