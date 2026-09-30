@@ -84,10 +84,9 @@ function RolesIndex() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">Roles</h1>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+          <p className="max-w-xl text-sm leading-6 text-muted-foreground">
             A role is a named bundle of permissions. Applications read them from the{" "}
             <code className="font-mono text-xs">polinetwork:identity</code> scope.
           </p>

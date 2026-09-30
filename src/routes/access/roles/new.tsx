@@ -37,7 +37,7 @@ function NewRole() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
+    <div className="space-y-8">
       <div>
         <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" asChild>
           <Link to="/access/roles">
@@ -45,7 +45,7 @@ function NewRole() {
             Roles
           </Link>
         </Button>
-        <h1 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">New role</h1>
+        <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">New role</h2>
         <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
           Bundle permissions under one name, then give it to people from the role's page.
         </p>

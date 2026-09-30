@@ -40,7 +40,7 @@ function NewPermission() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
+    <div className="space-y-8">
       <div>
         <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" asChild>
           <Link to="/access/permissions">
@@ -48,7 +48,7 @@ function NewPermission() {
             Permissions
           </Link>
         </Button>
-        <h1 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">New permission</h1>
+        <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">New permission</h2>
         <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
           Applications check for the key you choose here, so pick one you can live with.
         </p>

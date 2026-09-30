@@ -35,7 +35,7 @@ export function AppHeader({ active, access }: { active: Section; access?: IdpAcc
     });
   // Straight to the tab they can actually read, rather than a page that would refuse them.
   const accessTab = firstAccessTab(can);
-  if (accessTab) links.push({ to: accessTab.to, label: "Access", section: "access" });
+  if (accessTab) links.push({ to: accessTab.to, label: "eRBACo", section: "access" });
   const nav = (className: string) =>
     session && links.length > 1 ? (
       <nav aria-label="Primary" className={className}>
