@@ -185,7 +185,7 @@ function ApplicationsIndex() {
                     <Link
                       to="/applications/$clientId"
                       params={{ clientId: client.clientId }}
-                      className="flex items-center gap-4 px-5 py-4 transition-colors outline-none first:rounded-t-2xl last:rounded-b-2xl hover:bg-accent/50 focus-visible:bg-accent/50"
+                      className="flex items-center gap-4 px-5 py-4 transition-colors outline-none hover:bg-accent/50 focus-visible:bg-accent/50"
                     >
                       <AppLogo
                         name={client.name}

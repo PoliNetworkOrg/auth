@@ -283,6 +283,8 @@ Future consumers should use authorization code with PKCE, validate token signatu
 
 Inspection found backend auth in `../backend/src/auth/index.ts`, with custom email OTP, passkeys, shared subdomain cookies, and custom Telegram linking. `../admin` reads `user.telegramId` and calls backend Telegram permission routes. `../group-bot` also uses those backend assignments.
 
+The backend scopes its Better Auth cookies to `.polinetwork.org` with the default `better-auth` prefix, so browsers send them to this service too. This service uses its own `pn-identity` cookie prefix (`src/auth/cookies.ts`) so those cookies cannot shadow its session. Keep the prefixes different while both run.
+
 Keep these integrations running while testing this service. A later migration needs:
 
 1. Back up and inventory backend users, accounts, passkeys, Telegram links, roles, and foreign keys. Preserve user IDs or define a reviewed mapping. This prototype's schema is not a replacement migration for the backend's prefixed tables.

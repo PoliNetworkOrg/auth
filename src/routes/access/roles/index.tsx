@@ -24,7 +24,7 @@ function RoleRow({ role, effective }: { role: RoleSummary; effective: number | n
       <Link
         to="/access/roles/$roleId"
         params={{ roleId: role.id }}
-        className="flex items-center gap-4 px-5 py-4 transition-colors outline-none first:rounded-t-2xl last:rounded-b-2xl hover:bg-accent/50 focus-visible:bg-accent/50"
+        className="flex items-center gap-4 px-5 py-4 transition-colors outline-none hover:bg-accent/50 focus-visible:bg-accent/50"
       >
         <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border bg-background text-primary">
           {role.managed ? (
