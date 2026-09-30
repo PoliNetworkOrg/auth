@@ -55,7 +55,7 @@ export function DeleteUser({
         <CardDescription>
           {isSelf
             ? "You cannot delete your own account."
-            : "Removes the person and their linked accounts, passkeys, sessions, and roles. Applications they signed in to lose access at once, and tokens already issued expire within minutes. This cannot be undone."}
+            : "Removes the person and their linked accounts, passkeys, sessions, and roles. Applications can no longer be signed into effective immediately, and tokens already issued expire within minutes. This cannot be undone."}
         </CardDescription>
       </CardHeader>
       {!isSelf && (
