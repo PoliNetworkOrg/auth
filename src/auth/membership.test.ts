@@ -27,7 +27,9 @@ vi.mock("@microsoft/microsoft-graph-client", () => ({
 import {
   GRAPH_CHECK_TIMEOUT_MS,
   checkPnGroupStates,
+  listEntraGroupMembers,
   membershipEvidence,
+  readGroupMembers,
   readGroupMembership,
 } from "./membership";
 
@@ -122,6 +124,34 @@ describe("PN membership verification", () => {
     } finally {
       warn.mockRestore();
       vi.useRealTimers();
+    }
+  });
+});
+
+describe("listing a whole PN group", () => {
+  beforeEach(() => {
+    mocks.get.mockReset();
+  });
+
+  it("collects members from every Graph page", async () => {
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ value: [{ id: "a" }, { id: "b" }], "@odata.nextLink": "next" })
+      .mockResolvedValueOnce({ value: [{ id: "c" }] });
+    expect([...(await readGroupMembers(get, "soci"))]).toEqual(["a", "b", "c"]);
+    expect(get).toHaveBeenNthCalledWith(1, "/groups/soci/members?$select=id&$top=999");
+    expect(get).toHaveBeenNthCalledWith(2, "next");
+  });
+
+  it("reports a failed listing as unknown, never as an empty group", async () => {
+    mocks.get
+      .mockResolvedValueOnce({ value: [{ id: "a" }], "@odata.nextLink": "next" })
+      .mockRejectedValueOnce(Object.assign(new Error("private"), { statusCode: 429 }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(await listEntraGroupMembers("soci")).toBeNull();
+    } finally {
+      warn.mockRestore();
     }
   });
 });

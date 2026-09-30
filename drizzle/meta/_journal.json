@@ -57,6 +57,20 @@
       "when": 1789650344269,
       "tag": "0007_mushy_the_fury",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790758609928,
+      "tag": "0008_idp_users_read",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790782389732,
+      "tag": "0009_idp_users_delete",
+      "breakpoints": true
     }
   ]
 }

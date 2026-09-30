@@ -89,6 +89,20 @@ export const MANAGED_PERMISSIONS = [
     implies: [],
   },
   {
+    key: "idp:users:read",
+    name: "View users",
+    description:
+      "Browse everyone registered with this identity provider, with their linked accounts and verified status.",
+    implies: ["idp:people:read"],
+  },
+  {
+    key: "idp:users:delete",
+    name: "Delete users",
+    description:
+      "Permanently delete someone's account, with their linked accounts, passkeys, sessions, and roles.",
+    implies: ["idp:users:read"],
+  },
+  {
     key: "idp:permissions:read",
     name: "View permissions",
     description: "See the permissions this identity provider defines.",
@@ -148,6 +162,8 @@ export function managedPermission(key: string): ManagedPermission | undefined {
 const INTRINSIC_IMPLICATIONS = new Map<string, readonly ManagedPermissionKey[]>([
   ["idp:permissions:write", ["idp:permissions:read"]],
   ["idp:roles:write", ["idp:roles:read"]],
+  // Deleting someone without seeing who they are makes no sense either.
+  ["idp:users:delete", ["idp:users:read"]],
 ]);
 
 export function intrinsicImplications(key: string): readonly string[] {
