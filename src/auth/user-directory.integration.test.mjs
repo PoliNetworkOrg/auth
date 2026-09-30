@@ -43,8 +43,10 @@ vi.mock("./index", () => ({
 }));
 
 import { db } from "../db/index";
-import { assignRole, saveRole, searchUsers } from "./rbac-store";
+import { assignRole, saveRole, searchUsers, unassignRole } from "./rbac-store";
 import { getUserDetail, listUsers } from "./user-directory";
+import { Route as roleMembersRoute } from "../routes/api/rbac/role-members";
+import { Route as peopleSearchRoute } from "../routes/api/rbac/users";
 import { Route as usersRoute } from "../routes/api/users/index";
 import { Route as userRoute } from "../routes/api/users/$userId";
 
@@ -239,6 +241,43 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
     expect(names(await listUsers(root, { q: chiara }))).toEqual([chiara]);
     // Wildcards are searched for literally.
     expect(names(await listUsers(root, { q: `${tag.slice(0, -1)}_` }))).toEqual([]);
+  });
+
+  it("keeps people without a known email visible, searchable, and assignable", async () => {
+    const search = await get(
+      peopleSearchRoute,
+      root,
+      `/api/rbac/users?q=${ordinary}&role_id=${moderator.id}`,
+    );
+    expect(search.status).toBe(200);
+    expect(await search.json()).toEqual([
+      expect.objectContaining({ id: ordinary, email: null, holdsRole: false }),
+    ]);
+
+    const directory = await get(usersRoute, root, `/api/users?q=${ordinary}`);
+    expect(directory.status).toBe(200);
+    expect((await directory.json()).users).toEqual([
+      expect.objectContaining({ id: ordinary, email: null }),
+    ]);
+
+    const detail = await get(userRoute, root, `/api/users/${ordinary}`, { userId: ordinary });
+    expect(detail.status).toBe(200);
+    expect(await detail.json()).toMatchObject({ id: ordinary, email: null });
+
+    try {
+      await assignRole(root, moderator.id, ordinary);
+      const members = await get(
+        roleMembersRoute,
+        root,
+        `/api/rbac/role-members?role_id=${moderator.id}`,
+      );
+      expect(members.status).toBe(200);
+      expect((await members.json()).members).toContainEqual(
+        expect.objectContaining({ userId: ordinary, email: null }),
+      );
+    } finally {
+      await unassignRole(root, moderator.id, ordinary);
+    }
   });
 
   it("falls back to recorded membership only while Graph cannot list the group", async () => {
