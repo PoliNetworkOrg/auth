@@ -6,17 +6,24 @@ import { firstAccessTab } from "@/components/rbac/access-tabs";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { UserAvatar } from "@/components/user-avatar";
 
-type Section = "account" | "applications" | "access";
+type Section = "account" | "users" | "applications" | "access";
 
 export function AppHeader({ active, access }: { active: Section; access?: IdpAccess }) {
   const { data: session } = authClient.useSession();
   const ownAccess = useIdpAccess(!!session && !access);
   const { can } = access ?? ownAccess;
   const links: {
-    to: "/" | "/applications" | "/applications/new" | "/access/roles" | "/access/permissions";
+    to:
+      | "/"
+      | "/users"
+      | "/applications"
+      | "/applications/new"
+      | "/access/roles"
+      | "/access/permissions";
     label: string;
     section: Section;
   }[] = [{ to: "/", label: "Account", section: "account" }];
+  if (can("idp:users:read")) links.push({ to: "/users", label: "Users", section: "users" });
   const canReadApplications = can("idp:applications:read");
   // Someone who may register applications without seeing the existing ones goes straight
   // to the form, rather than to a list they would be refused.

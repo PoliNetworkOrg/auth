@@ -177,7 +177,7 @@ export async function loadCatalog(actorId: string): Promise<RbacCatalog> {
  */
 export async function withAuthorizedRbacWrite<T>(
   actorId: string,
-  required: Extract<ManagedPermissionKey, `${string}:write`>,
+  required: Extract<ManagedPermissionKey, `${string}:write` | `${string}:delete`>,
   change: (transaction: Transaction, catalog: RbacCatalog, access: ResolvedAccess) => Promise<T>,
 ): Promise<T> {
   await refreshIdentityMembership(actorId);
@@ -500,7 +500,7 @@ export async function searchUsers(
 }
 
 /** The role keys a person has been given by hand, ignoring anything managed. */
-async function assignedRoleKeys(
+export async function assignedRoleKeys(
   userId: string,
   catalog: RbacCatalog,
   reader: CatalogReader,

@@ -19,7 +19,7 @@ export class RbacApiError extends Error {
   }
 }
 
-async function readJson<T>(response: Response, fallback: string): Promise<T> {
+export async function readJson<T>(response: Response, fallback: string): Promise<T> {
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const details =
