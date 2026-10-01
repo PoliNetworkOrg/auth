@@ -1,6 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Info, Search, Send, Users, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Info,
+  Minus,
+  Plus,
+  Search,
+  Send,
+  Slash,
+  Users,
+  X,
+} from "lucide-react";
 import { cn } from "cn";
 import {
   type UserListPage,
@@ -40,59 +51,103 @@ function formatDate(value: string) {
   return new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" });
 }
 
-/** Any, only people who have it, or only people who do not. */
+type Presence = "yes" | "no" | undefined;
+
+/** The order a trait pill steps through on each click. */
+const PRESENCE_CYCLE = [undefined, "yes", "no"] as const;
+
+const PRESENCE_STATES = {
+  any: {
+    Glyph: Slash,
+    label: "any",
+    short: "any",
+    pill: "border-border bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground",
+    glyph: "bg-muted text-muted-foreground",
+  },
+  yes: {
+    Glyph: Plus,
+    label: "has it",
+    short: "with",
+    pill: "border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:border-emerald-400/40 dark:text-emerald-300",
+    glyph: "bg-emerald-600 text-white dark:bg-emerald-500",
+  },
+  no: {
+    Glyph: Minus,
+    label: "does not have it",
+    short: "without",
+    pill: "border-destructive/40 bg-destructive/10 text-destructive dark:border-red-400/40 dark:text-red-300",
+    glyph: "bg-destructive text-white",
+  },
+} as const;
+
+const presenceState = (value: Presence) => PRESENCE_STATES[value ?? "any"];
+
+/** Steps forward through any, has it, and does not have it; backward with Shift. */
+function cyclePresence(value: Presence, backward: boolean): Presence {
+  const index = PRESENCE_CYCLE.indexOf(value);
+  const step = backward ? PRESENCE_CYCLE.length - 1 : 1;
+  return PRESENCE_CYCLE[(index + step) % PRESENCE_CYCLE.length];
+}
+
+/** A pill that cycles through any, only people who have it, or only people who do not. */
 function TraitFilter({
   trait,
   value,
   onChange,
 }: {
   trait: (typeof USER_TRAITS)[number];
-  value: "yes" | "no" | undefined;
-  onChange: (value: "yes" | "no" | undefined) => void;
+  value: Presence;
+  onChange: (value: Presence) => void;
 }) {
   const Icon = TRAIT_ICONS[trait.key];
-  const options = [
-    { value: undefined, label: "Any" },
-    { value: "yes", label: "Yes" },
-    { value: "no", label: "No" },
-  ] as const;
+  const state = presenceState(value);
+  const next = presenceState(cyclePresence(value, false));
   return (
-    <div className="space-y-1.5">
-      <p id={`trait-${trait.key}`} className="flex items-center gap-1.5 text-xs font-medium">
-        <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
-        {trait.label}
-      </p>
-      <div
-        role="radiogroup"
-        aria-labelledby={`trait-${trait.key}`}
-        className="inline-flex rounded-lg border bg-background p-0.5"
+    <button
+      type="button"
+      onClick={(event) => onChange(cyclePresence(value, event.shiftKey))}
+      aria-label={`${trait.label}: ${state.label}`}
+      title={`${trait.description}. Click for “${next.label}”, Shift-click to go back.`}
+      className={cn(
+        "inline-flex h-7 items-center gap-1.5 rounded-full border py-0 pr-2.5 pl-1 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+        state.pill,
+      )}
+    >
+      <span
+        className={cn("flex size-5 items-center justify-center rounded-full", state.glyph)}
+        aria-hidden="true"
       >
-        {options.map((option) => {
-          const checked = value === option.value;
-          return (
-            <button
-              key={option.label}
-              type="button"
-              role="radio"
-              aria-checked={checked}
-              onClick={() => onChange(option.value)}
-              className={cn(
-                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                checked
-                  ? option.value === "no"
-                    ? "bg-destructive/10 text-destructive"
-                    : option.value === "yes"
-                      ? "bg-primary/10 text-primary"
-                      : "bg-secondary text-secondary-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {option.label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
+        <state.Glyph className="size-3" strokeWidth={3} />
+      </span>
+      <Icon className="size-3.5" aria-hidden="true" />
+      {trait.label}
+    </button>
+  );
+}
+
+/** The three pill states, shown once under the pills. */
+function PresenceLegend({ id }: { id: string }) {
+  return (
+    <p
+      id={id}
+      className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[10px] text-muted-foreground/70"
+    >
+      <span className="sr-only">Click a filter to cycle it:</span>
+      {Object.values(PRESENCE_STATES).map((state) => (
+        <span key={state.label} className="inline-flex items-center gap-1">
+          <span
+            className={cn(
+              "flex size-3 items-center justify-center rounded-full opacity-70",
+              state.glyph,
+            )}
+            aria-hidden="true"
+          >
+            <state.Glyph className="size-2" strokeWidth={3} />
+          </span>
+          {state.short}
+        </span>
+      ))}
+    </p>
   );
 }
 
@@ -125,6 +180,7 @@ function UsersIndex() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  const [announcement, setAnnouncement] = useState("");
   const key = userSearchParams(search).toString();
 
   const update = (changes: Partial<UserSearch>) =>
@@ -188,7 +244,7 @@ function UsersIndex() {
         )}
       </div>
 
-      <Card className="p-5">
+      <Card className="p-5 pb-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-60 flex-1">
             <Search
@@ -241,32 +297,46 @@ function UsersIndex() {
             </SelectContent>
           </Select>
         </div>
-        <div className="mt-5 grid grid-cols-2 gap-4 border-t pt-5 sm:grid-cols-4 lg:grid-cols-7">
-          {USER_TRAITS.map((trait) => (
-            <TraitFilter
-              key={trait.key}
-              trait={trait}
-              value={search[trait.key]}
-              onChange={(value) => update({ [trait.key]: value })}
-            />
-          ))}
-        </div>
-        {filtered && (
-          <div className="mt-5 border-t pt-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="-ml-2 text-muted-foreground"
-              onClick={() => {
-                setQuery("");
-                void navigate({ search: { sort: search.sort }, replace: true });
-              }}
+        <div className="mt-4 space-y-3 border-t pt-4">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div
+              role="group"
+              aria-label="Filter by trait"
+              aria-describedby="trait-filter-legend"
+              className="flex flex-wrap gap-1.5"
             >
-              <X aria-hidden="true" />
-              Clear filters
-            </Button>
+              {USER_TRAITS.map((trait) => (
+                <TraitFilter
+                  key={trait.key}
+                  trait={trait}
+                  value={search[trait.key]}
+                  onChange={(value) => {
+                    update({ [trait.key]: value });
+                    setAnnouncement(`${trait.label}: ${presenceState(value).label}`);
+                  }}
+                />
+              ))}
+            </div>
+            {filtered && (
+              <Button
+                variant="secondary"
+                size="xs"
+                className="h-7 rounded-full px-3"
+                onClick={() => {
+                  setQuery("");
+                  void navigate({ search: { sort: search.sort }, replace: true });
+                }}
+              >
+                <X aria-hidden="true" />
+                Clear all
+              </Button>
+            )}
           </div>
-        )}
+          <PresenceLegend id="trait-filter-legend" />
+        </div>
+        <p className="sr-only" aria-live="polite">
+          {announcement}
+        </p>
       </Card>
 
       {data && <MembershipNotice page={data} />}
