@@ -62,4 +62,40 @@ describe("security configuration startup validation", () => {
       ).not.toThrow();
     },
   );
+  it("accepts the dev sign-in on a local development origin", () => {
+    expect(() =>
+      validateSecurityConfiguration({
+        IDP_ADMIN_USER_IDS: "dev-admin",
+        BETTER_AUTH_URL: "http://localhost:3000",
+        DEV_LOGIN: "1",
+        NODE_ENV: "development",
+      }),
+    ).not.toThrow();
+  });
+  it("refuses the public example secret anywhere but local development", () => {
+    const secret = { BETTER_AUTH_SECRET: "local-development-only-secret-never-deploy-this" };
+    expect(() =>
+      validate({ IDP_ADMIN_USER_IDS: "root", BETTER_AUTH_URL: "http://localhost:3000", ...secret }),
+    ).not.toThrow();
+    expect(() => validate({ IDP_ADMIN_USER_IDS: "root", ...secret })).toThrow();
+    expect(() =>
+      validate({
+        IDP_ADMIN_USER_IDS: "root",
+        BETTER_AUTH_URL: "http://localhost:3000",
+        NODE_ENV: "production",
+        ...secret,
+      }),
+    ).toThrow();
+  });
+  it.each([
+    { DEV_LOGIN: "1" },
+    { DEV_LOGIN: "1", BETTER_AUTH_URL: "https://auth.polinetwork.org" },
+    { DEV_LOGIN: "1", BETTER_AUTH_URL: "https://localhost.attacker.example" },
+    { DEV_LOGIN: "1", BETTER_AUTH_URL: "http://localhost:3000", NODE_ENV: "production" },
+    { DEV_LOGIN: "true", BETTER_AUTH_URL: "http://localhost:3000" },
+  ])("refuses the dev sign-in anywhere but local development: %j", (invalid) => {
+    expect(() =>
+      validateSecurityConfiguration({ IDP_ADMIN_USER_IDS: "root", ...invalid }),
+    ).toThrow();
+  });
 });

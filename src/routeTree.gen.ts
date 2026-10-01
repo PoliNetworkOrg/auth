@@ -31,6 +31,7 @@ import { Route as AccessRolesRoleIdRouteImport } from './routes/access/roles/$ro
 import { Route as AccessRolesNewRouteImport } from './routes/access/roles/new'
 import { Route as ApiAccountsUnlinkRouteImport } from './routes/api/accounts/unlink'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiDevLoginRouteImport } from './routes/api/dev/login'
 import { Route as ApiIdpAccessRouteImport } from './routes/api/idp/access'
 import { Route as ApiOidcClientUpdateRouteImport } from './routes/api/oidc/client-update'
 import { Route as ApiOidcClientsRouteImport } from './routes/api/oidc/clients'
@@ -153,6 +154,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDevLoginRoute = ApiDevLoginRouteImport.update({
+  id: '/api/dev/login',
+  path: '/api/dev/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiIdpAccessRoute = ApiIdpAccessRouteImport.update({
   id: '/api/idp/access',
   path: '/api/idp/access',
@@ -225,6 +231,7 @@ export interface FileRoutesByFullPath {
   '/access/roles/new': typeof AccessRolesNewRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/dev/login': typeof ApiDevLoginRoute
   '/api/idp/access': typeof ApiIdpAccessRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
   '/api/oidc/clients': typeof ApiOidcClientsRoute
@@ -256,6 +263,7 @@ export interface FileRoutesByTo {
   '/access/roles/new': typeof AccessRolesNewRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/dev/login': typeof ApiDevLoginRoute
   '/api/idp/access': typeof ApiIdpAccessRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
   '/api/oidc/clients': typeof ApiOidcClientsRoute
@@ -291,6 +299,7 @@ export interface FileRoutesById {
   '/access/roles/new': typeof AccessRolesNewRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/dev/login': typeof ApiDevLoginRoute
   '/api/idp/access': typeof ApiIdpAccessRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
   '/api/oidc/clients': typeof ApiOidcClientsRoute
@@ -327,6 +336,7 @@ export interface FileRouteTypes {
     | '/access/roles/new'
     | '/api/accounts/unlink'
     | '/api/auth/$'
+    | '/api/dev/login'
     | '/api/idp/access'
     | '/api/oidc/client-update'
     | '/api/oidc/clients'
@@ -358,6 +368,7 @@ export interface FileRouteTypes {
     | '/access/roles/new'
     | '/api/accounts/unlink'
     | '/api/auth/$'
+    | '/api/dev/login'
     | '/api/idp/access'
     | '/api/oidc/client-update'
     | '/api/oidc/clients'
@@ -392,6 +403,7 @@ export interface FileRouteTypes {
     | '/access/roles/new'
     | '/api/accounts/unlink'
     | '/api/auth/$'
+    | '/api/dev/login'
     | '/api/idp/access'
     | '/api/oidc/client-update'
     | '/api/oidc/clients'
@@ -417,6 +429,7 @@ export interface RootRouteChildren {
   ApiStudentVerificationRoute: typeof ApiStudentVerificationRoute
   ApiAccountsUnlinkRoute: typeof ApiAccountsUnlinkRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiDevLoginRoute: typeof ApiDevLoginRoute
   ApiIdpAccessRoute: typeof ApiIdpAccessRoute
   ApiOidcClientUpdateRoute: typeof ApiOidcClientUpdateRoute
   ApiOidcClientsRoute: typeof ApiOidcClientsRoute
@@ -585,6 +598,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/dev/login': {
+      id: '/api/dev/login'
+      path: '/api/dev/login'
+      fullPath: '/api/dev/login'
+      preLoaderRoute: typeof ApiDevLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/idp/access': {
       id: '/api/idp/access'
       path: '/api/idp/access'
@@ -722,6 +742,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiStudentVerificationRoute: ApiStudentVerificationRoute,
   ApiAccountsUnlinkRoute: ApiAccountsUnlinkRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiDevLoginRoute: ApiDevLoginRoute,
   ApiIdpAccessRoute: ApiIdpAccessRoute,
   ApiOidcClientUpdateRoute: ApiOidcClientUpdateRoute,
   ApiOidcClientsRoute: ApiOidcClientsRoute,

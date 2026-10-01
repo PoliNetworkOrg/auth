@@ -2,6 +2,16 @@ import { z } from "zod";
 
 const optional = (schema) =>
   z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
+const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
+// Published in `.env.local.example` so a fresh clone runs as is; worthless as a secret.
+const LOCAL_EXAMPLE_SECRET = "local-development-only-secret-never-deploy-this";
+const isLoopback = (value) => {
+  try {
+    return LOOPBACK_HOSTS.includes(new URL(value).hostname);
+  } catch {
+    return false;
+  }
+};
 const schema = z
   .object({
     BETTER_AUTH_URL: z
@@ -12,8 +22,7 @@ const schema = z
         if (url.username || url.password) return false;
         // Cleartext HTTP would expose sessions and identity claims, so it is only ever
         // tolerated for local development.
-        if (url.protocol === "http:")
-          return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+        if (url.protocol === "http:") return LOOPBACK_HOSTS.includes(url.hostname);
         return url.protocol === "https:";
       }, "BETTER_AUTH_URL must be an HTTPS URL without credentials, or HTTP on localhost."),
     BETTER_AUTH_SECRET: z.string().trim().min(32),
@@ -38,6 +47,10 @@ const schema = z
       .default("")
       .transform((value) => (value.trim() === "" ? [] : value.split(",").map((id) => id.trim())))
       .pipe(z.array(z.string().regex(/^[a-zA-Z0-9_-]+$/))),
+    // Turns on the dev sign-in in `vp dev`. Production builds do not contain it at all;
+    // this only keeps a stray setting from ever pairing with a public origin.
+    DEV_LOGIN: optional(z.literal("1", { error: "DEV_LOGIN must be 1 or unset." })),
+    NODE_ENV: z.string().optional(),
   })
   .superRefine((config, context) => {
     for (const keys of [
@@ -62,6 +75,17 @@ const schema = z
       context.addIssue({
         code: "custom",
         message: "PN Entra requires tenant, client ID and client secret together.",
+      });
+    const local = config.NODE_ENV !== "production" && isLoopback(config.BETTER_AUTH_URL);
+    if (config.BETTER_AUTH_SECRET === LOCAL_EXAMPLE_SECRET && !local)
+      context.addIssue({
+        code: "custom",
+        message: "BETTER_AUTH_SECRET is the public example from .env.local.example.",
+      });
+    if (config.DEV_LOGIN && !local)
+      context.addIssue({
+        code: "custom",
+        message: "DEV_LOGIN is only allowed outside production, with BETTER_AUTH_URL on localhost.",
       });
     if (!config.PN_ENTRA_OIDC_ADMIN_GROUP_ID && config.IDP_ADMIN_USER_IDS.length === 0)
       context.addIssue({

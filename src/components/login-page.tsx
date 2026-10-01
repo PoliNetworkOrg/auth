@@ -3,6 +3,7 @@ import { useLocation } from "@tanstack/react-router";
 import { cn } from "cn";
 import { Building2, Fingerprint, Link2, LoaderCircle } from "lucide-react";
 import { authClient } from "@/auth/client";
+import { DevLoginPanel } from "@/components/dev-login";
 import { GoogleIcon } from "@/components/google-icon";
 import { AppLogo } from "@/components/oidc/app-logo";
 import { ThemeSwitch } from "@/components/theme-switch";
@@ -256,6 +257,13 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
           </p>
         </CardContent>
       </Card>
+      {import.meta.env.DEV && (
+        <DevLoginPanel
+          redirect={
+            oauthFlow ? `/api/auth/oauth2/authorize?${searchStr.replace(/^\?/, "")}` : callbackURL
+          }
+        />
+      )}
     </LoginLayout>
   );
 }
