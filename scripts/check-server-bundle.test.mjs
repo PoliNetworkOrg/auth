@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { findBundleProblems } from "./check-server-bundle.mjs";
+import { DEV_LOGIN_KIND } from "../src/dev/shared.ts";
+import { DEV_LOGIN_MARKER, findBundleProblems, findDevLoginLeaks } from "./check-server-bundle.mjs";
 
 const core = `function defineRequestState(initFn) {}
 throw new Error("No request state found. Please make sure...");`;
@@ -38,5 +39,23 @@ describe("server bundle check", () => {
 
   it("fails when it can no longer find what it guards", () => {
     expect(findBundleProblems([{ path: "_ssr/router.mjs", code: "" }])).toHaveLength(2);
+  });
+
+  it("looks for the same marker the dev sign-in carries", () => {
+    expect(DEV_LOGIN_MARKER).toBe(DEV_LOGIN_KIND);
+  });
+
+  it("fails when the dev sign-in reaches a production bundle", () => {
+    const sources = [
+      { path: "_ssr/router.mjs", code: core },
+      {
+        path: "assets/index.js",
+        code: `fetch("/api/dev/login").then(r => r.kind === "${DEV_LOGIN_KIND}")`,
+      },
+    ];
+
+    expect(findDevLoginLeaks(sources)).toEqual([
+      "the development-only sign-in is bundled into assets/index.js. Import `src/dev/` only behind `import.meta.env.DEV`.",
+    ]);
   });
 });

@@ -1,0 +1,23 @@
+# Local development database. `vp run dev:setup` starts it, then migrates and seeds it.
+# It listens on localhost only; never point anything but local development at it.
+name: polinetwork-auth
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: polinetwork_auth
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d polinetwork_auth"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  db:
