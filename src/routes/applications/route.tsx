@@ -1,8 +1,8 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { ArrowLeft, Building2, ShieldOff } from "lucide-react";
-import { authClient } from "@/auth/client";
 import { AppHeader } from "@/components/app-header";
-import { LoginLayout, LoginPage } from "@/components/login-page";
+import { LoginPage } from "@/components/login-page";
+import { SessionFallback, useSessionGate } from "@/components/session-gate";
 import { IdpAccessProvider, useIdpAccess } from "@/components/idp-access";
 import { Button } from "@/components/ui/button";
 
@@ -36,28 +36,11 @@ function NoAccess() {
 }
 
 function ApplicationsLayout() {
-  const { data: session, isPending, error, refetch } = authClient.useSession();
+  const gate = useSessionGate();
+  const session = gate.session;
   const access = useIdpAccess(!!session);
 
-  if (isPending) {
-    return (
-      <LoginLayout>
-        <p role="status" className="text-center text-sm text-muted-foreground">
-          Loading your session…
-        </p>
-      </LoginLayout>
-    );
-  }
-  if (error) {
-    return (
-      <LoginLayout>
-        <div className="space-y-4 text-center">
-          <p role="alert">Unable to load your session. Please try again.</p>
-          <Button onClick={() => void refetch()}>Try again</Button>
-        </div>
-      </LoginLayout>
-    );
-  }
+  if (gate.status !== "ready") return <SessionFallback gate={gate} />;
   if (!session) return <LoginPage callbackURL="/applications" />;
 
   return (

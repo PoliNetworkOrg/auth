@@ -1,9 +1,9 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { ArrowLeft, Building2, ShieldOff } from "lucide-react";
 import { cn } from "cn";
-import { authClient } from "@/auth/client";
 import { AppHeader } from "@/components/app-header";
-import { LoginLayout, LoginPage } from "@/components/login-page";
+import { LoginPage } from "@/components/login-page";
+import { SessionFallback, useSessionGate } from "@/components/session-gate";
 import { IdpAccessProvider, useIdpAccess } from "@/components/idp-access";
 import { ACCESS_TABS } from "@/components/rbac/access-tabs";
 import { Button } from "@/components/ui/button";
@@ -39,32 +39,15 @@ function NoAccess() {
 }
 
 function AccessLayout() {
-  const { data: session, isPending, error, refetch } = authClient.useSession();
+  const gate = useSessionGate();
+  const session = gate.session;
   const access = useIdpAccess(!!session);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   // Whatever any tab needs, rather than one fixed permission: the implication that makes
   // reading roles grant reading permissions is stored data an administrator can remove.
   const visibleTabs = ACCESS_TABS.filter((tab) => access.can(tab.permission));
 
-  if (isPending) {
-    return (
-      <LoginLayout>
-        <p role="status" className="text-center text-sm text-muted-foreground">
-          Loading your session…
-        </p>
-      </LoginLayout>
-    );
-  }
-  if (error) {
-    return (
-      <LoginLayout>
-        <div className="space-y-4 text-center">
-          <p role="alert">Unable to load your session. Please try again.</p>
-          <Button onClick={() => void refetch()}>Try again</Button>
-        </div>
-      </LoginLayout>
-    );
-  }
+  if (gate.status !== "ready") return <SessionFallback gate={gate} />;
   // Back to the section rather than a named tab: which one they may read is only
   // known after they have signed in.
   if (!session) return <LoginPage callbackURL="/access" />;

@@ -110,7 +110,7 @@ function PermissionsIndex() {
               <CardDescription>
                 These permissions control this service itself. They always exist and cannot be
                 deleted, because the code checks for these exact keys. Give them to a role to let
-                someone administer part of PoliNetwork Identity.
+                someone administer part of PoliNetwork Auth.
               </CardDescription>
             </CardHeader>
             <CardContent className="px-0 pb-0">

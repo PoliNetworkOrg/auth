@@ -100,7 +100,7 @@ function ApplicationsIndex() {
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">Applications</h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-            Services that sign people in with PoliNetwork Identity through OpenID Connect.
+            Services that sign people in with PoliNetwork Auth through OpenID Connect.
           </p>
         </div>
         {canWrite && (
