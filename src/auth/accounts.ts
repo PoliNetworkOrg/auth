@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { account } from "../db/auth-schema";
 import { identityEvidence } from "../db/evidence";
 import { db } from "../db/index";
@@ -45,6 +45,7 @@ export async function disconnectAccount(userId: string, accountId: string) {
               eq(identityEvidence.providerId, "telegram"),
             ),
           );
+      await transaction.execute(sql`select set_config('polinetwork.actor_id', ${userId}, true)`);
       await transaction
         .delete(account)
         .where(and(eq(account.id, accountId), eq(account.userId, userId)));

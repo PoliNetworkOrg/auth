@@ -24,6 +24,7 @@ function ClientBadges({ client }: { client: OidcClientSummary }) {
       {client.applicationType === "native" && (
         <Badge className="bg-card text-muted-foreground">Native</Badge>
       )}
+      {client.service && <Badge className="bg-card text-muted-foreground">Service</Badge>}
       {client.skipConsent && <Badge className="bg-card text-muted-foreground">Skips consent</Badge>}
     </div>
   );
@@ -73,7 +74,7 @@ function IntegrationCard() {
 }
 
 function ApplicationsIndex() {
-  const { can } = useIdpAccessContext();
+  const { can, isMasterAdmin } = useIdpAccessContext();
   const canRead = can("idp:applications:read");
   const canWrite = can("idp:applications:write");
   const [clients, setClients] = useState<OidcClientSummary[] | null>(null);
@@ -103,14 +104,21 @@ function ApplicationsIndex() {
             Services that sign people in with PoliNetwork Identity through OpenID Connect.
           </p>
         </div>
-        {canWrite && (
-          <Button asChild>
-            <Link to="/applications/new">
-              <Plus aria-hidden="true" />
-              New application
-            </Link>
-          </Button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {isMasterAdmin && (
+            <Button variant="outline" asChild>
+              <Link to="/applications/service-new">Register service client</Link>
+            </Button>
+          )}
+          {canWrite && (
+            <Button asChild>
+              <Link to="/applications/new">
+                <Plus aria-hidden="true" />
+                New application
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       {error && (

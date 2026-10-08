@@ -19,6 +19,8 @@ const schema = z
     BETTER_AUTH_SECRET: z.string().trim().min(32),
     OAUTH_BACKEND_RESOURCE_URI: optional(z.url()),
     OAUTH_INTERNAL_RESOURCE_URI: optional(z.url()),
+    OAUTH_BACKEND_CLIENT_ID: optional(z.string().min(1)),
+    OAUTH_BACKEND_EVENTS_URL: optional(z.url()),
     PN_ENTRA_MEMBER_GROUP_ID: optional(z.uuid()),
     PN_ENTRA_DIRETTIVO_GROUP_ID: optional(z.uuid()),
     PN_ENTRA_MEMBER_REFRESH_HOURS: optional(z.coerce.number().int().positive()),
@@ -53,6 +55,25 @@ const schema = z
         code: "custom",
         message: "OAuth backend and internal resources must have distinct identifiers.",
       });
+    if (config.OAUTH_BACKEND_EVENTS_URL && !config.OAUTH_BACKEND_RESOURCE_URI)
+      context.addIssue({
+        code: "custom",
+        message: "OAUTH_BACKEND_EVENTS_URL requires OAuth resource configuration.",
+      });
+    if (config.OAUTH_BACKEND_EVENTS_URL) {
+      const endpoint = new URL(config.OAUTH_BACKEND_EVENTS_URL);
+      if (
+        !["http:", "https:"].includes(endpoint.protocol) ||
+        endpoint.username ||
+        endpoint.password ||
+        endpoint.hash
+      )
+        context.addIssue({
+          code: "custom",
+          message:
+            "OAUTH_BACKEND_EVENTS_URL must be an HTTP(S) URL without credentials or fragment.",
+        });
+    }
     for (const uri of resourceUris) {
       if (!uri) continue;
       const parsed = new URL(uri);

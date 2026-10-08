@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { db } from "../db/index";
-import { account, identityEvidence, oauthClient, rbacAuditEvent, user } from "../db/schema";
+import {
+  account,
+  identityEvidence,
+  oauthClient,
+  rbacAuditEvent,
+  session,
+  user,
+} from "../db/schema";
 import { env } from "../env";
 import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject } from "./identity-subject";
@@ -146,6 +153,7 @@ export async function deleteUser(actorId: string, userId: string, confirmation: 
         })
         .from(account)
         .where(eq(account.userId, userId));
+      await transaction.execute(sql`select set_config('polinetwork.actor_id', ${actorId}, true)`);
       await transaction.insert(rbacAuditEvent).values({
         id: randomUUID(),
         actorId,
@@ -176,6 +184,17 @@ export async function deleteUser(actorId: string, userId: string, confirmation: 
         .update(oauthClient)
         .set({ userId: null })
         .where(eq(oauthClient.userId, userId));
+      // Core's adapter invokes session deletion hooks, including OAuth token revocation
+      // and back-channel logout planning. A cascade alone bypasses those hooks.
+      const sessions = await transaction
+        .select({ token: session.token })
+        .from(session)
+        .where(eq(session.userId, userId));
+      if (sessions.length) {
+        const { auth } = await import("./index");
+        const context = await auth.$context;
+        await context.internalAdapter.deleteSessions(sessions.map((entry) => entry.token));
+      }
       await transaction.delete(user).where(eq(user.id, userId));
     },
   );

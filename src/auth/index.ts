@@ -11,11 +11,13 @@ import { db } from "../db";
 import * as schema from "../db/schema";
 import { env } from "../env";
 import { AUTH_COOKIE_PREFIX } from "./cookies";
+import { startAccessDispatcher } from "./access-dispatcher";
 import { getOidcClaims } from "./identity";
 import { logAuthorizationDenial } from "./denial-log";
 import { hasIdpPermission } from "./idp-access";
 import { canAdministerIdp } from "./oidc-admin";
 import { OIDC_CLIENT_REFERENCE } from "./oidc-clients";
+import { isServiceClient } from "./service-client-policy";
 import { isLinkOnlyProvider } from "./policy";
 import { providers } from "./providers";
 import {
@@ -83,6 +85,53 @@ export const auth = betterAuth({
           message: "Telegram can only be connected to an existing account.",
         });
       }
+      const body = context.body as Record<string, unknown> | undefined;
+      const creation = ["/oauth2/create-client", "/admin/oauth2/create-client"].includes(
+        context.path,
+      );
+      const mutation = [
+        "/oauth2/update-client",
+        "/oauth2/delete-client",
+        "/oauth2/client/rotate-secret",
+        "/admin/oauth2/update-client",
+      ].includes(context.path);
+      let protectedClient = false;
+      if (creation)
+        protectedClient =
+          body?.token_endpoint_auth_method === "private_key_jwt" ||
+          (typeof body?.scope === "string" &&
+            body.scope
+              .split(" ")
+              .some((scope) => scope.startsWith("backend:") || scope === "idp:access:read"));
+      if (mutation && typeof body?.client_id === "string") {
+        const [client] = await db
+          .select({
+            tokenEndpointAuthMethod: schema.oauthClient.tokenEndpointAuthMethod,
+            grantTypes: schema.oauthClient.grantTypes,
+            clientCredentialsScopes: schema.oauthClient.clientCredentialsScopes,
+            scopes: schema.oauthClient.scopes,
+          })
+          .from(schema.oauthClient)
+          .where(eq(schema.oauthClient.clientId, body.client_id));
+        protectedClient = Boolean(client && isServiceClient(client));
+        const update = body.update as Record<string, unknown> | undefined;
+        if (
+          update?.token_endpoint_auth_method === "private_key_jwt" ||
+          (typeof update?.scope === "string" &&
+            update.scope
+              .split(" ")
+              .some((scope) => scope.startsWith("backend:") || scope === "idp:access:read"))
+        )
+          protectedClient = true;
+      }
+      if (protectedClient) {
+        const session = await auth.api.getSession({ headers: context.headers ?? new Headers() });
+        if (!session || !(await canAdministerIdp(session.user.id, db, true)))
+          throw new APIError("UNAUTHORIZED", {
+            code: "MASTER_ADMIN_REQUIRED",
+            message: "Only Master Admin may manage service clients.",
+          });
+      }
     }),
     after: createAuthMiddleware(async (context) => {
       if (context.path === "/passkey/generate-register-options" && context.context.session) {
@@ -131,7 +180,7 @@ export const auth = betterAuth({
       },
     }),
     genericOAuth({ config: providers }),
-    jwt(),
+    jwt({ jwks: { rotationInterval: 7 * 24 * 60 * 60, gracePeriod: 30 * 24 * 60 * 60 } }),
     oauthProvider({
       loginPage: "/",
       consentPage: "/consent",
@@ -182,3 +231,5 @@ export const auth = betterAuth({
     tanstackStartCookies(),
   ],
 });
+
+if (import.meta.env.PROD) startAccessDispatcher(auth);
