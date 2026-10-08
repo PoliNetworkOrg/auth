@@ -14,6 +14,7 @@ import { AUTH_COOKIE_PREFIX } from "./cookies";
 import { getOidcClaims } from "./identity";
 import { logAuthorizationDenial } from "./denial-log";
 import { hasIdpPermission } from "./idp-access";
+import { canAdministerIdp } from "./oidc-admin";
 import { OIDC_CLIENT_REFERENCE } from "./oidc-clients";
 import { isLinkOnlyProvider } from "./policy";
 import { providers } from "./providers";
@@ -23,6 +24,40 @@ import {
   passkeyUsername,
   registrationOptionsSchema,
 } from "./passkeys";
+
+const backendScopes = [
+  "openid",
+  "profile",
+  "email",
+  "offline_access",
+  "backend:admin",
+  "backend:public:read",
+  "backend:tg:read",
+  "backend:tg:ingest",
+  "backend:tg:groups:sync",
+  "backend:tg:audit",
+  "backend:tg:act-as",
+  "backend:tg:events",
+];
+const serviceOAuthEnabled = Boolean(
+  env.OAUTH_BACKEND_RESOURCE_URI && env.OAUTH_INTERNAL_RESOURCE_URI,
+);
+const serviceResources =
+  env.OAUTH_BACKEND_RESOURCE_URI && env.OAUTH_INTERNAL_RESOURCE_URI
+    ? [
+        {
+          identifier: env.OAUTH_BACKEND_RESOURCE_URI,
+          accessTokenTtl: 3600,
+          refreshTokenTtl: 604800,
+          allowedScopes: backendScopes,
+        },
+        {
+          identifier: env.OAUTH_INTERNAL_RESOURCE_URI,
+          accessTokenTtl: 300,
+          allowedScopes: ["idp:access:read"],
+        },
+      ]
+    : [];
 
 export const auth = betterAuth({
   appName: "PoliNetwork Auth",
@@ -100,29 +135,49 @@ export const auth = betterAuth({
     oauthProvider({
       loginPage: "/",
       consentPage: "/consent",
-      scopes: ["openid", "profile", "email", "polinetwork:identity", "offline_access"],
-      grantTypes: ["authorization_code", "refresh_token"],
+      scopes: serviceOAuthEnabled
+        ? ["polinetwork:identity", ...backendScopes, "idp:access:read"]
+        : ["openid", "profile", "email", "polinetwork:identity", "offline_access"],
+      grantTypes: serviceOAuthEnabled
+        ? ["authorization_code", "refresh_token", "client_credentials"]
+        : ["authorization_code", "refresh_token"],
+      resources: serviceResources,
+      resourceSeedMode: "overwrite",
+      enforcePerClientResources: true,
       allowDynamicClientRegistration: false,
       // Lets the login page name the requesting app before the user signs in.
       allowPublicClientPrelogin: true,
       // Administrators share one client pool instead of owning clients individually.
       clientReference: () => OIDC_CLIENT_REFERENCE,
       clientPrivileges: async ({ user, action }) => {
-        const allowed = user ? await hasIdpPermission(user.id, "idp:applications:write") : false;
+        const requiresMasterAdmin = action === "configure-client-credentials-scopes";
+        const allowed = user
+          ? requiresMasterAdmin
+            ? await canAdministerIdp(user.id, db, true)
+            : await hasIdpPermission(user.id, "idp:applications:write")
+          : false;
         if (!allowed)
           logAuthorizationDenial(user?.id ?? null, `oauth-client:${action}`, [
-            "idp:applications:write",
+            requiresMasterAdmin ? "master-admin" : "idp:applications:write",
           ]);
         return allowed;
       },
-      // Resource-policy administration is not a supported product surface. The plugin's
-      // server-only SDK defaults to permitting any session unless this hook is set.
-      resourcePrivileges: () => false,
+      // Resource policy is seeded from config. Master Admin may inspect/link clients,
+      // but no API caller may edit the resource policy itself.
+      resourcePrivileges: ({ action, user }) =>
+        serviceOAuthEnabled && user && ["read", "list", "link", "unlink"].includes(action)
+          ? canAdministerIdp(user.id, db, true)
+          : false,
       accessTokenExpiresIn: 300,
+      m2mAccessTokenExpiresIn: 3600,
+      refreshTokenReuseInterval: 10,
       idTokenExpiresIn: 300,
       customIdTokenClaims: ({ user, scopes }) => getOidcClaims(user.id, scopes),
       customUserInfoClaims: ({ user, scopes }) => getOidcClaims(user.id, scopes),
-      customAccessTokenClaims: ({ user, scopes }) => (user ? getOidcClaims(user.id, scopes) : {}),
+      customAccessTokenClaims: async ({ user, scopes }) => ({
+        pn_subject_type: user ? "user" : "client",
+        ...(user ? await getOidcClaims(user.id, scopes) : {}),
+      }),
     }),
     tanstackStartCookies(),
   ],
