@@ -428,6 +428,64 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       ),
     ).rejects.toThrow();
   });
+  it("prevents a numeric Telegram ID from belonging to two evidence rows", async () => {
+    await expect(
+      pool.query(
+        `INSERT INTO identity_evidence (issuer, subject, provider_id, states, valid_until, telegram_id)
+         VALUES ('https://oauth.telegram.org', 'duplicate-telegram-subject', 'telegram', '{}', NOW() + interval '1 hour', '123456')`,
+      ),
+    ).rejects.toThrow();
+  });
+  it("reclaims orphaned Telegram proof but keeps a linked ID exclusive", async () => {
+    usedInternalApi = true;
+    const { persistVerifiedEvidence } = await import("./providers");
+    const issuer = "https://oauth.telegram.org";
+    const telegramId = "777777";
+    const proof = (subject: string) => ({
+      issuer,
+      subject,
+      providerId: "telegram",
+      states: [],
+      validUntil: new Date(Date.now() + 3_600_000),
+      telegramId,
+    });
+    await pool.query(
+      `INSERT INTO identity_evidence (issuer, subject, provider_id, states, valid_until, telegram_id)
+       VALUES ($1, 'orphaned-telegram', 'telegram', '{}', NOW() + interval '1 hour', $2)`,
+      [issuer, telegramId],
+    );
+    try {
+      await persistVerifiedEvidence(proof("relinked-telegram"));
+      expect(
+        (
+          await pool.query(
+            `SELECT subject FROM identity_evidence WHERE issuer = $1 AND telegram_id = $2`,
+            [issuer, telegramId],
+          )
+        ).rows,
+      ).toEqual([{ subject: "relinked-telegram" }]);
+      await pool.query(
+        `INSERT INTO account (id, provider_id, issuer, account_id, user_id, updated_at)
+         VALUES ('integration-relinked-telegram', 'telegram', $1, 'relinked-telegram', 'integration-user', NOW())`,
+        [issuer],
+      );
+      await expect(persistVerifiedEvidence(proof("attempted-telegram"))).rejects.toThrow();
+      expect(
+        (
+          await pool.query(
+            `SELECT subject FROM identity_evidence WHERE issuer = $1 AND telegram_id = $2`,
+            [issuer, telegramId],
+          )
+        ).rows,
+      ).toEqual([{ subject: "relinked-telegram" }]);
+    } finally {
+      await pool.query(`DELETE FROM account WHERE id = 'integration-relinked-telegram'`);
+      await pool.query(`DELETE FROM identity_evidence WHERE issuer = $1 AND telegram_id = $2`, [
+        issuer,
+        telegramId,
+      ]);
+    }
+  });
   it("turns a valid Polimi email code into a linked student identity", async () => {
     const email = "student@mail.polimi.it";
     const code = "123456";
@@ -466,6 +524,13 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       telegramId: "123456",
     });
     expect((await unlink("integration-tg")).status).toBe(200);
+    expect(
+      (
+        await pool.query(
+          `SELECT subject FROM identity_evidence WHERE issuer = 'https://oauth.telegram.org' AND subject = 'tg-subject'`,
+        )
+      ).rows,
+    ).toHaveLength(0);
     expect((await unlink("integration-google")).status).toBe(400);
   });
 });
