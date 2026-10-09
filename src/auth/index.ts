@@ -19,7 +19,7 @@ import { hasIdpPermission } from "./idp-access";
 import { canAdministerIdp } from "./oidc-admin";
 import { OIDC_CLIENT_REFERENCE } from "./oidc-clients";
 import { isServiceClient } from "./service-client-policy";
-import { isLinkOnlyProvider } from "./policy";
+import { isLinkOnlyProvider, standardIdTokenClaims } from "./policy";
 import { providers } from "./providers";
 import {
   passkeyLabel,
@@ -222,7 +222,10 @@ export const auth = betterAuth({
       m2mAccessTokenExpiresIn: 3600,
       refreshTokenReuseInterval: 10,
       idTokenExpiresIn: 300,
-      customIdTokenClaims: ({ user, scopes }) => getOidcClaims(user.id, scopes),
+      customIdTokenClaims: async ({ user, scopes }) => ({
+        ...standardIdTokenClaims(user, scopes),
+        ...(await getOidcClaims(user.id, scopes)),
+      }),
       customUserInfoClaims: ({ user, scopes }) => getOidcClaims(user.id, scopes),
       customAccessTokenClaims: async ({ user, scopes }) => ({
         pn_subject_type: user ? "user" : "client",

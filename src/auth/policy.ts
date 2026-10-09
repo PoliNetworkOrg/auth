@@ -43,6 +43,32 @@ export function oidcIdentityClaims(claimName: string, claims: IdentityClaims) {
   };
 }
 
+/** The user fields the standard OIDC `profile` and `email` scopes describe. */
+export type StandardClaimsUser = {
+  name?: string | null;
+  email?: string | null;
+  emailVerified?: boolean | null;
+  image?: string | null;
+};
+
+/**
+ * Standard `profile`/`email` claims for the ID token. Better Auth only returns them
+ * from UserInfo, but relying parties that read just the ID token (Flux Web UI) need
+ * them there too (OIDC Core §5.4).
+ */
+export function standardIdTokenClaims(user: StandardClaimsUser, scopes: string[]) {
+  const claims: Record<string, string | boolean> = {};
+  if (scopes.includes("profile")) {
+    if (user.name) claims.name = user.name;
+    if (user.image) claims.picture = user.image;
+  }
+  if (scopes.includes("email") && user.email) {
+    claims.email = user.email;
+    claims.email_verified = Boolean(user.emailVerified);
+  }
+  return claims;
+}
+
 export function hasAppRole(roles: unknown, required: string) {
   return (
     Array.isArray(roles) &&
