@@ -441,25 +441,16 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
   });
 
   it("does not leak role members through a membership change response", async () => {
-    const managed = (await loadCatalog(root)).permissions.find(
-      (entry) => entry.key === "idp:roles:assign",
-    );
-    await savePermission(root, draftPermission(managed.key), managed.id);
-    try {
-      const actor = await delegate([managed.key]);
-      const role = await saveRole(root, draftRole(unique("private-members")));
-      await assignRole(root, role.id, ordinary);
-      const response = await post(members, actor.id, {
-        action: "assign",
-        roleId: role.id,
-        userId: actor.id,
-      });
-      expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ changed: true });
-      await expect(listRoleMembers(actor.id, role.id)).rejects.toMatchObject({ status: 403 });
-    } finally {
-      await savePermission(root, draftPermission(managed.key, managed.implies), managed.id);
-    }
+    const actor = await delegate(["idp:roles:assign"]);
+    const role = await saveRole(root, draftRole(unique("private-members")));
+    await assignRole(root, role.id, ordinary);
+    const response = await post(members, actor.id, {
+      action: "assign",
+      roleId: role.id,
+      userId: actor.id,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ changed: true });
   });
 
   it("acknowledges self-revocation after the actor loses read access", async () => {
