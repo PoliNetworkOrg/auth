@@ -67,11 +67,11 @@ export function AppHeader({ active, access }: { active: Section; access?: IdpAcc
           <Link
             to="/"
             className="flex items-center gap-3 rounded-md text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="PoliNetwork Identity home"
+            aria-label="PoliNetwork Auth home"
           >
             <img src="/polinetwork-logo.svg" width={40} height={40} alt="" className="size-10" />
             <span className="font-bold tracking-tight">
-              PoliNetwork <span className="ml-1 font-normal text-muted-foreground">Identity</span>
+              PoliNetwork <span className="ml-1 font-normal text-muted-foreground">Auth</span>
             </span>
           </Link>
           {nav("hidden items-center gap-1 sm:flex")}

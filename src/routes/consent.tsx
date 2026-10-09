@@ -15,6 +15,7 @@ import { z } from "zod";
 import { authClient } from "@/auth/client";
 import { describeScope } from "@/auth/oidc-clients";
 import { AppHandshake, LoginLayout } from "@/components/login-page";
+import { SessionFallback, useSessionGate } from "@/components/session-gate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { UserAvatar } from "@/components/user-avatar";
@@ -113,7 +114,8 @@ function Notice({
 }
 
 function Consent() {
-  const { data: session, isPending } = authClient.useSession();
+  const gate = useSessionGate();
+  const session = gate.session;
   // Parse the signed request from the router so the server renders the same state.
   const { searchStr } = useLocation();
   const request = useMemo(() => parseConsentRequest(searchStr), [searchStr]);
@@ -127,9 +129,9 @@ function Consent() {
   // Consent needs a session: hand signed-out visitors to the login page with the same request.
   // The raw browser query is forwarded untouched so its signature keeps verifying.
   useEffect(() => {
-    if (!isPending && !session && request.signed && request.clientId)
+    if (gate.status === "ready" && !session && request.signed && request.clientId)
       window.location.replace(`/${window.location.search}`);
-  }, [isPending, session, request]);
+  }, [gate.status, session, request]);
 
   useEffect(() => {
     if (!session || !request.clientId) return;
@@ -183,7 +185,8 @@ function Consent() {
     }
   }
 
-  if (isPending || (!session && request.signed && request.clientId)) {
+  if (gate.status === "error") return <SessionFallback gate={gate} wide />;
+  if (gate.status === "loading" || (!session && request.signed && request.clientId)) {
     return (
       <LoginLayout wide>
         <p role="status" className="text-center text-sm text-muted-foreground">

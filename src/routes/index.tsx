@@ -6,7 +6,8 @@ import { STATIC_ROLES } from "@/auth/rbac";
 import { StudentVerificationForm } from "@/components/student-verification-form";
 import { UserAvatar } from "@/components/user-avatar";
 import { GoogleIcon } from "@/components/google-icon";
-import { LoginPage, LoginLayout } from "@/components/login-page";
+import { LoginPage } from "@/components/login-page";
+import { SessionFallback, useSessionGate } from "@/components/session-gate";
 import { PasskeyCard } from "@/components/passkey-card";
 import {
   BadgeCheck,
@@ -46,27 +47,10 @@ const STATE_LABELS: Record<string, string> = Object.fromEntries(
 );
 
 function Home() {
-  const { data: session, isPending, error, refetch } = authClient.useSession();
+  const gate = useSessionGate();
+  const session = gate.session;
 
-  if (isPending) {
-    return (
-      <LoginLayout>
-        <p role="status" className="text-center text-sm text-muted-foreground">
-          Loading your session…
-        </p>
-      </LoginLayout>
-    );
-  }
-  if (error) {
-    return (
-      <LoginLayout>
-        <div className="space-y-4 text-center">
-          <p role="alert">Unable to load your session. Please try again.</p>
-          <Button onClick={() => void refetch()}>Try again</Button>
-        </div>
-      </LoginLayout>
-    );
-  }
+  if (gate.status !== "ready") return <SessionFallback gate={gate} />;
   if (!session) return <LoginPage />;
   return <AccountPage key={session.user.id} />;
 }
@@ -375,7 +359,8 @@ function AccountPage() {
         <footer className="mt-12 flex flex-wrap items-start justify-between gap-4 border-t pt-6 text-xs leading-5 text-muted-foreground">
           <p>PoliNetwork APS</p>
           <p className="sm:text-right">
-            Identity is in preview. Existing PoliNetwork services still use their current sign-in.
+            PoliNetwork Auth is in preview. Existing PoliNetwork services still use their current
+            sign-in.
           </p>
         </footer>
       </main>

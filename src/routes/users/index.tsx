@@ -231,8 +231,8 @@ function UsersIndex() {
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">Users</h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-            Everyone registered with PoliNetwork Identity, with the accounts they have linked and
-            what those accounts prove.
+            Everyone registered with PoliNetwork Auth, with the accounts they have linked and what
+            those accounts prove.
           </p>
         </div>
         {data && (

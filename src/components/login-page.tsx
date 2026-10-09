@@ -16,7 +16,7 @@ const providers = [
 
 export function LoginLayout({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
-    <div className="flex min-h-svh flex-col bg-muted">
+    <div data-login-layout className="flex min-h-svh flex-col bg-muted">
       <header className="flex justify-end p-5 sm:p-6">
         <ThemeSwitch />
       </header>
@@ -25,11 +25,11 @@ export function LoginLayout({ children, wide = false }: { children: ReactNode; w
           <a
             href="/"
             className="flex items-center gap-3 self-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="PoliNetwork Identity home"
+            aria-label="PoliNetwork Auth home"
           >
             <img src="/polinetwork-logo.svg" width={36} height={36} alt="" className="size-9" />
             <span className="font-bold tracking-tight">
-              PoliNetwork <span className="font-normal text-muted-foreground">Identity</span>
+              PoliNetwork <span className="font-normal text-muted-foreground">Auth</span>
             </span>
           </a>
           {children}
