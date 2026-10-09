@@ -42,7 +42,7 @@ export function UserRoles({
   onChanged: () => void;
 }) {
   const access = useIdpAccessContext();
-  const canWrite = access.can("idp:roles:write");
+  const canWrite = access.can("idp:roles:assign");
   const [choice, setChoice] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");

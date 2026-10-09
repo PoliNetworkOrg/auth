@@ -119,7 +119,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
   }
 
   it("denies creating a privileged role, self-assigning it, and editing one's own role", async () => {
-    const actor = await delegate(["idp:roles:write"]);
+    const actor = await delegate(["idp:roles:write", "idp:roles:assign"]);
     const high = await saveRole(root, draftRole(unique("high"), ["idp:applications:write"]));
     const key = unique("escalation");
     expect(
@@ -149,7 +149,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
   });
 
   it("denies transitive role grants, revocation and deletion above one's authority", async () => {
-    const actor = await delegate(["idp:roles:write"]);
+    const actor = await delegate(["idp:roles:write", "idp:roles:assign"]);
     const high = await saveRole(root, draftRole(unique("high"), ["idp:applications:write"]));
     expect(
       (
@@ -165,6 +165,87 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     expect(
       (await post(members, actor.id, { action: "unassign", roleId: high.id, userId: root })).status,
     ).toBe(403);
+  });
+
+  it("separates editing role definitions from assigning roles", async () => {
+    const own = await savePermission(root, draftPermission(unique("own")));
+    const low = await saveRole(root, draftRole(unique("low"), [own.key]));
+    const editor = await delegate(["idp:roles:write", own.key]);
+    const assigner = await delegate(["idp:roles:assign", own.key]);
+    expect(
+      (await post(members, editor.id, { action: "assign", roleId: low.id, userId: ordinary }))
+        .status,
+    ).toBe(403);
+    await assignRole(root, low.id, ordinary);
+    expect(
+      (await post(members, editor.id, { action: "unassign", roleId: low.id, userId: ordinary }))
+        .status,
+    ).toBe(403);
+    await expect(unassignRole(editor.id, low.id, ordinary)).rejects.toMatchObject({
+      status: 403,
+    });
+    expect((await getIdentity(ordinary)).permissions).toContain(own.key);
+    expect(
+      (
+        await post(roleSave, editor.id, {
+          action: "update",
+          roleId: low.id,
+          draft: { ...draftRole(low.key, [own.key]), description: "edited" },
+        })
+      ).status,
+    ).toBe(200);
+
+    expect(
+      (
+        await post(roleSave, assigner.id, {
+          action: "create",
+          draft: draftRole(unique("assigner-made"), [own.key]),
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await post(roleSave, assigner.id, {
+          action: "update",
+          roleId: low.id,
+          draft: draftRole(low.key),
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await post(members, assigner.id, { action: "unassign", roleId: low.id, userId: ordinary }))
+        .status,
+    ).toBe(200);
+    expect((await getIdentity(ordinary)).permissions).not.toContain(own.key);
+    expect(
+      (await post(members, assigner.id, { action: "assign", roleId: low.id, userId: ordinary }))
+        .status,
+    ).toBe(200);
+    expect((await getIdentity(ordinary)).permissions).toContain(own.key);
+    await unassignRole(root, low.id, ordinary);
+  });
+
+  it("bounds assignment by the assigner's own authority", async () => {
+    const assigner = await delegate(["idp:roles:assign"]);
+    const high = await saveRole(root, draftRole(unique("high"), ["idp:applications:write"]));
+    const managed = (await loadCatalog(root)).roles.find((entry) => entry.key === "socio");
+    for (const [roleId, userId] of [
+      [high.id, ordinary],
+      [high.id, assigner.id],
+      [managed.id, ordinary],
+    ]) {
+      expect(
+        (await post(members, assigner.id, { action: "assign", roleId, userId })).status,
+      ).not.toBe(200);
+    }
+    await assignRole(root, high.id, ordinary);
+    expect(
+      (await post(members, assigner.id, { action: "unassign", roleId: high.id, userId: ordinary }))
+        .status,
+    ).toBe(403);
+    expect((await getIdentity(assigner.id)).permissions).not.toContain("idp:applications:write");
+    expect((await getIdentity(ordinary)).permissions).toContain("idp:applications:write");
+    await unassignRole(root, high.id, ordinary);
   });
 
   it("denies escalation through managed and custom permission implications", async () => {
@@ -220,7 +301,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
 
   it("preserves bounded delegation while refusing direct and indirect managed-role edits", async () => {
     const own = await savePermission(root, draftPermission(unique("own")));
-    const actor = await delegate(["idp:roles:write", own.key]);
+    const actor = await delegate(["idp:roles:write", "idp:roles:assign", own.key]);
     const low = await saveRole(actor.id, draftRole(unique("low"), [own.key]));
     await assignRole(actor.id, low.id, ordinary);
     expect((await getIdentity(ordinary)).permissions).toContain(own.key);
@@ -359,9 +440,9 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     await unassignRole(root, role.id, ordinary);
   });
 
-  it("does not leak role members through a write-only membership response", async () => {
+  it("does not leak role members through a membership change response", async () => {
     const managed = (await loadCatalog(root)).permissions.find(
-      (entry) => entry.key === "idp:roles:write",
+      (entry) => entry.key === "idp:roles:assign",
     );
     await savePermission(root, draftPermission(managed.key), managed.id);
     try {
@@ -382,7 +463,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
   });
 
   it("acknowledges self-revocation after the actor loses read access", async () => {
-    const actor = await delegate(["idp:roles:write"]);
+    const actor = await delegate(["idp:roles:assign"]);
     const response = await post(members, actor.id, {
       action: "unassign",
       roleId: actor.role.id,
@@ -691,7 +772,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
   });
 
   it("denies an in-flight writer after a queued revoke commits", async () => {
-    const authority = await saveRole(root, draftRole(unique("writer"), ["idp:roles:write"]));
+    const authority = await saveRole(root, draftRole(unique("writer"), ["idp:roles:assign"]));
     const target = await saveRole(root, draftRole(unique("victim")));
     await assignRole(root, authority.id, writer);
     const connection = await pool.connect();

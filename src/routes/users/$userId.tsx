@@ -194,7 +194,7 @@ function UserDetailPage() {
               <CardHeader>
                 <CardTitle>Roles</CardTitle>
                 <CardDescription>
-                  {can("idp:roles:write")
+                  {can("idp:roles:assign")
                     ? "Give or remove the roles you manage. Built-in roles follow the evidence above and cannot be changed here."
                     : "The roles given to this person by hand."}
                 </CardDescription>

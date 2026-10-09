@@ -31,7 +31,7 @@ export const Route = createFileRoute("/api/rbac/role-members")({
         }
       },
       POST: async ({ request }) => {
-        const guard = await requireIdpPermission(request, "idp:roles:write", { write: true });
+        const guard = await requireIdpPermission(request, "idp:roles:assign", { write: true });
         if ("response" in guard) return guard.response;
         const parsed = inputSchema.safeParse(await request.json().catch(() => null));
         if (!parsed.success) return apiError(400, "Invalid request.");

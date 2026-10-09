@@ -37,6 +37,12 @@ function RoleDetail() {
     !!role &&
     (access.isMasterAdmin || !role.managed) &&
     canGrantRole(access, catalog, role.key);
+  // Handing a role out is delegated separately from changing what it grants.
+  const canAssign =
+    access.can("idp:roles:assign") &&
+    !!role &&
+    !role.managed &&
+    canGrantRole(access, catalog, role.key);
 
   async function save(draft: RoleDraft) {
     setBusy(true);
@@ -171,7 +177,7 @@ function RoleDetail() {
           <CardDescription>
             {inferred
               ? inferred.evidence
-              : canWrite
+              : canAssign
                 ? "Anyone you add here holds this role until you remove them."
                 : "The people currently holding this role."}
           </CardDescription>
@@ -183,7 +189,7 @@ function RoleDetail() {
               list to edit here.
             </p>
           ) : (
-            <RoleMembers key={role.id} roleId={role.id} roleName={role.name} canWrite={canWrite} />
+            <RoleMembers key={role.id} roleId={role.id} roleName={role.name} canWrite={canAssign} />
           )}
         </CardContent>
       </Card>

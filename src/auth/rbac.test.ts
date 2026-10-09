@@ -281,6 +281,7 @@ describe("permissions the identity provider defines itself", () => {
       "idp:permissions:write",
       "idp:roles:read",
       "idp:roles:write",
+      "idp:roles:assign",
       "idp:applications:read",
       "idp:applications:write",
     ]);
@@ -294,6 +295,20 @@ describe("permissions the identity provider defines itself", () => {
       "idp:permissions:read",
       "idp:roles:read",
       "idp:roles:write",
+    ]);
+  });
+
+  it("keeps editing and assigning roles independent of each other", () => {
+    const split: RbacCatalog = {
+      ...managedCatalog,
+      roles: [role("editor", ["idp:roles:write"]), role("assigner", ["idp:roles:assign"])],
+    };
+    expect(resolveAccess(split, ["editor"]).permissions).not.toContain("idp:roles:assign");
+    expect(resolveAccess(split, ["assigner"]).permissions).toEqual([
+      "idp:people:read",
+      "idp:permissions:read",
+      "idp:roles:assign",
+      "idp:roles:read",
     ]);
   });
 
@@ -349,6 +364,7 @@ describe("permissions the identity provider defines itself", () => {
   it("refuses to drop the read a write permission always grants", () => {
     for (const [key, read] of [
       ["idp:roles:write", "idp:roles:read"],
+      ["idp:roles:assign", "idp:roles:read"],
       ["idp:permissions:write", "idp:permissions:read"],
       ["idp:users:delete", "idp:users:read"],
     ]) {
