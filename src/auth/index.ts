@@ -13,6 +13,7 @@ import { env } from "../env";
 import { AUTH_COOKIE_PREFIX } from "./cookies";
 import { startAccessDispatcher } from "./access-dispatcher";
 import { getOidcClaims } from "./identity";
+import { jwtOptions } from "./jwt-options";
 import { logAuthorizationDenial } from "./denial-log";
 import { hasIdpPermission } from "./idp-access";
 import { canAdministerIdp } from "./oidc-admin";
@@ -180,7 +181,7 @@ export const auth = betterAuth({
       },
     }),
     genericOAuth({ config: providers }),
-    jwt({ jwks: { rotationInterval: 7 * 24 * 60 * 60, gracePeriod: 30 * 24 * 60 * 60 } }),
+    jwt(jwtOptions),
     oauthProvider({
       loginPage: "/",
       consentPage: "/consent",

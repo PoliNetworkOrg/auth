@@ -39,7 +39,56 @@ describe.skipIf(!databaseURL || !endpoint || !audience)("access-change outbox in
     await db.$client.end();
   });
 
-  it("queues transactionally, ignores unchanged group membership, and retries a signed event", async () => {
+  async function outbox() {
+    return (
+      await pool.query<{ attempts: number; id: string; due: boolean }>(
+        `SELECT attempts, id::text, next_attempt_at <= NOW() AS due FROM access_outbox ORDER BY id`,
+      )
+    ).rows;
+  }
+
+  it("ignores rewrites that leave projected columns unchanged", async () => {
+    await pool.query(
+      `INSERT INTO "user" (id, name, email)
+       VALUES ('outbox-integration-user', 'Outbox User', 'outbox@identity.invalid')`,
+    );
+    try {
+      await pool.query(
+        `INSERT INTO account (id, provider_id, issuer, account_id, user_id, updated_at)
+         VALUES ('outbox-integration-account', 'telegram', 'https://oauth.telegram.org',
+                 'outbox-tg-subject', 'outbox-integration-user', NOW())`,
+      );
+      await pool.query(
+        `INSERT INTO identity_evidence
+           (issuer, subject, provider_id, states, valid_until, telegram_id)
+         VALUES ('https://oauth.telegram.org', 'outbox-tg-subject', 'telegram', ARRAY[]::text[],
+                 NOW(), '123456789')`,
+      );
+      await pool.query(`DELETE FROM access_outbox`);
+
+      await pool.query(
+        `UPDATE account SET access_token = 'refreshed', updated_at = NOW()
+         WHERE id = 'outbox-integration-account'`,
+      );
+      await pool.query(
+        `UPDATE identity_evidence SET telegram_id = telegram_id
+         WHERE subject = 'outbox-tg-subject'`,
+      );
+      expect(await outbox()).toHaveLength(0);
+
+      await pool.query(
+        `UPDATE identity_evidence SET valid_until = valid_until + interval '1 hour'
+         WHERE subject = 'outbox-tg-subject'`,
+      );
+      expect(await outbox()).toHaveLength(1);
+    } finally {
+      await pool.query(`DELETE FROM "user" WHERE id = 'outbox-integration-user'`);
+      await pool.query(`DELETE FROM identity_evidence WHERE subject = 'outbox-tg-subject'`);
+      await pool.query(`DELETE FROM access_outbox`);
+    }
+  });
+
+  it("coalesces changes transactionally and retries one signed event", async () => {
     const { auth } = await import("./index");
     const { dispatchAccessChanges } = await import("./access-dispatcher");
     await auth.$context;
@@ -48,25 +97,17 @@ describe.skipIf(!databaseURL || !endpoint || !audience)("access-change outbox in
       `INSERT INTO entra_group_observation (source, group_id, members, observed_at)
        VALUES ('integration:outbox', 'group-1', ARRAY['a']::text[], NOW())`,
     );
-    expect(
-      (await pool.query(`SELECT count(*)::integer AS count FROM access_outbox`)).rows[0].count,
-    ).toBe(1);
+    expect(await outbox()).toHaveLength(1);
 
     await pool.query(
       `UPDATE entra_group_observation SET observed_at = NOW()
        WHERE source = 'integration:outbox'`,
     );
-    expect(
-      (await pool.query(`SELECT count(*)::integer AS count FROM access_outbox`)).rows[0].count,
-    ).toBe(1);
-
     await pool.query(
       `UPDATE entra_group_observation SET members = ARRAY['b']::text[]
        WHERE source = 'integration:outbox'`,
     );
-    expect(
-      (await pool.query(`SELECT count(*)::integer AS count FROM access_outbox`)).rows[0].count,
-    ).toBe(2);
+    expect(await outbox()).toHaveLength(1);
 
     const transaction = await pool.connect();
     try {
@@ -79,16 +120,36 @@ describe.skipIf(!databaseURL || !endpoint || !audience)("access-change outbox in
     } finally {
       transaction.release();
     }
-    expect(
-      (await pool.query(`SELECT count(*)::integer AS count FROM access_outbox`)).rows[0].count,
-    ).toBe(2);
+    expect(await outbox()).toHaveLength(1);
 
+    // An open transaction's change holds the undelivered row back from the dispatcher.
+    const writer = await pool.connect();
+    try {
+      await writer.query("BEGIN");
+      await writer.query(
+        `UPDATE entra_group_observation SET members = ARRAY['c']::text[]
+         WHERE source = 'integration:outbox'`,
+      );
+      expect(await dispatchAccessChanges(auth)).toBe(false);
+      await writer.query("COMMIT");
+    } finally {
+      writer.release();
+    }
+    expect(received).toHaveLength(0);
+
+    // The dispatcher may be the first signer after a rotation; its key must still expire.
+    await pool.query(
+      `UPDATE jwks SET expires_at = NOW() - interval '1 second'
+       WHERE expires_at IS NULL OR expires_at > NOW()`,
+    );
     expect(await dispatchAccessChanges(auth)).toBe(true);
     expect(received).toHaveLength(1);
-    const retry = await pool.query<{ attempts: number; id: string }>(
-      `SELECT attempts, id::text FROM access_outbox ORDER BY id`,
+    const minted = await pool.query<{ expiring: boolean }>(
+      `SELECT expires_at > NOW() AS expiring FROM jwks ORDER BY created_at DESC LIMIT 1`,
     );
-    expect(retry.rows.map((row) => row.attempts)).toEqual([1, 1]);
+    expect(minted.rows[0]?.expiring).toBe(true);
+    const [retry] = await outbox();
+    expect(retry).toMatchObject({ attempts: 1, due: false });
 
     const jwks = await auth.api.getJwks();
     const verified = await jwtVerify(received[0]!, createLocalJWKSet(jwks), {
@@ -98,19 +159,29 @@ describe.skipIf(!databaseURL || !endpoint || !audience)("access-change outbox in
     });
     expect(verified.protectedHeader.typ).toBe("secevent+jwt");
     expect(verified.payload).toMatchObject({
-      jti: `access-${retry.rows[0]?.id}`,
+      jti: `access-${retry!.id}`,
       events: {
         "https://schemas.polinetwork.org/events/access-changed": { projection: "backend" },
       },
     });
 
+    // A change during backoff adds one row that waits behind the retry.
+    for (const members of ["d", "e"])
+      await pool.query(
+        `UPDATE entra_group_observation SET members = ARRAY[$1]::text[]
+         WHERE source = 'integration:outbox'`,
+        [members],
+      );
+    expect(await outbox()).toMatchObject([
+      { attempts: 1, due: false },
+      { attempts: 0, due: false },
+    ]);
+
     accept = true;
     await pool.query(`UPDATE access_outbox SET next_attempt_at = NOW()`);
     expect(await dispatchAccessChanges(auth)).toBe(true);
     expect(received).toHaveLength(2);
-    expect(
-      (await pool.query(`SELECT count(*)::integer AS count FROM access_outbox`)).rows[0].count,
-    ).toBe(0);
+    expect(await outbox()).toHaveLength(0);
     const again = await jwtVerify(received[1]!, createLocalJWKSet(jwks), {
       issuer: `${process.env.BETTER_AUTH_URL}/api/auth`,
       audience,

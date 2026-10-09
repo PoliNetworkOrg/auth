@@ -18,6 +18,8 @@ import { effectiveRolePermissions, type RbacCatalog } from "./rbac";
 import { readCatalog } from "./rbac-store";
 
 const ENTRA_GRACE_MS = 3_600_000;
+// The backend polls every 30 s; reusing a recent listing bounds Graph reads per group.
+const ENTRA_REFRESH_MS = 15_000;
 const SCHEMA = "polinetwork.access-snapshot/v1" as const;
 
 export type AccessSource = {
@@ -71,11 +73,19 @@ function configuredGroups(): Group[] {
   ].filter((group): group is Group => group !== null);
 }
 
-/** A failed Graph read leaves the last observation untouched and marks this pull degraded. */
-async function refreshObservations(groups: Group[]): Promise<Set<string>> {
+/**
+ * A failed Graph read leaves the last observation untouched and marks this pull degraded.
+ * Groups observed within `ENTRA_REFRESH_MS`, by any replica, are not listed again.
+ */
+async function readStaleObservations(groups: Group[]): Promise<Set<string>> {
   const failed = new Set<string>();
+  const observations = await db.select().from(entraGroupObservation);
+  const fresh = Date.now() - ENTRA_REFRESH_MS;
   await Promise.all(
     groups.map(async (group) => {
+      const observation = observations.find((item) => item.source === group.source);
+      if (observation?.groupId === group.groupId && observation.observedAt.getTime() > fresh)
+        return;
       const members = await listEntraGroupMembers(group.groupId);
       if (!members) {
         failed.add(group.source);
@@ -98,6 +108,16 @@ async function refreshObservations(groups: Group[]): Promise<Set<string>> {
     }),
   );
   return failed;
+}
+
+let refreshing: Promise<Set<string>> | null = null;
+
+/** Concurrent pulls in this process share one Graph read. */
+function refreshObservations(groups: Group[]): Promise<Set<string>> {
+  refreshing ??= readStaleObservations(groups).finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
 }
 
 /** Builds only the backend's reviewed projection; every path carries its own expiry. */

@@ -185,7 +185,9 @@ export async function deleteUser(actorId: string, userId: string, confirmation: 
         .set({ userId: null })
         .where(eq(oauthClient.userId, userId));
       // Core's adapter invokes session deletion hooks, including OAuth token revocation
-      // and back-channel logout planning. A cascade alone bypasses those hooks.
+      // and back-channel logout planning. A cascade alone bypasses those hooks. The adapter
+      // commits outside this transaction, so a deletion that fails after this point leaves
+      // the person signed out but not deleted. That is the safe direction.
       const sessions = await transaction
         .select({ token: session.token })
         .from(session)
