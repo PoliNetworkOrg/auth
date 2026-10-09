@@ -21,7 +21,12 @@ export const Route = createFileRoute("/api/internal/access-snapshot")({
           const body = await buildBackendSnapshot();
           const etag = `"sha256-${createHash("sha256").update(body).digest("hex")}"`;
           const responseHeaders = { ...headers, ETag: etag };
-          if (request.headers.get("if-none-match") === etag)
+          if (
+            request.headers
+              .get("if-none-match")
+              ?.split(",")
+              .some((entry) => entry.trim() === etag || entry.trim() === "*")
+          )
             return new Response(null, { status: 304, headers: responseHeaders });
           return new Response(body, {
             headers: { ...responseHeaders, "Content-Type": "application/json; charset=utf-8" },
