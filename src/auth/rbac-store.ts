@@ -57,7 +57,7 @@ type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 // Read one query at a time: `db` may be an open transaction, and a transaction is a single
 // PostgreSQL session that cannot run overlapping queries.
-async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
+export async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
   const roles = await db.select().from(role).orderBy(role.key);
   const permissions = await db.select().from(permission).orderBy(permission.key);
   const rolePermissions = await db

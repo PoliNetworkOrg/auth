@@ -4,7 +4,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-
 
 const TENANT = "11111111-1111-4111-8111-111111111111";
 const ENTRA_ISSUER = `https://login.microsoftonline.com/${TENANT}/v2.0`;
-const mocks = vi.hoisted(() => ({ graph: vi.fn(), states: vi.fn(), list: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  graph: vi.fn(),
+  states: vi.fn(),
+  list: vi.fn(),
+  deleteSessions: vi.fn(),
+}));
 vi.mock("../env", () => {
   const url = new URL(
     process.env.RBAC_TEST_DATABASE_URL ??
@@ -31,10 +36,11 @@ vi.mock("./membership", () => ({
   checkPnGroupStates: mocks.states,
   listEntraGroupMembers: mocks.list,
 }));
-// Only session authentication is substituted; routes, authorization, SQL and transactions
-// are real.
+// Only session authentication and Better Auth's session revocation are substituted; routes,
+// authorization, SQL and transactions are real.
 vi.mock("./index", () => ({
   auth: {
+    $context: Promise.resolve({ internalAdapter: { deleteSessions: mocks.deleteSessions } }),
     api: {
       getSession: async ({ headers }) => {
         const id = headers.get("x-test-user");
@@ -234,10 +240,11 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("account deletion with Post
        VALUES ('https://oauth.telegram.org', $1, 'telegram', '{}', now() + interval '1 day', '4242')`,
       [telegram],
     );
+    const sessionToken = unique("session");
     await pool.query(
       `INSERT INTO session (id, token, user_id, expires_at, updated_at)
        VALUES ($1, $1, $2, now() + interval '1 hour', now())`,
-      [unique("session"), target.id],
+      [sessionToken, target.id],
     );
     await pool.query(
       `INSERT INTO passkey (id, public_key, user_id, credential_id, counter, device_type, backed_up)
@@ -258,6 +265,8 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("account deletion with Post
     expect(await exists(target.id)).toBe(false);
     expect(await count(`SELECT count(*) FROM account WHERE user_id = $1`)).toBe(0);
     expect(await count(`SELECT count(*) FROM session WHERE user_id = $1`)).toBe(0);
+    // Revocation goes through the adapter so OAuth token and logout hooks run.
+    expect(mocks.deleteSessions).toHaveBeenCalledWith([sessionToken]);
     expect(await count(`SELECT count(*) FROM passkey WHERE user_id = $1`)).toBe(0);
     expect(
       await count(`SELECT count(*) FROM identity_evidence WHERE subject LIKE $1 || '-%'`),

@@ -65,6 +65,13 @@ export type OidcClientSummary = {
   policyUri: string | null;
   scopes: string[];
   confidential: boolean;
+  service: boolean;
+  authMethod: string | null;
+  grantTypes: string[];
+  clientCredentialsScopes: string[];
+  resourceIds: string[];
+  enableEndSession: boolean;
+  jwks: string | null;
   applicationType: OidcApplicationType;
   disabled: boolean;
   skipConsent: boolean;

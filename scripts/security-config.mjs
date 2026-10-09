@@ -17,6 +17,10 @@ const schema = z
         return url.protocol === "https:";
       }, "BETTER_AUTH_URL must be an HTTPS URL without credentials, or HTTP on localhost."),
     BETTER_AUTH_SECRET: z.string().trim().min(32),
+    OAUTH_BACKEND_RESOURCE_URI: optional(z.url()),
+    OAUTH_INTERNAL_RESOURCE_URI: optional(z.url()),
+    OAUTH_BACKEND_CLIENT_ID: optional(z.string().min(1)),
+    OAUTH_BACKEND_EVENTS_URL: optional(z.url()),
     PN_ENTRA_MEMBER_GROUP_ID: optional(z.uuid()),
     PN_ENTRA_DIRETTIVO_GROUP_ID: optional(z.uuid()),
     PN_ENTRA_MEMBER_REFRESH_HOURS: optional(z.coerce.number().int().positive()),
@@ -40,6 +44,46 @@ const schema = z
       .pipe(z.array(z.string().regex(/^[a-zA-Z0-9_-]+$/))),
   })
   .superRefine((config, context) => {
+    const resourceUris = [config.OAUTH_BACKEND_RESOURCE_URI, config.OAUTH_INTERNAL_RESOURCE_URI];
+    if (resourceUris.some(Boolean) && !resourceUris.every(Boolean))
+      context.addIssue({
+        code: "custom",
+        message: "Configure OAUTH_BACKEND_RESOURCE_URI and OAUTH_INTERNAL_RESOURCE_URI together.",
+      });
+    if (resourceUris.every(Boolean) && resourceUris[0] === resourceUris[1])
+      context.addIssue({
+        code: "custom",
+        message: "OAuth backend and internal resources must have distinct identifiers.",
+      });
+    if (config.OAUTH_BACKEND_EVENTS_URL && !config.OAUTH_BACKEND_RESOURCE_URI)
+      context.addIssue({
+        code: "custom",
+        message: "OAUTH_BACKEND_EVENTS_URL requires OAuth resource configuration.",
+      });
+    if (config.OAUTH_BACKEND_EVENTS_URL) {
+      const endpoint = new URL(config.OAUTH_BACKEND_EVENTS_URL);
+      if (
+        !["http:", "https:"].includes(endpoint.protocol) ||
+        endpoint.username ||
+        endpoint.password ||
+        endpoint.hash
+      )
+        context.addIssue({
+          code: "custom",
+          message:
+            "OAUTH_BACKEND_EVENTS_URL must be an HTTP(S) URL without credentials or fragment.",
+        });
+    }
+    for (const uri of resourceUris) {
+      if (!uri) continue;
+      const parsed = new URL(uri);
+      if (parsed.protocol !== "https:" || parsed.username || parsed.password || uri.includes("#"))
+        context.addIssue({
+          code: "custom",
+          message:
+            "OAuth resource identifiers must be HTTPS URLs without credentials or fragments.",
+        });
+    }
     for (const keys of [
       ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
       ["TELEGRAM_CLIENT_ID", "TELEGRAM_CLIENT_SECRET"],

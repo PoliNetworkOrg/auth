@@ -1,7 +1,10 @@
 import type { GenericOAuthConfig } from "better-auth/plugins/generic-oauth";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { and, eq, sql } from "drizzle-orm";
+import { account } from "../db/auth-schema";
 import { identityEvidence } from "../db/evidence";
 import { db } from "../db/index";
+import { authorizationMutationLock } from "../db/security-lock";
 import { env } from "../env";
 import { claimEmail } from "./contact-email";
 import { checkPnGroupStates, membershipEvidence } from "./membership";
@@ -11,6 +14,45 @@ type ProviderSettings = {
   clientSecret: string;
   tenantId?: string;
 };
+
+/** Claim a verified Telegram ID after removing proof left by a failed or old link. */
+export async function persistVerifiedEvidence(proof: typeof identityEvidence.$inferInsert) {
+  if (proof.providerId !== "telegram") {
+    await db
+      .insert(identityEvidence)
+      .values(proof)
+      .onConflictDoUpdate({
+        target: [identityEvidence.issuer, identityEvidence.subject],
+        set: proof,
+      });
+    return;
+  }
+  if (!proof.telegramId || !/^[1-9]\d*$/.test(proof.telegramId))
+    throw new Error("Verified Telegram proof requires a numeric user ID.");
+  await db.transaction(async (transaction) => {
+    await transaction.execute(authorizationMutationLock);
+    await transaction.delete(identityEvidence).where(
+      and(
+        eq(identityEvidence.providerId, "telegram"),
+        eq(identityEvidence.issuer, proof.issuer),
+        eq(identityEvidence.telegramId, proof.telegramId!),
+        sql`not exists (
+          select 1 from ${account}
+          where ${account.issuer} = ${identityEvidence.issuer}
+            and ${account.accountId} = ${identityEvidence.subject}
+            and ${account.providerId} = ${identityEvidence.providerId}
+        )`,
+      ),
+    );
+    await transaction
+      .insert(identityEvidence)
+      .values(proof)
+      .onConflictDoUpdate({
+        target: [identityEvidence.issuer, identityEvidence.subject],
+        set: proof,
+      });
+  });
+}
 
 function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfig {
   const telegram = id === "telegram";
@@ -70,13 +112,7 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
         // next time they sign in.
         email: telegram ? null : (claimEmail(payload) ?? null),
       };
-      await db
-        .insert(identityEvidence)
-        .values(proof)
-        .onConflictDoUpdate({
-          target: [identityEvidence.issuer, identityEvidence.subject],
-          set: proof,
-        });
+      await persistVerifiedEvidence(proof);
       return {
         ...payload,
         sub: payload.sub,

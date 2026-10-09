@@ -38,6 +38,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 
 export const Route = createFileRoute("/applications/$clientId")({
   head: () => ({ meta: [{ title: "Application · PoliNetwork Auth" }] }),
@@ -79,19 +80,22 @@ function ToggleRow({
 function ApplicationDetail() {
   const { clientId } = Route.useParams();
   const navigate = useNavigate();
-  const { can } = useIdpAccessContext();
+  const { can, isMasterAdmin } = useIdpAccessContext();
   const canWrite = can("idp:applications:write");
   const [client, setClient] = useState<OidcClientSummary | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [revision, setRevision] = useState(0);
 
-  const [busy, setBusy] = useState<"save" | "toggle" | "rotate" | "delete" | null>(null);
+  const [busy, setBusy] = useState<
+    "save" | "toggle" | "rotate" | "delete" | "jwks" | "link" | null
+  >(null);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<OidcClientDraftErrors | undefined>();
   const [notice, setNotice] = useState("");
   const [formKey, setFormKey] = useState(0);
   const [rotatedSecret, setRotatedSecret] = useState<string | null>(null);
+  const [jwksDraft, setJwksDraft] = useState("");
   const [rotateOpen, setRotateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
@@ -102,8 +106,10 @@ function ApplicationDetail() {
     fetchOidcClients(clientId, controller.signal)
       .then((clients) => {
         const found = clients[0];
-        if (found) setClient(found);
-        else setNotFound(true);
+        if (found) {
+          setClient(found);
+          setJwksDraft(found.jwks ? JSON.stringify(JSON.parse(found.jwks), null, 2) : "");
+        } else setNotFound(true);
       })
       .catch((cause: unknown) => {
         if (!controller.signal.aborted)
@@ -198,6 +204,51 @@ function ApplicationDetail() {
     }
   }
 
+  async function saveJwks() {
+    setBusy("jwks");
+    setError("");
+    try {
+      const jwks: unknown = JSON.parse(jwksDraft);
+      const response = await fetch("/api/oidc/service-client", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, jwks }),
+      });
+      const result: { jwks?: string; error?: string } = await response.json();
+      if (!response.ok || !result.jwks)
+        throw new Error(result.error ?? "Unable to save the public JWKS.");
+      setClient((current) => (current ? { ...current, jwks: result.jwks! } : current));
+      setNotice("Public JWKS saved.");
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to save the public JWKS."));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function linkResource() {
+    if (!client) return;
+    setBusy("link");
+    setError("");
+    try {
+      const resource = client.clientCredentialsScopes.includes("idp:access:read")
+        ? "internal"
+        : "backend";
+      const response = await fetch("/api/oidc/resource-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, resource }),
+      });
+      if (!response.ok) throw new Error("Unable to link the configured resource.");
+      setRevision((value) => value + 1);
+      setNotice("Resource linked.");
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to link the configured resource."));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (notFound) {
     return (
       <div className="mx-auto max-w-lg py-10 text-center">
@@ -235,6 +286,7 @@ function ApplicationDetail() {
   }
 
   const deleteReady = deleteConfirmation.trim() === client.name.trim();
+  const canManage = client.service ? isMasterAdmin : canWrite;
 
   return (
     <div className="space-y-8">
@@ -264,6 +316,7 @@ function ApplicationDetail() {
               <Badge className="bg-card text-muted-foreground">
                 {client.confidential ? "Confidential" : "Public"}
               </Badge>
+              {client.service && <Badge className="bg-card text-muted-foreground">Service</Badge>}
               <Badge className="bg-card text-muted-foreground">
                 {client.applicationType === "native" ? "Native" : "Web"}
               </Badge>
@@ -304,31 +357,107 @@ function ApplicationDetail() {
 
       <div className="grid items-start gap-8 lg:grid-cols-[1fr_340px]">
         <div className="space-y-8">
-          <Card>
-            <CardHeader>
-              <CardTitle>Settings</CardTitle>
-              <CardDescription>
-                Changes apply to the next sign-in. Redirect URIs must match your app exactly.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <fieldset disabled={!canWrite} className="border-0 p-0">
-                <ClientForm
-                  key={formKey}
-                  mode="edit"
-                  initial={draftFromClient(client)}
-                  confidential={client.confidential}
-                  readOnly={!canWrite}
-                  busy={busy === "save"}
-                  serverErrors={fieldErrors}
-                  submitLabel="Save changes"
-                  onSubmit={(draft) => void save(draft)}
-                />
-              </fieldset>
-            </CardContent>
-          </Card>
+          {client.service ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Service configuration</CardTitle>
+                <CardDescription>
+                  Only Master Admin may change this client's access.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 text-sm">
+                <div>
+                  <span className="font-medium">Authentication</span>
+                  <p className="font-mono text-xs">{client.authMethod}</p>
+                </div>
+                <div>
+                  <span className="font-medium">Grants</span>
+                  <p className="font-mono text-xs">{client.grantTypes.join(" ")}</p>
+                </div>
+                <div>
+                  <span className="font-medium">Scopes</span>
+                  <p className="font-mono text-xs break-all">
+                    {(client.clientCredentialsScopes.length
+                      ? client.clientCredentialsScopes
+                      : client.scopes
+                    ).join(" ")}
+                  </p>
+                </div>
+                <div>
+                  <span className="font-medium">Linked resources</span>
+                  <p className="font-mono text-xs break-all">
+                    {client.resourceIds.join(" ") || "None"}
+                  </p>
+                </div>
+                {client.enableEndSession && <p>End-session is enabled for this client.</p>}
+                {client.resourceIds.length === 0 && canManage && (
+                  <Button
+                    variant="outline"
+                    disabled={busy !== null}
+                    onClick={() => void linkResource()}
+                  >
+                    Link configured resource
+                  </Button>
+                )}
+                {client.jwks && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span>Public JWKS</span>
+                      <CopyButton value={client.jwks} label="Copy public JWKS" size="icon-xs" />
+                    </div>
+                    {canManage && (
+                      <>
+                        <p className="text-xs text-muted-foreground">
+                          For rotation, add the new public key, deploy its private key to the
+                          service, then remove the old public key after the overlap.
+                        </p>
+                        <Textarea
+                          rows={8}
+                          className="font-mono text-xs"
+                          value={jwksDraft}
+                          onChange={(event) => setJwksDraft(event.target.value)}
+                          aria-label="Public JWKS"
+                        />
+                        <Button
+                          variant="outline"
+                          disabled={busy !== null}
+                          onClick={() => void saveJwks()}
+                        >
+                          Save public JWKS
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>Settings</CardTitle>
+                <CardDescription>
+                  Changes apply to the next sign-in. Redirect URIs must match your app exactly.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <fieldset disabled={!canWrite} className="border-0 p-0">
+                  <ClientForm
+                    key={formKey}
+                    mode="edit"
+                    initial={draftFromClient(client)}
+                    confidential={client.confidential}
+                    readOnly={!canWrite}
+                    busy={busy === "save"}
+                    serverErrors={fieldErrors}
+                    submitLabel="Save changes"
+                    onSubmit={(draft) => void save(draft)}
+                  />
+                </fieldset>
+              </CardContent>
+            </Card>
+          )}
 
-          {canWrite && (
+          {canManage && (
             <Card className="border-destructive/40">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-destructive">
@@ -365,9 +494,11 @@ function ApplicationDetail() {
                 Credentials
               </CardTitle>
               <CardDescription>
-                {client.confidential
-                  ? "The client authenticates to the token endpoint with its ID and secret."
-                  : "Public client: no secret. The app must use PKCE."}
+                {client.authMethod === "private_key_jwt"
+                  ? "The client signs assertions with its own private key. Only its public JWKS is stored here."
+                  : client.confidential
+                    ? "The client authenticates to the token endpoint with its ID and secret."
+                    : "Public client: no secret. The app must use PKCE."}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -381,14 +512,14 @@ function ApplicationDetail() {
               ) : (
                 <CredentialField label="Client ID" value={client.clientId} />
               )}
-              {client.confidential && !rotatedSecret && (
+              {client.confidential && client.authMethod !== "private_key_jwt" && !rotatedSecret && (
                 <div>
                   <p className="text-xs font-medium text-muted-foreground">Client secret</p>
                   <div className="mt-1 flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
                     <code className="font-mono text-sm tracking-widest text-muted-foreground">
                       ••••••••••••••••
                     </code>
-                    {canWrite && (
+                    {canManage && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -417,9 +548,7 @@ function ApplicationDetail() {
           <Card>
             <CardHeader>
               <CardTitle>Access</CardTitle>
-              <CardDescription>
-                Control whether and how people sign in through this app.
-              </CardDescription>
+              <CardDescription>Control whether this client can request tokens.</CardDescription>
             </CardHeader>
             <CardContent className="divide-y">
               <ToggleRow
@@ -431,17 +560,19 @@ function ApplicationDetail() {
                     : "People can sign in through this application."
                 }
                 checked={!client.disabled}
-                disabled={!canWrite || busy !== null}
+                disabled={!canManage || busy !== null}
                 onCheckedChange={(checked) => void toggle({ disabled: !checked })}
               />
-              <ToggleRow
-                id="client-skip-consent"
-                title="Skip consent screen"
-                description="For first-party PoliNetwork apps only. People are signed in without reviewing the requested permissions."
-                checked={client.skipConsent}
-                disabled={!canWrite || busy !== null}
-                onCheckedChange={(checked) => void toggle({ skipConsent: checked })}
-              />
+              {!client.service && (
+                <ToggleRow
+                  id="client-skip-consent"
+                  title="Skip consent screen"
+                  description="For first-party PoliNetwork apps only. People are signed in without reviewing the requested permissions."
+                  checked={client.skipConsent}
+                  disabled={!canManage || busy !== null}
+                  onCheckedChange={(checked) => void toggle({ skipConsent: checked })}
+                />
+              )}
             </CardContent>
           </Card>
 

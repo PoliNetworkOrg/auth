@@ -21,6 +21,7 @@ import { Route as ApiStudentVerificationRouteImport } from './routes/api/student
 import { Route as ApplicationsIndexRouteImport } from './routes/applications/index'
 import { Route as ApplicationsClientIdRouteImport } from './routes/applications/$clientId'
 import { Route as ApplicationsNewRouteImport } from './routes/applications/new'
+import { Route as ApplicationsServiceNewRouteImport } from './routes/applications/service-new'
 import { Route as UsersIndexRouteImport } from './routes/users/index'
 import { Route as UsersUserIdRouteImport } from './routes/users/$userId'
 import { Route as AccessPermissionsIndexRouteImport } from './routes/access/permissions/index'
@@ -32,8 +33,11 @@ import { Route as AccessRolesNewRouteImport } from './routes/access/roles/new'
 import { Route as ApiAccountsUnlinkRouteImport } from './routes/api/accounts/unlink'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiIdpAccessRouteImport } from './routes/api/idp/access'
+import { Route as ApiInternalAccessSnapshotRouteImport } from './routes/api/internal/access-snapshot'
 import { Route as ApiOidcClientUpdateRouteImport } from './routes/api/oidc/client-update'
 import { Route as ApiOidcClientsRouteImport } from './routes/api/oidc/clients'
+import { Route as ApiOidcResourceLinkRouteImport } from './routes/api/oidc/resource-link'
+import { Route as ApiOidcServiceClientRouteImport } from './routes/api/oidc/service-client'
 import { Route as ApiRbacCatalogRouteImport } from './routes/api/rbac/catalog'
 import { Route as ApiRbacPermissionSaveRouteImport } from './routes/api/rbac/permission-save'
 import { Route as ApiRbacRoleMembersRouteImport } from './routes/api/rbac/role-members'
@@ -102,6 +106,11 @@ const ApplicationsNewRoute = ApplicationsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => ApplicationsRouteRoute,
 } as any)
+const ApplicationsServiceNewRoute = ApplicationsServiceNewRouteImport.update({
+  id: '/service-new',
+  path: '/service-new',
+  getParentRoute: () => ApplicationsRouteRoute,
+} as any)
 const UsersIndexRoute = UsersIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -158,6 +167,12 @@ const ApiIdpAccessRoute = ApiIdpAccessRouteImport.update({
   path: '/api/idp/access',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiInternalAccessSnapshotRoute =
+  ApiInternalAccessSnapshotRouteImport.update({
+    id: '/api/internal/access-snapshot',
+    path: '/api/internal/access-snapshot',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiOidcClientUpdateRoute = ApiOidcClientUpdateRouteImport.update({
   id: '/api/oidc/client-update',
   path: '/api/oidc/client-update',
@@ -166,6 +181,16 @@ const ApiOidcClientUpdateRoute = ApiOidcClientUpdateRouteImport.update({
 const ApiOidcClientsRoute = ApiOidcClientsRouteImport.update({
   id: '/api/oidc/clients',
   path: '/api/oidc/clients',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOidcResourceLinkRoute = ApiOidcResourceLinkRouteImport.update({
+  id: '/api/oidc/resource-link',
+  path: '/api/oidc/resource-link',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOidcServiceClientRoute = ApiOidcServiceClientRouteImport.update({
+  id: '/api/oidc/service-client',
+  path: '/api/oidc/service-client',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiRbacCatalogRoute = ApiRbacCatalogRouteImport.update({
@@ -215,6 +240,7 @@ export interface FileRoutesByFullPath {
   '/api/student-verification': typeof ApiStudentVerificationRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
+  '/applications/service-new': typeof ApplicationsServiceNewRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/access/': typeof AccessIndexRoute
   '/applications/': typeof ApplicationsIndexRoute
@@ -226,8 +252,11 @@ export interface FileRoutesByFullPath {
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/idp/access': typeof ApiIdpAccessRoute
+  '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
   '/api/oidc/clients': typeof ApiOidcClientsRoute
+  '/api/oidc/resource-link': typeof ApiOidcResourceLinkRoute
+  '/api/oidc/service-client': typeof ApiOidcServiceClientRoute
   '/api/rbac/catalog': typeof ApiRbacCatalogRoute
   '/api/rbac/permission-save': typeof ApiRbacPermissionSaveRoute
   '/api/rbac/role-members': typeof ApiRbacRoleMembersRoute
@@ -246,6 +275,7 @@ export interface FileRoutesByTo {
   '/api/student-verification': typeof ApiStudentVerificationRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
+  '/applications/service-new': typeof ApplicationsServiceNewRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/access': typeof AccessIndexRoute
   '/applications': typeof ApplicationsIndexRoute
@@ -257,8 +287,11 @@ export interface FileRoutesByTo {
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/idp/access': typeof ApiIdpAccessRoute
+  '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
   '/api/oidc/clients': typeof ApiOidcClientsRoute
+  '/api/oidc/resource-link': typeof ApiOidcResourceLinkRoute
+  '/api/oidc/service-client': typeof ApiOidcServiceClientRoute
   '/api/rbac/catalog': typeof ApiRbacCatalogRoute
   '/api/rbac/permission-save': typeof ApiRbacPermissionSaveRoute
   '/api/rbac/role-members': typeof ApiRbacRoleMembersRoute
@@ -281,6 +314,7 @@ export interface FileRoutesById {
   '/api/student-verification': typeof ApiStudentVerificationRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
+  '/applications/service-new': typeof ApplicationsServiceNewRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/access/': typeof AccessIndexRoute
   '/applications/': typeof ApplicationsIndexRoute
@@ -292,8 +326,11 @@ export interface FileRoutesById {
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/idp/access': typeof ApiIdpAccessRoute
+  '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
   '/api/oidc/clients': typeof ApiOidcClientsRoute
+  '/api/oidc/resource-link': typeof ApiOidcResourceLinkRoute
+  '/api/oidc/service-client': typeof ApiOidcServiceClientRoute
   '/api/rbac/catalog': typeof ApiRbacCatalogRoute
   '/api/rbac/permission-save': typeof ApiRbacPermissionSaveRoute
   '/api/rbac/role-members': typeof ApiRbacRoleMembersRoute
@@ -317,6 +354,7 @@ export interface FileRouteTypes {
     | '/api/student-verification'
     | '/applications/$clientId'
     | '/applications/new'
+    | '/applications/service-new'
     | '/users/$userId'
     | '/access/'
     | '/applications/'
@@ -328,8 +366,11 @@ export interface FileRouteTypes {
     | '/api/accounts/unlink'
     | '/api/auth/$'
     | '/api/idp/access'
+    | '/api/internal/access-snapshot'
     | '/api/oidc/client-update'
     | '/api/oidc/clients'
+    | '/api/oidc/resource-link'
+    | '/api/oidc/service-client'
     | '/api/rbac/catalog'
     | '/api/rbac/permission-save'
     | '/api/rbac/role-members'
@@ -348,6 +389,7 @@ export interface FileRouteTypes {
     | '/api/student-verification'
     | '/applications/$clientId'
     | '/applications/new'
+    | '/applications/service-new'
     | '/users/$userId'
     | '/access'
     | '/applications'
@@ -359,8 +401,11 @@ export interface FileRouteTypes {
     | '/api/accounts/unlink'
     | '/api/auth/$'
     | '/api/idp/access'
+    | '/api/internal/access-snapshot'
     | '/api/oidc/client-update'
     | '/api/oidc/clients'
+    | '/api/oidc/resource-link'
+    | '/api/oidc/service-client'
     | '/api/rbac/catalog'
     | '/api/rbac/permission-save'
     | '/api/rbac/role-members'
@@ -382,6 +427,7 @@ export interface FileRouteTypes {
     | '/api/student-verification'
     | '/applications/$clientId'
     | '/applications/new'
+    | '/applications/service-new'
     | '/users/$userId'
     | '/access/'
     | '/applications/'
@@ -393,8 +439,11 @@ export interface FileRouteTypes {
     | '/api/accounts/unlink'
     | '/api/auth/$'
     | '/api/idp/access'
+    | '/api/internal/access-snapshot'
     | '/api/oidc/client-update'
     | '/api/oidc/clients'
+    | '/api/oidc/resource-link'
+    | '/api/oidc/service-client'
     | '/api/rbac/catalog'
     | '/api/rbac/permission-save'
     | '/api/rbac/role-members'
@@ -418,8 +467,11 @@ export interface RootRouteChildren {
   ApiAccountsUnlinkRoute: typeof ApiAccountsUnlinkRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiIdpAccessRoute: typeof ApiIdpAccessRoute
+  ApiInternalAccessSnapshotRoute: typeof ApiInternalAccessSnapshotRoute
   ApiOidcClientUpdateRoute: typeof ApiOidcClientUpdateRoute
   ApiOidcClientsRoute: typeof ApiOidcClientsRoute
+  ApiOidcResourceLinkRoute: typeof ApiOidcResourceLinkRoute
+  ApiOidcServiceClientRoute: typeof ApiOidcServiceClientRoute
   ApiRbacCatalogRoute: typeof ApiRbacCatalogRoute
   ApiRbacPermissionSaveRoute: typeof ApiRbacPermissionSaveRoute
   ApiRbacRoleMembersRoute: typeof ApiRbacRoleMembersRoute
@@ -515,6 +567,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApplicationsNewRouteImport
       parentRoute: typeof ApplicationsRouteRoute
     }
+    '/applications/service-new': {
+      id: '/applications/service-new'
+      path: '/service-new'
+      fullPath: '/applications/service-new'
+      preLoaderRoute: typeof ApplicationsServiceNewRouteImport
+      parentRoute: typeof ApplicationsRouteRoute
+    }
     '/users/': {
       id: '/users/'
       path: '/'
@@ -592,6 +651,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiIdpAccessRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/internal/access-snapshot': {
+      id: '/api/internal/access-snapshot'
+      path: '/api/internal/access-snapshot'
+      fullPath: '/api/internal/access-snapshot'
+      preLoaderRoute: typeof ApiInternalAccessSnapshotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/oidc/client-update': {
       id: '/api/oidc/client-update'
       path: '/api/oidc/client-update'
@@ -604,6 +670,20 @@ declare module '@tanstack/react-router' {
       path: '/api/oidc/clients'
       fullPath: '/api/oidc/clients'
       preLoaderRoute: typeof ApiOidcClientsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/oidc/resource-link': {
+      id: '/api/oidc/resource-link'
+      path: '/api/oidc/resource-link'
+      fullPath: '/api/oidc/resource-link'
+      preLoaderRoute: typeof ApiOidcResourceLinkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/oidc/service-client': {
+      id: '/api/oidc/service-client'
+      path: '/api/oidc/service-client'
+      fullPath: '/api/oidc/service-client'
+      preLoaderRoute: typeof ApiOidcServiceClientRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/rbac/catalog': {
@@ -685,12 +765,14 @@ const AccessRouteRouteWithChildren = AccessRouteRoute._addFileChildren(
 interface ApplicationsRouteRouteChildren {
   ApplicationsClientIdRoute: typeof ApplicationsClientIdRoute
   ApplicationsNewRoute: typeof ApplicationsNewRoute
+  ApplicationsServiceNewRoute: typeof ApplicationsServiceNewRoute
   ApplicationsIndexRoute: typeof ApplicationsIndexRoute
 }
 
 const ApplicationsRouteRouteChildren: ApplicationsRouteRouteChildren = {
   ApplicationsClientIdRoute: ApplicationsClientIdRoute,
   ApplicationsNewRoute: ApplicationsNewRoute,
+  ApplicationsServiceNewRoute: ApplicationsServiceNewRoute,
   ApplicationsIndexRoute: ApplicationsIndexRoute,
 }
 
@@ -723,8 +805,11 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAccountsUnlinkRoute: ApiAccountsUnlinkRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiIdpAccessRoute: ApiIdpAccessRoute,
+  ApiInternalAccessSnapshotRoute: ApiInternalAccessSnapshotRoute,
   ApiOidcClientUpdateRoute: ApiOidcClientUpdateRoute,
   ApiOidcClientsRoute: ApiOidcClientsRoute,
+  ApiOidcResourceLinkRoute: ApiOidcResourceLinkRoute,
+  ApiOidcServiceClientRoute: ApiOidcServiceClientRoute,
   ApiRbacCatalogRoute: ApiRbacCatalogRoute,
   ApiRbacPermissionSaveRoute: ApiRbacPermissionSaveRoute,
   ApiRbacRoleMembersRoute: ApiRbacRoleMembersRoute,

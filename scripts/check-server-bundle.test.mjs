@@ -14,6 +14,19 @@ describe("server bundle check", () => {
     expect(findBundleProblems(sources)).toEqual([]);
   });
 
+  it("finds request state assignments in an inlined server bundle", () => {
+    const inlined = `({get: getOAuthServerContext, set: setOAuthServerContext} = defineRequestState(() => null));\noAuthState = defineRequestState(() => null);`;
+    expect(findBundleProblems([{ path: "index.mjs", code: `${core}\n${inlined}` }])).toEqual([]);
+    expect(
+      findBundleProblems([
+        { path: "index.mjs", code: `${core}\n${inlined}` },
+        { path: "other.mjs", code: betterAuth },
+      ]),
+    ).toEqual([
+      "request state `{get: getOAuthServerContext, set: setOAuthServerContext}` is bundled 2 times (index.mjs, other.mjs).",
+    ]);
+  });
+
   it("fails when a module that defines request state is bundled twice", () => {
     const sources = [
       { path: "_ssr/router.mjs", code: `${core}\n${betterAuth}` },

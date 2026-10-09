@@ -1,0 +1,15 @@
+# IdP–Telegram migration: Phase 1 implementation plan
+
+**Base:** [RFC revision 3](./idp-telegram-integration-rfc-v3.md), especially §§5, 6, 7 and 13. Phase 1 makes the IdP foundation deployable; no backend, bot, website or dashboard caller changes behavior yet.
+
+## Delivery order
+
+1. **OAuth foundation in `auth`.** Enable the RFC's service scopes, client-credentials grant, resource policies, subject-type claim and refresh settings. Require both resource identifiers together before enabling service OAuth, so existing deployments retain their current behavior until configured. Keep resource policy in code and restrict client-credentials scope configuration and resource links to Master Admin. Verify discovery, audiences, TTLs, scope ceilings, client linking and ordinary-client denial against a disposable local database.
+2. **Snapshot and projection.** Add the authenticated `/api/internal/access-snapshot` endpoint, per-client projection registry, versioned schema and content-derived ETag. The `backend` client may read only its registered projection. Verify that unknown clients and missing audience/scope fail closed, that unlink/delete removes Telegram IDs, and that 200/304 responses follow the RFC's freshness contract.
+3. **Entra observation and change dispatch.** Persist observations for each managed Entra group; derive permission `validUntil` from observed time plus the confirmed one-hour grace. Add transactional outbox triggers for every snapshot input and an IdP-signed SET dispatcher that retries until the backend endpoint exists. Verify that Graph failure preserves last-known-good data, expired authority disappears, events are idempotent and polling remains authoritative.
+4. **Identity and audit fixes.** Enforce unique numeric Telegram IDs across linked accounts, remove orphaned evidence on unlink/relink, record audit rows for linking, OIDC client changes and student verification, revoke sessions through the adapter on user deletion, and configure JWT key rotation. Verify migration against duplicates and rollback, audit atomicity, session revocation and old-key overlap.
+5. **Provisioning and deployment.** Register four distinct clients with separate public JWKS and resource links; store private keys in Azure Key Vault and mount only to the owning service. Record chosen resource identifiers and client IDs in the deployment repository. Verify startup on the deployable IdP while callers remain on their old paths. The `polinetwork-cd` checkout is not currently available locally, so this milestone cannot be completed in this workspace alone.
+
+## Rollout boundary
+
+The first four milestones remain local working-tree implementation until verified. Phase 1 deployment needs a separate review of the deployment diff, credentials and rollback path. Phase 2 creates and assigns runtime role grants; Phase 3 adds backend enforcement; Phase 4 moves callers. The concurrent-refresh behavior found in Phase 0 must be covered by the dashboard BFF lock and integration tests before its Phase 4 cutover, not by changing Phase 1 token settings.
