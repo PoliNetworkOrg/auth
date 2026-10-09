@@ -180,7 +180,10 @@ export async function loadCatalog(actorId: string): Promise<RbacCatalog> {
  */
 export async function withAuthorizedRbacWrite<T>(
   actorId: string,
-  required: Extract<ManagedPermissionKey, `${string}:write` | `${string}:delete`>,
+  required: Extract<
+    ManagedPermissionKey,
+    `${string}:write` | `${string}:assign` | `${string}:delete`
+  >,
   change: (transaction: Transaction, catalog: RbacCatalog, access: ResolvedAccess) => Promise<T>,
 ): Promise<T> {
   await refreshIdentityMembership(actorId);
@@ -231,6 +234,15 @@ async function auditSnapshot(
   };
 }
 
+/** Editing role definitions and handing roles out are delegated separately. */
+function requiredForOperation(
+  operation: string,
+): "idp:permissions:write" | "idp:roles:write" | "idp:roles:assign" {
+  if (operation.startsWith("permission.")) return "idp:permissions:write";
+  if (operation === "role.assign" || operation === "role.unassign") return "idp:roles:assign";
+  return "idp:roles:write";
+}
+
 async function withRbacWriteLock<T>(
   actorId: string,
   operation: string,
@@ -239,7 +251,7 @@ async function withRbacWriteLock<T>(
 ): Promise<T> {
   return withAuthorizedRbacWrite(
     actorId,
-    operation.startsWith("permission.") ? "idp:permissions:write" : "idp:roles:write",
+    requiredForOperation(operation),
     async (transaction, catalog, access) => {
       const before = await auditSnapshot(transaction, catalog, operation, targetId);
       const result = await change(transaction, catalog, access);

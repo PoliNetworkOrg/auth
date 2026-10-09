@@ -132,7 +132,7 @@ when that is what you mean.
 ### Permissions the identity provider defines itself
 
 Administering this service is expressed as permissions like any other capability, so it can
-be delegated to a role instead of being wired to a single group. These nine always exist
+be delegated to a role instead of being wired to a single group. These ten always exist
 and can never be created, deleted, or rekeyed, because the code checks for these exact
 keys; which roles carry them is entirely up to you.
 
@@ -144,29 +144,41 @@ keys; which roles carry them is entirely up to you.
 | `idp:permissions:read`   | Seeing permissions in the `/access` section                |
 | `idp:permissions:write`  | Creating, changing, and deleting permissions               |
 | `idp:roles:read`         | Seeing roles, what they grant, and who holds them          |
-| `idp:roles:write`        | Creating and changing roles, and giving them to people     |
+| `idp:roles:write`        | Creating, changing, and deleting roles                     |
+| `idp:roles:assign`       | Giving roles to people and taking them away                |
 | `idp:applications:read`  | Seeing the OIDC applications at `/applications`            |
 | `idp:applications:write` | Registering and editing applications, and rotating secrets |
 
 They use the permission hierarchy themselves: each `write` grants its `read`,
-`idp:roles:write` also grants `idp:people:read` so a role manager can find who to give a
-role to, `idp:users:read` grants `idp:people:read` because browsing everyone includes finding them, and `idp:roles:read` grants `idp:permissions:read` because a role is meaningless
+`idp:roles:assign` grants `idp:roles:read` and `idp:people:read` so an assigner can see the
+role and find who to give it to, `idp:roles:write` also grants `idp:people:read`, `idp:users:read` grants `idp:people:read` because browsing everyone includes finding them, and `idp:roles:read` grants `idp:permissions:read` because a role is meaningless
 without seeing the permissions it carries. A role with `idp:roles:write` therefore ends up
 with four permissions and still cannot touch applications. `idp:roles:write` granting
-`idp:roles:read`, `idp:permissions:write` granting `idp:permissions:read` and
+`idp:roles:read`, `idp:roles:assign` granting `idp:roles:read`, `idp:permissions:write`
+granting `idp:permissions:read` and
 `idp:users:delete` granting `idp:users:read` are fixed in code: they apply even if the stored edge is missing, and cannot be removed, because
 changing either without seeing what already exists makes no sense. The other implications
 are seeded defaults you can edit.
+
+The permissions that other PoliNetwork services check during the IdP–Telegram migration
+(`admin:access`, `tg:*`, `wa:groups:manage`, `groups:labels:write`, `web:*` and
+`azure:members:create`, see [RFC §4.1](docs/idp-telegram-integration-rfc-v3.md)) are seeded
+as ordinary permissions, with `tg:immune` granting `tg:trusted`. No role is given them:
+Master Admin holds them through its wildcard, and administrators choose which roles grant
+them.
 
 Every administration endpoint and every page checks the specific permission it needs, and
 the navigation only offers what you hold. Because Master Admin is a wildcard over every
 permission, whoever the deployment configures as an administrator holds all of these, which
 is the bootstrap and break-glass path: there is no second kind of check beside RBAC.
 
-Write permissions authorize bounded delegation. Only Master Admin can edit managed roles
+Editing roles and assigning them are separate: `idp:roles:write` changes what roles grant,
+`idp:roles:assign` gives and removes them, and neither implies the other.
+
+Write and assign permissions authorize bounded delegation. Only Master Admin can edit managed roles
 or permissions, including through custom ancestors or implications. Other writers can
 change, assign, revoke or delete only access within their current effective permissions;
-neither writer permission permits self-escalation. A new permission definition confers
+none of them permits self-escalation. A new permission definition confers
 nothing: Master Admin must first grant it before others can delegate it. All checks use
 current authority inside the same serialized transaction as the mutation. Graph lookups
 finish before a database transaction starts. Inside the transaction, authorization rereads
@@ -197,7 +209,7 @@ each hand-made role.
 
 Who holds a role is role data, so the roles column, the role filter and a person's roles
 and permissions are only returned to someone holding `idp:roles:read`
-(`idp:permissions:read` is enough for the permission list). With `idp:roles:write`, the same
+(`idp:permissions:read` is enough for the permission list). With `idp:roles:assign`, the same
 page gives and removes roles through the same endpoint and bounded delegation as a role's
 member list: nobody can hand out, or take away, access they do not hold themselves.
 
