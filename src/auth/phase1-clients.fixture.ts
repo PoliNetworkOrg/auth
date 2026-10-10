@@ -1,21 +1,17 @@
+// Test fixture: the four reviewed Phase 1 clients (RFC §9) as application form drafts.
+// Application code must not import it.
 import type { OidcClientDraft } from "./oidc-clients";
 
-export type ClientPreset = {
-  id: string;
+export type Phase1Client = {
+  id: "telegram-bot" | "website" | "admin-dashboard" | "backend";
   name: string;
-  description: string;
   draft: Partial<OidcClientDraft>;
 };
 
-/**
- * Starting points for the reviewed Phase 1 clients. They only fill in the form: every field
- * stays editable, and the server checks the result like any other draft.
- */
-export const CLIENT_PRESETS: ClientPreset[] = [
+export const PHASE1_CLIENTS: Phase1Client[] = [
   {
     id: "telegram-bot",
     name: "Telegram Bot",
-    description: "Calls the backend's Telegram APIs as itself.",
     draft: {
       name: "Telegram Bot",
       credential: "private-key",
@@ -35,7 +31,6 @@ export const CLIENT_PRESETS: ClientPreset[] = [
   {
     id: "website",
     name: "Website",
-    description: "Reads the backend's public data as itself.",
     draft: {
       name: "Website",
       credential: "private-key",
@@ -48,7 +43,6 @@ export const CLIENT_PRESETS: ClientPreset[] = [
   {
     id: "admin-dashboard",
     name: "Admin Dashboard",
-    description: "Signs administrators in and calls the backend for them.",
     draft: {
       name: "Admin Dashboard",
       credential: "private-key",
@@ -63,7 +57,6 @@ export const CLIENT_PRESETS: ClientPreset[] = [
   {
     id: "backend",
     name: "Backend snapshot pull",
-    description: "Pulls the access snapshot from this identity provider.",
     draft: {
       name: "Backend",
       credential: "private-key",

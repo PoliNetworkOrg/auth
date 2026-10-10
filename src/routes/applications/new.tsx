@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, CircleCheck, TriangleAlert } from "lucide-react";
-import { CLIENT_PRESETS } from "@/auth/client-presets";
 import {
   emptyClientDraft,
   normalizeClientDraft,
@@ -35,20 +34,11 @@ function NewApplication() {
   const router = useRouter();
   const { apiAccess } = Route.useLoaderData();
   const { isMasterAdmin } = useAccess();
-  const [initial, setInitial] = useState(emptyClientDraft);
-  const [presetId, setPresetId] = useState<string | null>(null);
+  const [initial] = useState(emptyClientDraft);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<OidcClientDraftErrors | undefined>();
   const [created, setCreated] = useState<Created | null>(null);
-
-  function applyPreset(id: string | null) {
-    const preset = CLIENT_PRESETS.find((candidate) => candidate.id === id);
-    setPresetId(preset ? preset.id : null);
-    // A new object restarts the wizard from the first step with the preset filled in.
-    setInitial({ ...emptyClientDraft(), ...preset?.draft });
-    setFieldErrors(undefined);
-  }
 
   async function create(input: OidcClientDraft) {
     const draft = normalizeClientDraft(input);
@@ -142,34 +132,6 @@ function NewApplication() {
           APIs. Credentials appear once you save.
         </p>
       </div>
-      {apiAccess && isMasterAdmin && (
-        <section aria-labelledby="presets" className="space-y-3">
-          <div>
-            <h2 id="presets" className="text-sm font-semibold">
-              Start from a preset
-            </h2>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              Fills in the reviewed settings for a PoliNetwork service. You can still change
-              anything.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {CLIENT_PRESETS.map((preset) => (
-              <Button
-                key={preset.id}
-                type="button"
-                size="sm"
-                variant={presetId === preset.id ? "default" : "outline"}
-                aria-pressed={presetId === preset.id}
-                title={preset.description}
-                onClick={() => applyPreset(presetId === preset.id ? null : preset.id)}
-              >
-                {preset.name}
-              </Button>
-            ))}
-          </div>
-        </section>
-      )}
       {error && (
         <p
           role="alert"

@@ -24,7 +24,7 @@ export function useClientDraft(initial: OidcClientDraft) {
 
   return {
     draft,
-    /** Replaces the whole draft, for presets and for reloading saved values. */
+    /** Replaces the whole draft, for reloading saved values. */
     reset: (next: OidcClientDraft) => setDraftState(withDerivedResources(next)),
     update: <K extends keyof OidcClientDraft>(key: K, value: OidcClientDraft[K]) =>
       change((current) => ({ ...current, [key]: value })),

@@ -465,16 +465,6 @@ export function NewApplicationWizard({
   const [reached, setReached] = useState(0);
   const [attempted, setAttempted] = useState<Set<WizardStepId>>(new Set());
   const [reviewing, setReviewing] = useState(false);
-  // Server errors belong to the draft that was sent and clear once it changes.
-  const [loadedInitial, setLoadedInitial] = useState(initial);
-  if (initial !== loadedInitial) {
-    setLoadedInitial(initial);
-    api.reset(initial);
-    setStep(0);
-    setReached(0);
-    setAttempted(new Set());
-    setReviewing(false);
-  }
 
   const errors = validateClientDraft(draft, { apiAccess });
   const allErrors: OidcClientDraftErrors = { ...serverErrors, ...errors };

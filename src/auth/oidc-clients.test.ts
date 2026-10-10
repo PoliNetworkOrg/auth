@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { CLIENT_PRESETS } from "./client-presets";
+import { PHASE1_CLIENTS } from "./phase1-clients.fixture";
 import {
   clientRegistration,
   draftFromClient,
@@ -226,8 +226,8 @@ describe("tokens and API access", () => {
   });
 });
 
-describe("presets", () => {
-  // The reviewed Phase 1 registrations (RFC §9), which the presets must still produce.
+describe("Phase 1 clients", () => {
+  // The reviewed Phase 1 registrations (RFC §9), which the form must still be able to produce.
   const reviewed = {
     "telegram-bot": {
       grantTypes: ["client_credentials"],
@@ -256,8 +256,8 @@ describe("presets", () => {
     },
   } as const;
 
-  it.each(CLIENT_PRESETS)("registers $name as reviewed", (preset) => {
-    const expected = reviewed[preset.id as keyof typeof reviewed];
+  it.each(PHASE1_CLIENTS)("registers $name as reviewed", (preset) => {
+    const expected = reviewed[preset.id];
     const filled = normalizeClientDraft({
       ...emptyClientDraft(),
       ...preset.draft,
