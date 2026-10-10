@@ -93,8 +93,8 @@ function NewApplication() {
             className="flex items-start gap-2 rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
           >
             <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
-            The application exists, but its API resources are not linked yet. Open it and save to
-            retry before using it.
+            The application exists, but its API resources are not linked yet. Open it, check API
+            access, and save to retry before using it.
           </p>
         )}
         <CredentialsReveal

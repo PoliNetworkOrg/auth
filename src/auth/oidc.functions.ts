@@ -60,6 +60,7 @@ const draftSchema = z.object({
   scopes: z.array(z.string()).max(10),
   serviceAccess: z.boolean(),
   apiScopes: z.array(z.string()).max(20),
+  serviceScopes: z.array(z.string()).max(20),
   resources: z.array(z.enum(["backend", "internal"])).max(2),
   enableEndSession: z.boolean(),
 });

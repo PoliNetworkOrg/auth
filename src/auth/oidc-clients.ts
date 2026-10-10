@@ -227,8 +227,10 @@ export type OidcClientDraft = {
   scopes: string[];
   /** Obtains tokens as itself with the client credentials grant. */
   serviceAccess: boolean;
-  /** Scopes from `apiScopes`, for people signing in and for the client itself. */
+  /** Scopes from `apiScopes` the app may request for the people it signs in. */
   apiScopes: string[];
+  /** Scopes from `apiScopes` the app may request as itself; its client credentials ceiling. */
+  serviceScopes: string[];
   resources: OidcResourceKey[];
   enableEndSession: boolean;
 };
@@ -270,6 +272,7 @@ export function emptyClientDraft(): OidcClientDraft {
     scopes: ["openid", "profile"],
     serviceAccess: false,
     apiScopes: [],
+    serviceScopes: [],
     resources: [],
     enableEndSession: false,
   };
@@ -286,7 +289,12 @@ export function prettyJwks(jwks: string | null) {
 
 export function draftFromClient(client: OidcClientSummary): OidcClientDraft {
   const signIn = client.grantTypes.includes("authorization_code");
+  const serviceAccess = client.grantTypes.includes("client_credentials");
   const userScopes = client.scopes.filter((scope) => !isApiScope(scope));
+  // The two ceilings are kept apart, so saving never lets the app use a delegated scope as
+  // itself or the other way round.
+  const delegated = signIn ? client.scopes.filter(isApiScope) : [];
+  const machine = serviceAccess ? [...client.clientCredentialsScopes] : [];
   return {
     name: client.name,
     uri: client.uri ?? "",
@@ -301,11 +309,13 @@ export function draftFromClient(client: OidcClientSummary): OidcClientDraft {
     jwks: prettyJwks(client.jwks),
     signIn,
     scopes: signIn && userScopes.length ? userScopes : ["openid", "profile"],
-    serviceAccess: client.grantTypes.includes("client_credentials"),
-    apiScopes: [
-      ...new Set([...client.scopes, ...client.clientCredentialsScopes].filter(isApiScope)),
+    serviceAccess,
+    apiScopes: delegated,
+    serviceScopes: machine,
+    // Also restores links that failed after creation, so saving retries them.
+    resources: [
+      ...new Set([...client.resources, ...resourcesForScopes([...delegated, ...machine])]),
     ],
-    resources: [...client.resources],
     enableEndSession: client.enableEndSession,
   };
 }
@@ -416,6 +426,16 @@ export function validateHttpsUrl(value: string): string | null {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** The API scopes the draft actually grants, given the token flows it uses. */
+export function activeApiScopes(draft: OidcClientDraft) {
+  return [
+    ...new Set([
+      ...(draft.signIn ? draft.apiScopes : []),
+      ...(draft.serviceAccess ? draft.serviceScopes : []),
+    ]),
+  ];
+}
+
 export type DraftValidationOptions = {
   /** Whether this deployment has API resources, and so API scopes and service access. */
   apiAccess: boolean;
@@ -479,15 +499,14 @@ export function validateClientDraft(
   );
   if (contactItems.some(Boolean)) errors.contactItems = contactItems;
 
-  if (draft.apiScopes.some((scope) => !apiScopes.some((known) => known.id === scope)))
+  const selected = activeApiScopes(draft);
+  if (selected.some((scope) => !apiScopes.some((known) => known.id === scope)))
     errors.apiScopes = "One of the selected API scopes is not supported.";
-  else if ((draft.apiScopes.length || draft.resources.length) && !apiAccess)
+  else if ((selected.length || draft.resources.length) && !apiAccess)
     errors.apiScopes = "API access is not configured on this server.";
-  else if (draft.serviceAccess && !draft.apiScopes.length)
+  else if (draft.serviceAccess && !draft.serviceScopes.length)
     errors.apiScopes = "Choose the API scopes the application may use as itself.";
-  else if (
-    resourcesForScopes(draft.apiScopes).some((resource) => !draft.resources.includes(resource))
-  )
+  else if (resourcesForScopes(selected).some((resource) => !draft.resources.includes(resource)))
     errors.apiScopes = "Link the resources the selected API scopes belong to.";
   return errors;
 }
@@ -513,7 +532,12 @@ export function normalizeClientDraft(draft: OidcClientDraft): OidcClientDraft {
     signIn: draft.signIn,
     scopes: oidcScopes.map((scope) => scope.id).filter((id) => draft.scopes.includes(id)),
     serviceAccess: draft.serviceAccess,
-    apiScopes: apiScopes.map((scope) => scope.id).filter((id) => draft.apiScopes.includes(id)),
+    apiScopes: draft.signIn
+      ? apiScopes.map((scope) => scope.id).filter((id) => draft.apiScopes.includes(id))
+      : [],
+    serviceScopes: draft.serviceAccess
+      ? apiScopes.map((scope) => scope.id).filter((id) => draft.serviceScopes.includes(id))
+      : [],
     resources: oidcResources
       .map((resource) => resource.id)
       .filter((id) => draft.resources.includes(id)),
@@ -530,8 +554,10 @@ export function clientRegistration(draft: OidcClientDraft) {
   if (draft.serviceAccess) grantTypes.push("client_credentials");
   return {
     grantTypes,
-    scopes: [...(draft.signIn ? draft.scopes : []), ...draft.apiScopes],
-    clientCredentialsScopes: draft.serviceAccess ? draft.apiScopes : [],
+    // Client credentials read their own ceiling; `scopes` only needs it for a client that
+    // never signs people in, which keeps that client's scopes meaningful.
+    scopes: draft.signIn ? [...draft.scopes, ...draft.apiScopes] : draft.serviceScopes,
+    clientCredentialsScopes: draft.serviceAccess ? draft.serviceScopes : [],
     redirectUris: draft.signIn ? draft.redirectUris : [],
     postLogoutRedirectUris: draft.signIn ? draft.postLogoutRedirectUris : [],
     enableEndSession: draft.signIn && draft.enableEndSession,

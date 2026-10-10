@@ -14,6 +14,7 @@ import {
   Unlock,
 } from "lucide-react";
 import {
+  activeApiScopes,
   apiScopes,
   hasDraftErrors,
   MAX_CLIENT_NAME_LENGTH,
@@ -30,6 +31,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+
+type ScopeList = "apiScopes" | "serviceScopes";
+
+function scopeResource(scopeId: string) {
+  return apiScopes.find((scope) => scope.id === scopeId)?.resource;
+}
 
 type ClientFormProps = {
   mode: "create" | "edit";
@@ -327,13 +334,13 @@ export function ClientForm({
       checked ? [...draft.scopes, scopeId] : draft.scopes.filter((scope) => scope !== scopeId),
     );
   }
-  function toggleApiScope(scopeId: string, checked: boolean) {
+  function toggleApiScope(list: ScopeList, scopeId: string, checked: boolean) {
     const resource = apiScopes.find((scope) => scope.id === scopeId)?.resource;
     setDraft((current) => ({
       ...current,
-      apiScopes: checked
-        ? [...current.apiScopes, scopeId]
-        : current.apiScopes.filter((scope) => scope !== scopeId),
+      [list]: checked
+        ? [...current[list], scopeId]
+        : current[list].filter((scope) => scope !== scopeId),
       // A scope is only usable on a token addressed to its resource.
       resources:
         checked && resource && !current.resources.includes(resource)
@@ -347,11 +354,14 @@ export function ClientForm({
       resources: checked
         ? [...current.resources, resourceId]
         : current.resources.filter((resource) => resource !== resourceId),
-      apiScopes: checked
-        ? current.apiScopes
-        : current.apiScopes.filter(
-            (scope) => apiScopes.find((known) => known.id === scope)?.resource !== resourceId,
-          ),
+      ...(checked
+        ? {}
+        : {
+            apiScopes: current.apiScopes.filter((scope) => scopeResource(scope) !== resourceId),
+            serviceScopes: current.serviceScopes.filter(
+              (scope) => scopeResource(scope) !== resourceId,
+            ),
+          }),
     }));
   }
 
@@ -364,7 +374,17 @@ export function ClientForm({
       ? credentialChangeNote(savedCredential, draft.credential)
       : null;
   const showGrants = apiAccess || draft.serviceAccess;
-  const apiInUse = draft.serviceAccess || draft.apiScopes.length > 0 || draft.resources.length > 0;
+  const selectedApiScopes = activeApiScopes(draft);
+  const apiInUse =
+    draft.serviceAccess || selectedApiScopes.length > 0 || draft.resources.length > 0;
+  // With both flows the two ceilings are chosen separately; otherwise only the active one.
+  const scopeLists: { list: ScopeList; label: string }[] =
+    draft.signIn && draft.serviceAccess
+      ? [
+          { list: "apiScopes", label: "People" },
+          { list: "serviceScopes", label: "Itself" },
+        ]
+      : [{ list: draft.signIn ? "apiScopes" : "serviceScopes", label: "" }];
   const showApiAccess = apiAccess || apiInUse;
 
   return (
@@ -629,7 +649,7 @@ export function ClientForm({
                 API access
                 {apiInUse && (
                   <span className="ml-2 font-normal text-muted-foreground">
-                    {draft.apiScopes.length} {draft.apiScopes.length === 1 ? "scope" : "scopes"}
+                    {selectedApiScopes.length} {selectedApiScopes.length === 1 ? "scope" : "scopes"}
                   </span>
                 )}
               </span>
@@ -666,17 +686,25 @@ export function ClientForm({
                       .filter((scope) => scope.resource === resource.id)
                       .map((scope) => {
                         const checkboxId = `${id}-api-${scope.id}`;
+                        const single = scopeLists.length === 1 ? scopeLists[0]! : null;
                         return (
                           <li key={scope.id} className="flex items-start gap-3 py-3 pr-4 pl-11">
-                            <Checkbox
-                              id={checkboxId}
-                              checked={draft.apiScopes.includes(scope.id)}
-                              disabled={apiLocked}
-                              className="mt-0.5"
-                              onCheckedChange={(value) => toggleApiScope(scope.id, value === true)}
-                            />
+                            {single && (
+                              <Checkbox
+                                id={checkboxId}
+                                checked={draft[single.list].includes(scope.id)}
+                                disabled={apiLocked}
+                                className="mt-0.5"
+                                onCheckedChange={(value) =>
+                                  toggleApiScope(single.list, scope.id, value === true)
+                                }
+                              />
+                            )}
                             <div className="min-w-0 flex-1">
-                              <Label htmlFor={checkboxId} className="cursor-pointer">
+                              <Label
+                                htmlFor={single ? checkboxId : undefined}
+                                className={single ? "cursor-pointer" : undefined}
+                              >
                                 {scope.label}
                                 <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-normal text-muted-foreground">
                                   {scope.id}
@@ -686,6 +714,27 @@ export function ClientForm({
                                 {scope.description}
                               </p>
                             </div>
+                            {!single &&
+                              scopeLists.map(({ list, label }) => (
+                                <div key={list} className="flex items-center gap-1.5 pt-0.5">
+                                  <Checkbox
+                                    id={`${checkboxId}-${list}`}
+                                    checked={draft[list].includes(scope.id)}
+                                    disabled={apiLocked}
+                                    aria-label={`${scope.label}: ${label === "People" ? "for the people it signs in" : "as itself"}`}
+                                    onCheckedChange={(value) =>
+                                      toggleApiScope(list, scope.id, value === true)
+                                    }
+                                  />
+                                  <Label
+                                    htmlFor={`${checkboxId}-${list}`}
+                                    aria-hidden="true"
+                                    className="cursor-pointer text-xs font-normal text-muted-foreground"
+                                  >
+                                    {label}
+                                  </Label>
+                                </div>
+                              ))}
                           </li>
                         );
                       })}

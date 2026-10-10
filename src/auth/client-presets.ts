@@ -21,7 +21,7 @@ export const CLIENT_PRESETS: ClientPreset[] = [
       credential: "private-key",
       signIn: false,
       serviceAccess: true,
-      apiScopes: [
+      serviceScopes: [
         "backend:tg:read",
         "backend:tg:ingest",
         "backend:tg:groups:sync",
@@ -41,7 +41,7 @@ export const CLIENT_PRESETS: ClientPreset[] = [
       credential: "private-key",
       signIn: false,
       serviceAccess: true,
-      apiScopes: ["backend:public:read"],
+      serviceScopes: ["backend:public:read"],
       resources: ["backend"],
     },
   },
@@ -69,7 +69,7 @@ export const CLIENT_PRESETS: ClientPreset[] = [
       credential: "private-key",
       signIn: false,
       serviceAccess: true,
-      apiScopes: ["idp:access:read"],
+      serviceScopes: ["idp:access:read"],
       resources: ["internal"],
     },
   },

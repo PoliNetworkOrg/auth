@@ -162,7 +162,11 @@ describe("tokens and API access", () => {
 
   it("refuses service access and API scopes where the server has no resources", () => {
     const errors = validateClientDraft(
-      draft({ serviceAccess: true, apiScopes: ["backend:public:read"], resources: ["backend"] }),
+      draft({
+        serviceAccess: true,
+        serviceScopes: ["backend:public:read"],
+        resources: ["backend"],
+      }),
       withoutApi,
     );
     expect(errors.grants).toMatch(/not configured/);
@@ -197,7 +201,7 @@ describe("tokens and API access", () => {
         serviceAccess: true,
         redirectUris: ["not a uri"],
         scopes: [],
-        apiScopes: ["backend:public:read"],
+        serviceScopes: ["backend:public:read"],
         resources: ["backend"],
       }),
     );
@@ -308,7 +312,8 @@ describe("editing a registered client", () => {
       credential: "private-key",
       signIn: false,
       serviceAccess: true,
-      apiScopes: ["backend:tg:read"],
+      apiScopes: [],
+      serviceScopes: ["backend:tg:read"],
       resources: ["backend"],
       redirectUris: [""],
     });
@@ -320,5 +325,30 @@ describe("editing a registered client", () => {
       clientCredentialsScopes: stored.clientCredentialsScopes,
       resources: stored.resources,
     });
+  });
+
+  it("keeps a mixed client's delegated and machine ceilings apart when saved", () => {
+    const mixed: OidcClientSummary = {
+      ...stored,
+      redirectUris: ["https://dashboard.example/callback"],
+      scopes: ["openid", "backend:admin", "backend:public:read"],
+      grantTypes: ["authorization_code", "client_credentials"],
+      clientCredentialsScopes: ["backend:public:read"],
+    };
+    const loaded = draftFromClient(mixed);
+    expect(loaded).toMatchObject({
+      apiScopes: ["backend:admin", "backend:public:read"],
+      serviceScopes: ["backend:public:read"],
+    });
+    expect(clientRegistration(normalizeClientDraft({ ...loaded, name: "Renamed" }))).toMatchObject({
+      scopes: mixed.scopes,
+      clientCredentialsScopes: ["backend:public:read"],
+    });
+  });
+
+  it("restores the resources its scopes need, so saving retries a failed link", () => {
+    expect(draftFromClient({ ...stored, resourceIds: [], resources: [] }).resources).toEqual([
+      "backend",
+    ]);
   });
 });

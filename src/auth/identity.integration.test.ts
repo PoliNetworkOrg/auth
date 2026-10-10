@@ -307,6 +307,17 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
         }),
       });
       expect(service.status).toBe(401);
+      // The provider trims grant names, so padding must not slip past the check.
+      const padded = await fetch(`${baseURL}/api/auth/oauth2/create-client`, {
+        method: "POST",
+        headers: sessionHeaders("application-writer-session"),
+        body: JSON.stringify({
+          client_name: "Unauthorized service",
+          grant_types: [" client_credentials "],
+          token_endpoint_auth_method: "client_secret_basic",
+        }),
+      });
+      expect(padded.status).toBe(401);
       const response = await fetch(`${baseURL}/api/auth/oauth2/create-client`, {
         method: "POST",
         headers: sessionHeaders("application-writer-session"),

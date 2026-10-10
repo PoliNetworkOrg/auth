@@ -101,7 +101,10 @@ export const auth = betterAuth({
       // Metadata that grants API access, in a create body or an update.
       const grantsApiAccess = (metadata: Record<string, unknown> | undefined) =>
         (Array.isArray(metadata?.grant_types) &&
-          metadata.grant_types.includes("client_credentials")) ||
+          // The provider trims grant names before storing them, so this must too.
+          metadata.grant_types.some(
+            (grant) => typeof grant === "string" && grant.trim() === "client_credentials",
+          )) ||
         (Array.isArray(metadata?.client_credentials_scopes) &&
           metadata.client_credentials_scopes.length > 0) ||
         (typeof metadata?.scope === "string" && metadata.scope.split(" ").some(isApiScope));
