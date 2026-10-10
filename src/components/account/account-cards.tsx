@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/action-error";
+import { Email } from "./email";
 import { Spinner } from "./panel";
 import type { AccountActions } from "./use-account-actions";
 
@@ -96,7 +97,7 @@ function AccountCard({
   return (
     <article
       className={cn(
-        "relative flex min-w-0 flex-col items-center rounded-2xl border bg-card px-3 pt-7 pb-4 text-center sm:px-5 sm:pb-5",
+        "relative flex min-w-0 flex-col items-center rounded-2xl border bg-card px-5 pt-7 pb-5 text-center",
         !linked && "border-dashed",
       )}
     >
@@ -119,7 +120,7 @@ function CardGroup({ title, children }: { title: string; children: ReactNode }) 
   return (
     <section className="grid min-w-0 grid-rows-[auto_1fr] gap-3">
       <h2 className="px-1 text-lg font-semibold tracking-tight">{title}</h2>
-      <div className="grid grid-cols-2 gap-3 sm:gap-4">{children}</div>
+      <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">{children}</div>
     </section>
   );
 }
@@ -157,13 +158,14 @@ export function AccountCards({
           const linked = linkedTo(login.id);
           const onlyWay = !!linked && loginCount < 2;
           const available = providers.signIn.includes(login.id);
+          const email = linked ? details.emails[login.id] : null;
           return (
             <AccountCard
               key={login.id}
               mark={<BrandMark name={login.mark} />}
               name={login.name}
               linked={!!linked}
-              detail={linked ? details.emails[login.id] : null}
+              detail={email ? <Email address={email} /> : null}
               action={
                 linked ? (
                   <UnlinkAction
@@ -197,7 +199,7 @@ export function AccountCards({
           }
           name="PoliMi"
           linked={studentVerified}
-          detail={studentVerified ? student.accountId : null}
+          detail={studentVerified ? <Email address={student.accountId} /> : null}
           action={
             studentVerified ? (
               <UnlinkAction

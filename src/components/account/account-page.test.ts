@@ -1,4 +1,7 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
+import { Email } from "./email";
 import { groupByPrefix } from "./access-panels";
 import { scramble } from "./secret-text";
 import { describeAgent } from "./sessions-panel";
@@ -65,5 +68,19 @@ describe("permission groups", () => {
       ["idp", ["idp:roles:read", "idp:users:read"]],
       ["tg", ["tg:bot:add"]],
     ]);
+  });
+});
+
+describe("addresses on the account cards", () => {
+  const markup = (address: string) => renderToStaticMarkup(createElement(Email, { address }));
+
+  it("lets a long address wrap before the @ and after the dots in the name, never mid-word", () => {
+    expect(markup("biancagiovanna.panosec@polinetwork.org")).toBe(
+      "biancagiovanna.<wbr/>panosec<wbr/>@polinetwork.org",
+    );
+  });
+
+  it("leaves something that isn't an address alone", () => {
+    expect(markup("not-an-address")).toBe("not-an-address");
   });
 });
