@@ -4,14 +4,10 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  FileText,
-  Globe,
   KeyRound,
   Link2,
   LoaderCircle,
   Lock,
-  LogIn,
-  Mail,
   Network,
   Server,
   Sparkles,
@@ -22,7 +18,6 @@ import {
   apiScopes,
   hasDraftErrors,
   MAX_CLIENT_NAME_LENGTH,
-  oidcScopes,
   validateClientDraft,
   type OidcClientCredential,
   type OidcClientDraft,
@@ -345,23 +340,9 @@ function AccessStep({
   );
 }
 
-function Chip({ icon, children, mono }: { icon?: ReactNode; children: ReactNode; mono?: boolean }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex max-w-full items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs",
-        mono && "font-mono text-[11px]",
-      )}
-    >
-      {icon}
-      <span className="min-w-0 break-all">{children}</span>
-    </span>
-  );
-}
-
 /**
  * One line of the summary: an icon that lights up once the step that sets it is reached,
- * and its value, which fades in as it changes.
+ * and a short value, which fades in as it changes.
  */
 function SummaryItem({
   icon,
@@ -375,7 +356,7 @@ function SummaryItem({
   children: ReactNode;
 }) {
   return (
-    <div className="flex gap-3">
+    <div className="flex items-center gap-3">
       <span
         aria-hidden="true"
         className={cn(
@@ -385,26 +366,33 @@ function SummaryItem({
       >
         {icon}
       </span>
-      <div className="min-w-0 flex-1 pt-1">
+      <div className="min-w-0 flex-1">
         <p className="text-xs text-muted-foreground">{label}</p>
-        {pending ? (
-          <p className="mt-0.5 text-sm text-muted-foreground/60">Not set yet</p>
-        ) : (
-          <div className="mt-1 flex flex-wrap gap-1.5 text-sm duration-200 animate-in fade-in motion-reduce:animate-none">
-            {children}
-          </div>
-        )}
+        <p
+          key={pending ? "pending" : "set"}
+          className={cn(
+            "truncate text-sm",
+            pending
+              ? "text-muted-foreground/60"
+              : "duration-200 animate-in fade-in motion-reduce:animate-none",
+          )}
+        >
+          {pending ? "Not set yet" : children}
+        </p>
       </div>
     </div>
   );
 }
 
+function plural(count: number, one: string, many = `${one}s`) {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
 function keyCount(jwks: string) {
   try {
-    const count = (JSON.parse(jwks) as { keys?: unknown[] }).keys?.length ?? 0;
-    return count === 1 ? "1 key" : `${count} keys`;
+    return plural((JSON.parse(jwks) as { keys?: unknown[] }).keys?.length ?? 0, "key");
   } catch {
-    return "JWKS not readable yet";
+    return "JWKS to fix";
   }
 }
 
@@ -414,133 +402,70 @@ const summaryCredentialIcons: Record<OidcClientCredential, ReactNode> = {
   public: <Unlock />,
 };
 
-/** What the wizard will register, filled in as each step is reached. */
+// Short names for what a signed-in person shares; "openid" is always there, so it's implied.
+const sharedData: Record<string, string> = {
+  profile: "profile",
+  email: "email",
+  "polinetwork:identity": "membership",
+  offline_access: "stays signed in",
+};
+
+/** Counts API scopes per resource, e.g. "2 backend, 1 internal". */
+function apiSummary(ids: string[]) {
+  if (!ids.length) return "None";
+  const backend = apiScopes.filter((s) => s.resource === "backend" && ids.includes(s.id)).length;
+  const internal = apiScopes.filter((s) => s.resource === "internal" && ids.includes(s.id)).length;
+  return [backend && `${backend} backend`, internal && `${internal} internal`]
+    .filter(Boolean)
+    .join(", ")
+    .concat(ids.length === 1 ? " scope" : " scopes");
+}
+
+/** A short recap of what the wizard will register, filled in as each step is reached. */
 function Summary({ draft, reached }: { draft: OidcClientDraft; reached: number }) {
-  const redirects = draft.redirectUris.map((uri) => uri.trim()).filter(Boolean);
-  const asked = oidcScopes.filter((scope) => draft.scopes.includes(scope.id));
-  const known = (ids: string[]) => apiScopes.filter((s) => ids.includes(s.id)).map((s) => s.id);
-  const contacts = draft.contacts.map((contact) => contact.trim()).filter(Boolean);
-  const policies = [
-    draft.policyUri.trim() && "Privacy policy",
-    draft.tosUri.trim() && "Terms of service",
-  ].filter(Boolean) as string[];
-  const done = Math.min(reached, wizardSteps.length);
+  const redirects = draft.redirectUris.filter((uri) => uri.trim()).length;
+  const shared = draft.scopes.filter((scope) => scope in sharedData).map((s) => sharedData[s]);
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <AppLogo name={draft.name || "New app"} logo={draft.logo} className="size-12" />
-        <div className="min-w-0">
-          <p className="line-clamp-2 font-semibold break-words">
-            {draft.name.trim() || "Untitled application"}
-          </p>
-          <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-            <Globe className="size-3 shrink-0" aria-hidden="true" />
-            {draft.uri.trim() || "No homepage"}
-          </p>
-        </div>
+        <AppLogo name={draft.name || "New app"} logo={draft.logo} className="size-11" />
+        <p className="line-clamp-2 min-w-0 font-semibold break-words">
+          {draft.name.trim() || "Untitled application"}
+        </p>
       </div>
-
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Setup</span>
-          <span className="tabular-nums">
-            {done} of {wizardSteps.length} steps
-          </span>
-        </div>
-        <div className="flex gap-1" aria-hidden="true">
-          {wizardSteps.map((step, index) => (
-            <span
-              key={step.id}
-              className={cn(
-                "h-1 flex-1 rounded-full transition-colors duration-300",
-                index < done ? "bg-primary" : "bg-muted",
-              )}
-            />
-          ))}
-        </div>
-      </div>
-
       <div className="space-y-4">
-        {(contacts.length > 0 || policies.length > 0) && (
-          <SummaryItem icon={<Mail />} label="Contacts and policies" pending={false}>
-            {contacts.map((contact) => (
-              <Chip key={contact}>{contact}</Chip>
-            ))}
-            {policies.map((policy) => (
-              <Chip key={policy} icon={<FileText className="size-3" aria-hidden="true" />}>
-                {policy}
-              </Chip>
-            ))}
-          </SummaryItem>
-        )}
         <SummaryItem icon={<Sparkles />} label="Does" pending={reached < 1}>
-          {draft.signIn && (
-            <Chip icon={<LogIn className="size-3" aria-hidden="true" />}>Signs people in</Chip>
-          )}
-          {draft.serviceAccess && (
-            <Chip icon={<Server className="size-3" aria-hidden="true" />}>
-              Calls APIs as itself
-            </Chip>
-          )}
-          {!draft.signIn && !draft.serviceAccess && (
-            <span className="text-muted-foreground">Nothing yet</span>
-          )}
+          {[draft.signIn && "Signs people in", draft.serviceAccess && "Calls APIs"]
+            .filter(Boolean)
+            .join(" · ") || "Nothing yet"}
         </SummaryItem>
         <SummaryItem
           icon={summaryCredentialIcons[draft.credential]}
           label="Credential"
           pending={reached < 2}
         >
-          <span>{credentialInfo[draft.credential].title}</span>
-          {draft.credential === "private-key" && draft.jwks.trim() && (
-            <Chip>{keyCount(draft.jwks)}</Chip>
-          )}
+          {credentialInfo[draft.credential].title}
+          {draft.credential === "private-key" && draft.jwks.trim() && ` · ${keyCount(draft.jwks)}`}
         </SummaryItem>
         {draft.signIn && (
           <>
-            <SummaryItem icon={<Link2 />} label="Redirect URIs" pending={reached < 3}>
-              {redirects.length ? (
-                redirects.map((uri) => (
-                  <Chip key={uri} mono>
-                    {uri}
-                  </Chip>
-                ))
-              ) : (
-                <span className="text-muted-foreground">None yet</span>
-              )}
-              <span className="w-full text-xs text-muted-foreground">
-                {draft.applicationType === "web"
-                  ? "Public https URLs only"
-                  : "Also localhost and app schemes"}
-              </span>
+            <SummaryItem icon={<Link2 />} label="Redirects" pending={reached < 3}>
+              {plural(redirects, "URI")} ·{" "}
+              {draft.applicationType === "web" ? "https only" : "localhost allowed"}
             </SummaryItem>
             <SummaryItem icon={<UserRound />} label="Asks people for" pending={reached < 3}>
-              {asked.map((scope) => (
-                <Chip key={scope.id}>{scope.label}</Chip>
-              ))}
+              {shared.length ? `Identity, ${shared.join(", ")}` : "Identity only"}
             </SummaryItem>
             {draft.apiScopes.length > 0 && (
               <SummaryItem icon={<Network />} label="APIs for people" pending={reached < 3}>
-                {known(draft.apiScopes).map((id) => (
-                  <Chip key={id} mono>
-                    {id}
-                  </Chip>
-                ))}
+                {apiSummary(draft.apiScopes)}
               </SummaryItem>
             )}
           </>
         )}
         {draft.serviceAccess && (
-          <SummaryItem icon={<Network />} label="APIs as itself" pending={reached < 3}>
-            {draft.serviceScopes.length ? (
-              known(draft.serviceScopes).map((id) => (
-                <Chip key={id} mono>
-                  {id}
-                </Chip>
-              ))
-            ) : (
-              <span className="text-muted-foreground">None yet</span>
-            )}
+          <SummaryItem icon={<Server />} label="APIs as itself" pending={reached < 3}>
+            {apiSummary(draft.serviceScopes)}
           </SummaryItem>
         )}
       </div>
