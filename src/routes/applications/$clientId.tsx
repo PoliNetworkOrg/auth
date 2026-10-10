@@ -5,7 +5,7 @@ import {
   useNavigate,
   useRouter,
 } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ArrowLeft, Clock, LoaderCircle, RefreshCw, Trash2, Users } from "lucide-react";
 import {
   credentialLabels,
@@ -44,8 +44,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { RouteError } from "@/components/route-error";
 import { ActionError, errorFields, errorMessage } from "@/lib/action-error";
+import { cn } from "cn";
 
 export const Route = createFileRoute("/applications/$clientId")({
   head: () => ({ meta: [{ title: "Application · PoliNetwork Auth" }] }),
@@ -74,6 +76,47 @@ function keyCount(jwks: string) {
 
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" }) : "Unknown";
+}
+
+/** Pauses or resumes the app. Its own label says which state it's in, read and heard. */
+function EnabledSwitch({
+  enabled,
+  disabled,
+  onChange,
+}: {
+  enabled: boolean;
+  disabled: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="flex items-center gap-3 sm:mt-2">
+      <Label
+        htmlFor={id}
+        className={cn(
+          "w-7 text-right text-sm font-semibold",
+          enabled ? "text-foreground" : "text-muted-foreground",
+          !disabled && "cursor-pointer",
+        )}
+      >
+        {enabled ? "On" : "Off"}
+      </Label>
+      <Switch
+        id={id}
+        size="lg"
+        checked={enabled}
+        disabled={disabled}
+        aria-label="Application enabled"
+        aria-describedby={`${id}-description`}
+        onCheckedChange={onChange}
+      />
+      <span id={`${id}-description`} className="sr-only">
+        {enabled
+          ? "Turning it off pauses sign-ins and token requests."
+          : "Sign-ins are paused. Existing tokens expire within minutes."}
+      </span>
+    </div>
+  );
 }
 
 function ApplicationDetail() {
@@ -204,11 +247,6 @@ function ApplicationDetail() {
               <h1 className="text-3xl font-extrabold tracking-tight break-words sm:text-4xl">
                 {client.name}
               </h1>
-              {client.disabled && (
-                <Badge className="border-destructive/40 bg-destructive/5 text-destructive">
-                  Disabled
-                </Badge>
-              )}
               <Badge className="bg-card text-muted-foreground">
                 {credentialLabels[client.credential]}
               </Badge>
@@ -221,16 +259,12 @@ function ApplicationDetail() {
                 </Badge>
               )}
             </div>
-            <div className="mt-2 flex items-center gap-1 text-sm text-muted-foreground">
-              <code className="truncate font-mono text-xs">{client.clientId}</code>
-              <CopyButton value={client.clientId} label="Copy client ID" size="icon-xs" />
-            </div>
             {client.uri && (
               <a
                 href={client.uri}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-1 inline-block text-sm text-primary underline-offset-4 hover:underline"
+                className="mt-2 inline-block text-sm text-primary underline-offset-4 hover:underline"
               >
                 {client.uri}
               </a>
@@ -248,6 +282,11 @@ function ApplicationDetail() {
               <span>Updated {formatDate(client.updatedAt)}</span>
             </p>
           </div>
+          <EnabledSwitch
+            enabled={!client.disabled}
+            disabled={!canManage || busy !== null}
+            onChange={(enabled) => void toggle({ disabled: !enabled })}
+          />
         </div>
       </div>
 
@@ -332,37 +371,6 @@ function ApplicationDetail() {
             </div>
           </SettingsSection>
 
-          <SettingsSection id="status" title="Status">
-            <div className="divide-y">
-              <div className="px-6 py-5">
-                <SwitchRow
-                  title="Enabled"
-                  description={
-                    client.disabled
-                      ? "Sign-ins are paused. Existing tokens expire within minutes."
-                      : signsIn
-                        ? "People can sign in through this application."
-                        : "The application can request tokens."
-                  }
-                  checked={!client.disabled}
-                  disabled={!canManage || busy !== null}
-                  onCheckedChange={(checked) => void toggle({ disabled: !checked })}
-                />
-              </div>
-              {signsIn && (
-                <div className="px-6 py-5">
-                  <SwitchRow
-                    title="Skip consent screen"
-                    description="For first-party PoliNetwork apps only. People are signed in without reviewing the requested permissions."
-                    checked={client.skipConsent}
-                    disabled={!canManage || busy !== null}
-                    onCheckedChange={(checked) => void toggle({ skipConsent: checked })}
-                  />
-                </div>
-              )}
-            </div>
-          </SettingsSection>
-
           <ApplicationSettingsForm
             initial={draftFromClient(client)}
             savedCredential={client.credential}
@@ -372,15 +380,36 @@ function ApplicationDetail() {
             busy={busy === "save"}
             resetKey={formResetKey}
             serverErrors={fieldErrors}
+            signInExtras={
+              signsIn && (
+                <div className="border-t pt-6">
+                  <SwitchRow
+                    title="Skip consent screen"
+                    description="For first-party PoliNetwork apps only. People are signed in without reviewing the requested permissions. Saves right away."
+                    checked={client.skipConsent}
+                    disabled={!canManage || busy !== null}
+                    onCheckedChange={(checked) => void toggle({ skipConsent: checked })}
+                  />
+                </div>
+              )
+            }
             onSubmit={(draft) => void save(draft)}
           />
 
           {canManage && (
-            <SettingsSection id="danger-zone" title="Danger zone" className="border-destructive/40">
+            <SettingsSection
+              id="danger-zone"
+              title="Danger zone"
+              className="border-destructive/60 bg-linear-to-br from-destructive/20 to-destructive/5"
+            >
               <div className="flex flex-wrap items-center justify-between gap-4 p-6">
-                <p className="max-w-md text-sm leading-6 text-muted-foreground">
-                  Deleting removes the client, every consent, and all of its tokens. To pause it
-                  instead, turn off Enabled in Status.
+                <p className="text-sm leading-6 text-muted-foreground">
+                  <span className="block">
+                    Deleting removes the client, every consent, and all of its tokens.
+                  </span>
+                  <span className="block">
+                    To pause it instead, switch it off at the top of the page.
+                  </span>
                 </p>
                 <Button
                   variant="destructive"

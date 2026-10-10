@@ -41,6 +41,8 @@ type ApplicationSettingsFormProps = {
   /** Change after a save to reload `initial` in place, without remounting the form. */
   resetKey: number;
   serverErrors?: OidcClientDraftErrors;
+  /** Settings that save on their own, shown at the end of the Sign-in section. */
+  signInExtras?: ReactNode;
   onSubmit: (draft: OidcClientDraft) => void;
 };
 
@@ -153,6 +155,7 @@ export function ApplicationSettingsForm({
   busy,
   resetKey,
   serverErrors,
+  signInExtras,
   onSubmit,
 }: ApplicationSettingsFormProps) {
   const id = useId();
@@ -349,6 +352,7 @@ export function ApplicationSettingsForm({
                   Signing out of the app also ends the PoliNetwork session
                 </label>
               </div>
+              {signInExtras}
             </div>
           </SettingsSection>
         )}

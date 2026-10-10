@@ -14,7 +14,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import type { ClientDraftApi } from "./use-client-draft";
 
 export function RequiredMark() {
@@ -184,6 +183,34 @@ export function ListField({
   );
 }
 
+const jsonToken =
+  /("(?:\\.|[^"\\])*")(?=\s*:)|("(?:\\.|[^"\\])*"?)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\btrue\b|\bfalse\b|\bnull\b)|([{}[\],:])/g;
+
+/** JSON coloured by token. Anything it doesn't recognise renders plain, so it never drops text. */
+function JsonTokens({ source }: { source: string }) {
+  const parts: ReactNode[] = [];
+  let end = 0;
+  for (const match of source.matchAll(jsonToken)) {
+    if (match.index > end) parts.push(source.slice(end, match.index));
+    const [text, key, string, literal] = match;
+    const tone = key
+      ? "text-primary"
+      : string
+        ? "text-emerald-700 dark:text-emerald-300"
+        : literal
+          ? "text-amber-700 dark:text-amber-300"
+          : "text-muted-foreground";
+    parts.push(
+      <span key={match.index} className={tone}>
+        {text}
+      </span>,
+    );
+    end = match.index + text.length;
+  }
+  parts.push(source.slice(end));
+  return parts;
+}
+
 export function JwksField({
   value,
   onChange,
@@ -199,19 +226,31 @@ export function JwksField({
       <FieldLabel htmlFor={id} required>
         Public JWKS
       </FieldLabel>
-      <Textarea
-        id={id}
-        rows={8}
-        spellCheck={false}
-        autoComplete="off"
-        className="max-h-80 font-mono text-xs md:text-xs"
-        placeholder={'{"keys":[{"kty":"OKP","crv":"Ed25519","x":"…","kid":"…"}]}'}
-        value={value}
-        aria-required
-        aria-invalid={!!error}
-        aria-describedby={error ? `${id}-error` : `${id}-hint`}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      {/* The textarea sits transparent over a highlighted copy of its text, so editing,
+          undo and selection stay native. Both share one grid cell and grow together; the
+          wrapper scrolls them as one. */}
+      <div className="grid max-h-80 overflow-auto rounded-md border border-input bg-transparent shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 has-aria-invalid:border-destructive has-aria-invalid:ring-destructive/20 dark:bg-input/30 dark:has-aria-invalid:ring-destructive/40">
+        <pre
+          aria-hidden="true"
+          className="pointer-events-none col-start-1 row-start-1 m-0 px-3 py-2 font-mono text-xs leading-5 wrap-anywhere whitespace-pre-wrap"
+        >
+          <JsonTokens source={value} />
+          {/* Keeps a trailing newline's empty line as tall as the textarea's. */}{" "}
+        </pre>
+        <textarea
+          id={id}
+          rows={8}
+          spellCheck={false}
+          autoComplete="off"
+          className="col-start-1 row-start-1 field-sizing-content resize-none overflow-hidden bg-transparent px-3 py-2 font-mono text-xs leading-5 wrap-anywhere whitespace-pre-wrap text-transparent caret-foreground outline-none placeholder:text-muted-foreground"
+          placeholder={'{"keys":[{"kty":"OKP","crv":"Ed25519","x":"…","kid":"…"}]}'}
+          value={value}
+          aria-required
+          aria-invalid={!!error}
+          aria-describedby={error ? `${id}-error` : `${id}-hint`}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </div>
       {error ? (
         <FieldError id={`${id}-error`}>{error}</FieldError>
       ) : (
@@ -551,24 +590,30 @@ export function ApiAccessTable({
       )}
       <table className="w-full text-sm">
         <caption className="sr-only">PoliNetwork API scopes</caption>
+        <thead>
+          <tr>
+            <td />
+            {columns.map((column) => (
+              <th
+                key={column.list}
+                scope="col"
+                className="w-24 pb-1 text-center text-xs font-medium text-muted-foreground"
+              >
+                {column.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
         {oidcResources.map((resource) => (
           <tbody key={resource.id} className="border-b last:border-b-0">
             <tr>
               <th
-                scope="colgroup"
-                className="pt-4 pb-2 text-left text-xs font-medium text-muted-foreground first:pt-0"
+                scope="rowgroup"
+                colSpan={columns.length + 1}
+                className="pt-4 pb-2 text-left text-xs font-medium text-muted-foreground"
               >
                 {resource.label}
               </th>
-              {columns.map((column) => (
-                <th
-                  key={column.list}
-                  scope="col"
-                  className="w-24 pt-4 pb-2 text-center text-xs font-medium text-muted-foreground"
-                >
-                  {column.label}
-                </th>
-              ))}
             </tr>
             {apiScopes
               .filter((scope) => scope.resource === resource.id)
