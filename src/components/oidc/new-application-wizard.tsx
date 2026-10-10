@@ -1,6 +1,23 @@
 import { useState, type ReactNode } from "react";
 import { cn } from "cn";
-import { ArrowLeft, ArrowRight, Check, KeyRound, LoaderCircle, Lock, Unlock } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  FileText,
+  Globe,
+  KeyRound,
+  Link2,
+  LoaderCircle,
+  Lock,
+  LogIn,
+  Mail,
+  Network,
+  Server,
+  Sparkles,
+  Unlock,
+  UserRound,
+} from "lucide-react";
 import {
   apiScopes,
   hasDraftErrors,
@@ -328,34 +345,57 @@ function AccessStep({
   );
 }
 
-function SummaryRow({
+function Chip({ icon, children, mono }: { icon?: ReactNode; children: ReactNode; mono?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs",
+        mono && "font-mono text-[11px]",
+      )}
+    >
+      {icon}
+      <span className="min-w-0 break-all">{children}</span>
+    </span>
+  );
+}
+
+/**
+ * One line of the summary: an icon that lights up once the step that sets it is reached,
+ * and its value, which fades in as it changes.
+ */
+function SummaryItem({
+  icon,
   label,
   pending,
   children,
 }: {
+  icon: ReactNode;
   label: string;
   pending: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-1 py-3">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className={cn("text-sm break-words", pending && "text-muted-foreground/60")}>
-        {pending ? "Not set yet" : children}
-      </dd>
+    <div className="flex gap-3">
+      <span
+        aria-hidden="true"
+        className={cn(
+          "flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-200 [&_svg]:size-4",
+          pending ? "border border-dashed text-muted-foreground/60" : "bg-primary/10 text-primary",
+        )}
+      >
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1 pt-1">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        {pending ? (
+          <p className="mt-0.5 text-sm text-muted-foreground/60">Not set yet</p>
+        ) : (
+          <div className="mt-1 flex flex-wrap gap-1.5 text-sm duration-200 animate-in fade-in motion-reduce:animate-none">
+            {children}
+          </div>
+        )}
+      </div>
     </div>
-  );
-}
-
-function scopeIds(ids: string[]) {
-  return ids.length ? (
-    <ul className="space-y-0.5 font-mono text-xs">
-      {ids.map((id) => (
-        <li key={id}>{id}</li>
-      ))}
-    </ul>
-  ) : (
-    "None"
   );
 }
 
@@ -368,83 +408,142 @@ function keyCount(jwks: string) {
   }
 }
 
+const summaryCredentialIcons: Record<OidcClientCredential, ReactNode> = {
+  secret: <Lock />,
+  "private-key": <KeyRound />,
+  public: <Unlock />,
+};
+
 /** What the wizard will register, filled in as each step is reached. */
 function Summary({ draft, reached }: { draft: OidcClientDraft; reached: number }) {
   const redirects = draft.redirectUris.map((uri) => uri.trim()).filter(Boolean);
   const asked = oidcScopes.filter((scope) => draft.scopes.includes(scope.id));
   const known = (ids: string[]) => apiScopes.filter((s) => ids.includes(s.id)).map((s) => s.id);
+  const contacts = draft.contacts.map((contact) => contact.trim()).filter(Boolean);
+  const policies = [
+    draft.policyUri.trim() && "Privacy policy",
+    draft.tosUri.trim() && "Terms of service",
+  ].filter(Boolean) as string[];
+  const done = Math.min(reached, wizardSteps.length);
   return (
-    <div>
-      <div className="flex items-center gap-3 border-b pb-4">
+    <div className="space-y-5">
+      <div className="flex items-center gap-3">
         <AppLogo name={draft.name || "New app"} logo={draft.logo} className="size-12" />
         <div className="min-w-0">
           <p className="line-clamp-2 font-semibold break-words">
             {draft.name.trim() || "Untitled application"}
           </p>
-          <p className="truncate text-xs text-muted-foreground">
+          <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+            <Globe className="size-3 shrink-0" aria-hidden="true" />
             {draft.uri.trim() || "No homepage"}
           </p>
         </div>
       </div>
-      <dl className="divide-y">
-        {(draft.contacts.some((c) => c.trim()) || draft.policyUri || draft.tosUri) && (
-          <SummaryRow label="Contacts and policies" pending={false}>
-            {[
-              ...draft.contacts.map((c) => c.trim()).filter(Boolean),
-              draft.policyUri.trim() && "Privacy policy",
-              draft.tosUri.trim() && "Terms of service",
-            ]
-              .filter(Boolean)
-              .join(", ")}
-          </SummaryRow>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>Setup</span>
+          <span className="tabular-nums">
+            {done} of {wizardSteps.length} steps
+          </span>
+        </div>
+        <div className="flex gap-1" aria-hidden="true">
+          {wizardSteps.map((step, index) => (
+            <span
+              key={step.id}
+              className={cn(
+                "h-1 flex-1 rounded-full transition-colors duration-300",
+                index < done ? "bg-primary" : "bg-muted",
+              )}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {(contacts.length > 0 || policies.length > 0) && (
+          <SummaryItem icon={<Mail />} label="Contacts and policies" pending={false}>
+            {contacts.map((contact) => (
+              <Chip key={contact}>{contact}</Chip>
+            ))}
+            {policies.map((policy) => (
+              <Chip key={policy} icon={<FileText className="size-3" aria-hidden="true" />}>
+                {policy}
+              </Chip>
+            ))}
+          </SummaryItem>
         )}
-        <SummaryRow label="Does" pending={reached < 1}>
-          {[draft.signIn && "Signs people in", draft.serviceAccess && "Calls APIs as itself"]
-            .filter(Boolean)
-            .join(" and ") || "Nothing yet"}
-        </SummaryRow>
-        <SummaryRow label="Credential" pending={reached < 2}>
-          {credentialInfo[draft.credential].title}
-          {draft.credential === "private-key" && draft.jwks.trim() && (
-            <span className="text-muted-foreground"> · {keyCount(draft.jwks)}</span>
+        <SummaryItem icon={<Sparkles />} label="Does" pending={reached < 1}>
+          {draft.signIn && (
+            <Chip icon={<LogIn className="size-3" aria-hidden="true" />}>Signs people in</Chip>
           )}
-        </SummaryRow>
+          {draft.serviceAccess && (
+            <Chip icon={<Server className="size-3" aria-hidden="true" />}>
+              Calls APIs as itself
+            </Chip>
+          )}
+          {!draft.signIn && !draft.serviceAccess && (
+            <span className="text-muted-foreground">Nothing yet</span>
+          )}
+        </SummaryItem>
+        <SummaryItem
+          icon={summaryCredentialIcons[draft.credential]}
+          label="Credential"
+          pending={reached < 2}
+        >
+          <span>{credentialInfo[draft.credential].title}</span>
+          {draft.credential === "private-key" && draft.jwks.trim() && (
+            <Chip>{keyCount(draft.jwks)}</Chip>
+          )}
+        </SummaryItem>
         {draft.signIn && (
           <>
-            <SummaryRow label="Redirect URIs" pending={reached < 3}>
+            <SummaryItem icon={<Link2 />} label="Redirect URIs" pending={reached < 3}>
               {redirects.length ? (
-                <ul className="space-y-0.5 font-mono text-xs">
-                  {redirects.map((uri) => (
-                    <li key={uri} className="break-all">
-                      {uri}
-                    </li>
-                  ))}
-                </ul>
+                redirects.map((uri) => (
+                  <Chip key={uri} mono>
+                    {uri}
+                  </Chip>
+                ))
               ) : (
-                "None"
+                <span className="text-muted-foreground">None yet</span>
               )}
-              <p className="mt-1 text-xs text-muted-foreground">
+              <span className="w-full text-xs text-muted-foreground">
                 {draft.applicationType === "web"
                   ? "Public https URLs only"
                   : "Also localhost and app schemes"}
-              </p>
-            </SummaryRow>
-            <SummaryRow label="Asks people for" pending={reached < 3}>
-              {asked.map((scope) => scope.label).join(", ")}
-            </SummaryRow>
+              </span>
+            </SummaryItem>
+            <SummaryItem icon={<UserRound />} label="Asks people for" pending={reached < 3}>
+              {asked.map((scope) => (
+                <Chip key={scope.id}>{scope.label}</Chip>
+              ))}
+            </SummaryItem>
             {draft.apiScopes.length > 0 && (
-              <SummaryRow label="APIs for people" pending={reached < 3}>
-                {scopeIds(known(draft.apiScopes))}
-              </SummaryRow>
+              <SummaryItem icon={<Network />} label="APIs for people" pending={reached < 3}>
+                {known(draft.apiScopes).map((id) => (
+                  <Chip key={id} mono>
+                    {id}
+                  </Chip>
+                ))}
+              </SummaryItem>
             )}
           </>
         )}
         {draft.serviceAccess && (
-          <SummaryRow label="APIs as itself" pending={reached < 3}>
-            {scopeIds(known(draft.serviceScopes))}
-          </SummaryRow>
+          <SummaryItem icon={<Network />} label="APIs as itself" pending={reached < 3}>
+            {draft.serviceScopes.length ? (
+              known(draft.serviceScopes).map((id) => (
+                <Chip key={id} mono>
+                  {id}
+                </Chip>
+              ))
+            ) : (
+              <span className="text-muted-foreground">None yet</span>
+            )}
+          </SummaryItem>
         )}
-      </dl>
+      </div>
     </div>
   );
 }
