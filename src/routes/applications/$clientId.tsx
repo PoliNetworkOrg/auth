@@ -1,4 +1,10 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import {
+  type ErrorComponentProps,
+  createFileRoute,
+  Link,
+  useNavigate,
+  useRouter,
+} from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
@@ -16,11 +22,15 @@ import {
   normalizeClientDraft,
   type OidcClientDraft,
   type OidcClientDraftErrors,
-  type OidcClientSummary,
 } from "@/auth/oidc-clients";
+import {
+  getOidcClient,
+  linkOidcResourceFn,
+  saveServiceJwksFn,
+  updateOidcClientFn,
+} from "@/auth/oidc.functions";
+import { requireAccess, useAccess } from "@/components/access";
 import { CopyButton } from "@/components/copy-button";
-import { useIdpAccessContext } from "@/components/idp-access";
-import { ApiError, errorMessage, fetchOidcClients, saveOidcClient } from "@/components/oidc/api";
 import { AppLogo } from "@/components/oidc/app-logo";
 import { ClientForm } from "@/components/oidc/client-form";
 import { CredentialField, CredentialsReveal } from "@/components/oidc/secret-reveal";
@@ -39,11 +49,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { RouteError } from "@/components/route-error";
+import { ActionError, errorFields, errorMessage } from "@/lib/action-error";
 
 export const Route = createFileRoute("/applications/$clientId")({
   head: () => ({ meta: [{ title: "Application · PoliNetwork Auth" }] }),
+  beforeLoad: ({ context }) => requireAccess(context.viewer, "idp:applications:read"),
+  loader: ({ params }) => getOidcClient({ data: { clientId: params.clientId } }),
+  // Another application starts from a clean page: no notice, revealed secret, or draft.
+  remountDeps: ({ params }) => params.clientId,
   component: ApplicationDetail,
+  errorComponent: ApplicationError,
 });
+
+function prettyJwks(jwks: string | null) {
+  return jwks ? JSON.stringify(JSON.parse(jwks), null, 2) : "";
+}
 
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" }) : "Unknown";
@@ -79,13 +100,11 @@ function ToggleRow({
 
 function ApplicationDetail() {
   const { clientId } = Route.useParams();
+  const client = Route.useLoaderData();
   const navigate = useNavigate();
-  const { can, isMasterAdmin } = useIdpAccessContext();
+  const router = useRouter();
+  const { can, isMasterAdmin } = useAccess();
   const canWrite = can("idp:applications:write");
-  const [client, setClient] = useState<OidcClientSummary | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [loadError, setLoadError] = useState("");
-  const [revision, setRevision] = useState(0);
 
   const [busy, setBusy] = useState<
     "save" | "toggle" | "rotate" | "delete" | "jwks" | "link" | null
@@ -93,30 +112,18 @@ function ApplicationDetail() {
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<OidcClientDraftErrors | undefined>();
   const [notice, setNotice] = useState("");
-  const [formKey, setFormKey] = useState(0);
+  const [formResetKey, setFormResetKey] = useState(0);
   const [rotatedSecret, setRotatedSecret] = useState<string | null>(null);
-  const [jwksDraft, setJwksDraft] = useState("");
+  const [jwksDraft, setJwksDraft] = useState(() => prettyJwks(client.jwks));
+  // Shows the saved JWKS once it changes on the server, replacing what was typed.
+  const [loadedJwks, setLoadedJwks] = useState(client.jwks);
+  if (client.jwks !== loadedJwks) {
+    setLoadedJwks(client.jwks);
+    setJwksDraft(prettyJwks(client.jwks));
+  }
   const [rotateOpen, setRotateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoadError("");
-    fetchOidcClients(clientId, controller.signal)
-      .then((clients) => {
-        const found = clients[0];
-        if (found) {
-          setClient(found);
-          setJwksDraft(found.jwks ? JSON.stringify(JSON.parse(found.jwks), null, 2) : "");
-        } else setNotFound(true);
-      })
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted)
-          setLoadError(errorMessage(cause, "Unable to load this application."));
-      });
-    return () => controller.abort();
-  }, [clientId, revision]);
 
   useEffect(() => {
     if (!notice) return;
@@ -124,21 +131,19 @@ function ApplicationDetail() {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  function apply(updated: OidcClientSummary, message: string) {
-    setClient(updated);
-    setNotice(message);
-  }
-
   async function save(input: OidcClientDraft) {
     setBusy("save");
     setError("");
     setFieldErrors(undefined);
     try {
-      const updated = await saveOidcClient({ clientId, draft: normalizeClientDraft(input) });
-      apply(updated, "Settings saved.");
-      setFormKey((value) => value + 1);
+      await updateOidcClientFn({ data: { clientId, draft: normalizeClientDraft(input) } });
+      await router.invalidate({ sync: true });
+      // The form now reloads the saved values from the fresh loader data.
+      setFormResetKey((value) => value + 1);
+      setNotice("Settings saved.");
     } catch (cause) {
-      if (cause instanceof ApiError && cause.fields) setFieldErrors(cause.fields);
+      // Field errors come back in the form's own shape, item lists included.
+      setFieldErrors(errorFields<OidcClientDraftErrors>(cause));
       setError(errorMessage(cause, "Unable to save the application."));
     } finally {
       setBusy(null);
@@ -149,9 +154,9 @@ function ApplicationDetail() {
     setBusy("toggle");
     setError("");
     try {
-      const updated = await saveOidcClient({ clientId, ...patch });
-      apply(
-        updated,
+      const updated = await updateOidcClientFn({ data: { clientId, ...patch } });
+      await router.invalidate({ sync: true });
+      setNotice(
         patch.disabled !== undefined
           ? updated.disabled
             ? "Sign-ins through this application are paused."
@@ -174,6 +179,7 @@ function ApplicationDetail() {
       const result = await authClient.oauth2.client.rotateSecret({ client_id: clientId });
       if (result.error) setError(result.error.message ?? "Unable to rotate the secret.");
       else {
+        await router.invalidate({ sync: true });
         setRotatedSecret(result.data.client_secret ?? null);
         setNotice("Secret rotated. The previous secret no longer works.");
       }
@@ -208,16 +214,9 @@ function ApplicationDetail() {
     setBusy("jwks");
     setError("");
     try {
-      const jwks: unknown = JSON.parse(jwksDraft);
-      const response = await fetch("/api/oidc/service-client", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId, jwks }),
-      });
-      const result: { jwks?: string; error?: string } = await response.json();
-      if (!response.ok || !result.jwks)
-        throw new Error(result.error ?? "Unable to save the public JWKS.");
-      setClient((current) => (current ? { ...current, jwks: result.jwks! } : current));
+      const jwks = JSON.parse(jwksDraft) as { keys: Record<string, unknown>[] };
+      await saveServiceJwksFn({ data: { clientId, jwks } });
+      await router.invalidate({ sync: true });
       setNotice("Public JWKS saved.");
     } catch (cause) {
       setError(errorMessage(cause, "Unable to save the public JWKS."));
@@ -227,62 +226,20 @@ function ApplicationDetail() {
   }
 
   async function linkResource() {
-    if (!client) return;
     setBusy("link");
     setError("");
     try {
       const resource = client.clientCredentialsScopes.includes("idp:access:read")
         ? "internal"
         : "backend";
-      const response = await fetch("/api/oidc/resource-link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId, resource }),
-      });
-      if (!response.ok) throw new Error("Unable to link the configured resource.");
-      setRevision((value) => value + 1);
+      await linkOidcResourceFn({ data: { clientId, resource } });
+      await router.invalidate({ sync: true });
       setNotice("Resource linked.");
     } catch (cause) {
       setError(errorMessage(cause, "Unable to link the configured resource."));
     } finally {
       setBusy(null);
     }
-  }
-
-  if (notFound) {
-    return (
-      <div className="mx-auto max-w-lg py-10 text-center">
-        <h1 className="text-2xl font-bold tracking-tight">Application not found</h1>
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          It may have been deleted, or the link is out of date.
-        </p>
-        <Button className="mt-6" asChild>
-          <Link to="/applications">
-            <ArrowLeft aria-hidden="true" />
-            All applications
-          </Link>
-        </Button>
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div className="mx-auto max-w-lg space-y-4 py-10 text-center">
-        <p role="alert">{loadError}</p>
-        <Button onClick={() => setRevision((value) => value + 1)}>Try again</Button>
-      </div>
-    );
-  }
-
-  if (!client) {
-    return (
-      <div aria-busy="true" className="space-y-6">
-        <div className="h-8 w-40 animate-pulse rounded-md bg-card" />
-        <div className="h-24 animate-pulse rounded-2xl border bg-card" />
-        <div className="h-96 animate-pulse rounded-2xl border bg-card" />
-      </div>
-    );
   }
 
   const deleteReady = deleteConfirmation.trim() === client.name.trim();
@@ -396,6 +353,9 @@ function ApplicationDetail() {
                     disabled={busy !== null}
                     onClick={() => void linkResource()}
                   >
+                    {busy === "link" && (
+                      <LoaderCircle className="animate-spin" aria-hidden="true" />
+                    )}
                     Link configured resource
                   </Button>
                 )}
@@ -423,6 +383,9 @@ function ApplicationDetail() {
                           disabled={busy !== null}
                           onClick={() => void saveJwks()}
                         >
+                          {busy === "jwks" && (
+                            <LoaderCircle className="animate-spin" aria-hidden="true" />
+                          )}
                           Save public JWKS
                         </Button>
                       </>
@@ -442,12 +405,12 @@ function ApplicationDetail() {
               <CardContent>
                 <fieldset disabled={!canWrite} className="border-0 p-0">
                   <ClientForm
-                    key={formKey}
                     mode="edit"
                     initial={draftFromClient(client)}
                     confidential={client.confidential}
                     readOnly={!canWrite}
                     busy={busy === "save"}
+                    resetKey={formResetKey}
                     serverErrors={fieldErrors}
                     submitLabel="Save changes"
                     onSubmit={(draft) => void save(draft)}
@@ -675,6 +638,25 @@ function ApplicationDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** Explains a missing application in place of the generic error; anything else is generic. */
+function ApplicationError({ error }: ErrorComponentProps) {
+  if (!(error instanceof ActionError && error.status === 404)) return <RouteError error={error} />;
+  return (
+    <div className="mx-auto max-w-lg py-10 text-center">
+      <h1 className="text-2xl font-bold tracking-tight">Application not found</h1>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">
+        It may have been deleted, or the link is out of date.
+      </p>
+      <Button className="mt-6" asChild>
+        <Link to="/applications">
+          <ArrowLeft aria-hidden="true" />
+          All applications
+        </Link>
+      </Button>
     </div>
   );
 }

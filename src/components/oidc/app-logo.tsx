@@ -11,7 +11,8 @@ export function AppLogo({
   logo?: string | null;
   className?: string;
 }) {
-  const [failed, setFailed] = useState(false);
+  // Remembers which URL failed, so a corrected URL is tried again.
+  const [failedLogo, setFailedLogo] = useState<string | null>(null);
   return (
     <div
       aria-hidden="true"
@@ -20,14 +21,14 @@ export function AppLogo({
         className,
       )}
     >
-      {logo && !failed ? (
+      {logo && logo !== failedLogo ? (
         <img
           key={logo}
           src={logo}
           alt=""
           referrerPolicy="no-referrer"
           className="size-full object-cover"
-          onError={() => setFailed(true)}
+          onError={() => setFailedLogo(logo)}
         />
       ) : (
         clientInitials(name)

@@ -1,16 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronRight, KeyRound, Plus, ShieldCheck, Sparkles } from "lucide-react";
 import { type PermissionSummary, expandPermissionKeys } from "@/auth/rbac";
-import { useIdpAccessContext } from "@/components/idp-access";
+import { getCatalog } from "@/auth/rbac.functions";
+import { requireAccess, useAccess } from "@/components/access";
 import { KeyChip } from "@/components/rbac/fields";
-import { RequirePermission } from "@/components/rbac/require-permission";
-import { useCatalog } from "@/components/rbac/use-catalog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const Route = createFileRoute("/access/permissions/")({
-  component: GuardedPermissionsIndex,
+  beforeLoad: ({ context }) => requireAccess(context.viewer, "idp:permissions:read"),
+  loader: () => getCatalog(),
+  component: PermissionsIndex,
 });
 
 function PermissionRow({
@@ -57,8 +58,8 @@ function PermissionRow({
 }
 
 function PermissionsIndex() {
-  const { can } = useIdpAccessContext();
-  const { catalog, loading, error, reload } = useCatalog();
+  const { can } = useAccess();
+  const catalog = Route.useLoaderData();
   const impliedBy = (permission: PermissionSummary) =>
     expandPermissionKeys(catalog, permission.implies).filter((key) => key !== permission.key);
   const managed = catalog.permissions.filter((permission) => permission.managed);
@@ -84,25 +85,7 @@ function PermissionsIndex() {
         )}
       </div>
 
-      {error && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
-        >
-          <span>{error}</span>
-          <Button variant="outline" size="sm" onClick={reload}>
-            Try again
-          </Button>
-        </div>
-      )}
-
-      {loading && !error ? (
-        <ul aria-busy="true" aria-label="Loading permissions" className="space-y-3">
-          {[0, 1, 2].map((index) => (
-            <li key={index} className="h-20 animate-pulse rounded-2xl border bg-card" />
-          ))}
-        </ul>
-      ) : (
+      {
         <div className="space-y-8">
           <Card>
             <CardHeader>
@@ -168,15 +151,7 @@ function PermissionsIndex() {
             )}
           </div>
         </div>
-      )}
+      }
     </div>
-  );
-}
-
-function GuardedPermissionsIndex() {
-  return (
-    <RequirePermission permission="idp:permissions:read">
-      <PermissionsIndex />
-    </RequirePermission>
   );
 }

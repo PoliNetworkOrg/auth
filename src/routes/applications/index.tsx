@@ -2,15 +2,21 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AppWindow, ChevronRight, ExternalLink, Plus, Users } from "lucide-react";
 import type { OidcClientSummary } from "@/auth/oidc-clients";
+import { getOidcClients } from "@/auth/oidc.functions";
+import { accessOf, useAccess } from "@/components/access";
 import { CopyButton } from "@/components/copy-button";
-import { useIdpAccessContext } from "@/components/idp-access";
-import { errorMessage, fetchOidcClients } from "@/components/oidc/api";
 import { AppLogo } from "@/components/oidc/app-logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export const Route = createFileRoute("/applications/")({ component: ApplicationsIndex });
+export const Route = createFileRoute("/applications/")({
+  // Someone who may only register applications would be refused the list; the page points
+  // them to the registration form instead.
+  loader: ({ context }) =>
+    accessOf(context.viewer).can("idp:applications:read") ? getOidcClients() : null,
+  component: ApplicationsIndex,
+});
 
 function ClientBadges({ client }: { client: OidcClientSummary }) {
   return (
@@ -74,26 +80,9 @@ function IntegrationCard() {
 }
 
 function ApplicationsIndex() {
-  const { can, isMasterAdmin } = useIdpAccessContext();
-  const canRead = can("idp:applications:read");
+  const { can, isMasterAdmin } = useAccess();
   const canWrite = can("idp:applications:write");
-  const [clients, setClients] = useState<OidcClientSummary[] | null>(null);
-  const [error, setError] = useState("");
-  const [revision, setRevision] = useState(0);
-
-  useEffect(() => {
-    // Someone who may only register applications would be refused this list.
-    if (!canRead) return;
-    const controller = new AbortController();
-    setError("");
-    fetchOidcClients(undefined, controller.signal)
-      .then(setClients)
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted)
-          setError(errorMessage(cause, "Unable to load applications."));
-      });
-    return () => controller.abort();
-  }, [revision, canRead]);
+  const clients = Route.useLoaderData();
 
   return (
     <div className="space-y-8">
@@ -121,21 +110,9 @@ function ApplicationsIndex() {
         </div>
       </div>
 
-      {error && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
-        >
-          <span>{error}</span>
-          <Button variant="outline" size="sm" onClick={() => setRevision((value) => value + 1)}>
-            Try again
-          </Button>
-        </div>
-      )}
-
       <div className="grid items-start gap-8 lg:grid-cols-[1fr_340px]">
         <div>
-          {!canRead ? (
+          {clients === null ? (
             <Card>
               <CardContent className="flex flex-col items-center gap-4 px-6 py-14 text-center">
                 <div className="flex size-14 items-center justify-center rounded-2xl border bg-background text-primary">
@@ -156,13 +133,7 @@ function ApplicationsIndex() {
                 </Button>
               </CardContent>
             </Card>
-          ) : clients === null && !error ? (
-            <ul aria-busy="true" aria-label="Loading applications" className="space-y-3">
-              {[0, 1, 2].map((index) => (
-                <li key={index} className="h-20 animate-pulse rounded-2xl border bg-card" />
-              ))}
-            </ul>
-          ) : clients && clients.length === 0 ? (
+          ) : clients.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center gap-4 px-6 py-14 text-center">
                 <div className="flex size-14 items-center justify-center rounded-2xl border bg-background text-primary">
@@ -185,7 +156,7 @@ function ApplicationsIndex() {
                 )}
               </CardContent>
             </Card>
-          ) : clients ? (
+          ) : (
             <Card>
               <ul className="divide-y" aria-label="Applications">
                 {clients.map((client) => (
@@ -250,7 +221,7 @@ function ApplicationsIndex() {
                 ))}
               </ul>
             </Card>
-          ) : null}
+          )}
         </div>
         <IntegrationCard />
       </div>

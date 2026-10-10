@@ -2,21 +2,23 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { type PermissionDraft, type RbacDraftErrors, emptyPermissionDraft } from "@/auth/rbac";
-import { RbacApiError, errorMessage, savePermission } from "@/components/rbac/api";
+import { getCatalog, savePermissionFn } from "@/auth/rbac.functions";
+import { requireAccess } from "@/components/access";
 import { PermissionForm } from "@/components/rbac/permission-form";
-import { RequirePermission } from "@/components/rbac/require-permission";
-import { useCatalog } from "@/components/rbac/use-catalog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { errorFields, errorMessage } from "@/lib/action-error";
 
 export const Route = createFileRoute("/access/permissions/new")({
   head: () => ({ meta: [{ title: "New permission · PoliNetwork Auth" }] }),
-  component: GuardedNewPermission,
+  beforeLoad: ({ context }) => requireAccess(context.viewer, "idp:permissions:write"),
+  loader: () => getCatalog(),
+  component: NewPermission,
 });
 
 function NewPermission() {
   const navigate = useNavigate();
-  const { catalog, loading, error: loadError, reload } = useCatalog();
+  const catalog = Route.useLoaderData();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fields, setFields] = useState<RbacDraftErrors>();
@@ -26,13 +28,13 @@ function NewPermission() {
     setError("");
     setFields(undefined);
     try {
-      const permission = await savePermission(draft);
+      const permission = await savePermissionFn({ data: { draft } });
       await navigate({
         to: "/access/permissions/$permissionId",
         params: { permissionId: permission.id },
       });
     } catch (cause) {
-      if (cause instanceof RbacApiError) setFields(cause.fields);
+      setFields(errorFields(cause));
       setError(errorMessage(cause, "Unable to create the permission."));
     } finally {
       setBusy(false);
@@ -63,42 +65,18 @@ function NewPermission() {
       )}
       <Card>
         <CardContent className="pt-6">
-          {loading ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">Loading permissions…</p>
-          ) : loadError ? (
-            <div className="space-y-4 py-8 text-center">
-              <p role="alert" className="text-sm">
-                {loadError}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Unable to load the permissions this one could grant. Try again before creating one.
-              </p>
-              <Button variant="outline" onClick={reload}>
-                Try again
-              </Button>
-            </div>
-          ) : (
-            <PermissionForm
-              mode="create"
-              initial={emptyPermissionDraft()}
-              catalog={catalog}
-              busy={busy}
-              serverErrors={fields}
-              submitLabel="Create permission"
-              onSubmit={(draft) => void create(draft)}
-              onCancel={() => void navigate({ to: "/access/permissions" })}
-            />
-          )}
+          <PermissionForm
+            mode="create"
+            initial={emptyPermissionDraft()}
+            catalog={catalog}
+            busy={busy}
+            serverErrors={fields}
+            submitLabel="Create permission"
+            onSubmit={(draft) => void create(draft)}
+            onCancel={() => void navigate({ to: "/access/permissions" })}
+          />
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function GuardedNewPermission() {
-  return (
-    <RequirePermission permission="idp:permissions:write">
-      <NewPermission />
-    </RequirePermission>
   );
 }

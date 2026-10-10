@@ -1,8 +1,20 @@
 import { createHmac } from "node:crypto";
 import { exportJWK, generateKeyPair } from "jose";
 import { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { AUTH_COOKIE_PREFIX } from "./cookies";
+import type { ServerFnCall } from "./server-fn-harness";
+
+// The app's own pages talk to it through server functions, which have no stable URL to fetch.
+// Those tests call them in this process instead, through the harness (CSRF check, middleware,
+// validator and handler), with the same signed session cookies and the same database.
+vi.mock("@tanstack/react-start", async (importOriginal) =>
+  (await import("./server-fn-harness")).mockReactStart(await importOriginal()),
+);
+vi.mock(
+  "@tanstack/react-start/server",
+  async () => (await import("./server-fn-harness")).startServerMock,
+);
 
 const baseURL = process.env.IDENTITY_TEST_URL;
 const databaseURL = process.env.IDENTITY_TEST_DATABASE_URL;
@@ -26,7 +38,6 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
   let usedInternalApi = false;
   const token = "identity-integration-session";
   const headers = sessionHeaders(token);
-  const permissionReaderHeaders = sessionHeaders("permission-reader-session");
   beforeAll(async () => {
     await pool.query(
       `INSERT INTO "user" (id, name, email) VALUES
@@ -103,6 +114,16 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       `INSERT INTO oauth_client (id, client_id, name, reference_id, redirect_uris) VALUES ('integration-foreign-client', 'integration-foreign-client', 'Foreign', 'foreign-pool', ARRAY['https://example.com/callback'])`,
     );
   });
+  /** Calls a server function in this process, signed in with the session `token`. */
+  async function callAs<TData, TResult>(
+    token: string,
+    fn: (opts: { data: TData }) => Promise<TResult>,
+    data: TData,
+  ): Promise<ServerFnCall<TResult>> {
+    usedInternalApi = true;
+    const { callServerFn } = await import("./server-fn-harness");
+    return callServerFn(fn, { headers: sessionHeaders(token), data });
+  }
   afterAll(async () => {
     await pool.query(
       `DELETE FROM "user" WHERE id IN ('integration-user', 'permission-reader', 'application-reader', 'application-writer')`,
@@ -233,21 +254,19 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     });
   });
   it("does not disclose the role graph to a permissions-only reader", async () => {
-    const response = await fetch(`${baseURL}/api/rbac/catalog`, {
-      headers: permissionReaderHeaders,
-    });
+    const { getCatalog, getRoleMembers } = await import("./rbac.functions");
+    const response = await callAs("permission-reader-session", getCatalog, undefined);
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
+    expect(response.result).toMatchObject({
       roles: [],
       permissions: expect.arrayContaining([
         expect.objectContaining({ key: "idp:permissions:read" }),
       ]),
     });
 
-    const members = await fetch(
-      `${baseURL}/api/rbac/role-members?role_id=integration-permission-reader-role`,
-      { headers: permissionReaderHeaders },
-    );
+    const members = await callAs("permission-reader-session", getRoleMembers, {
+      roleId: "integration-permission-reader-role",
+    });
     expect(members.status).toBe(403);
   });
   it("denies client registration to ordinary users", async () => {
@@ -341,8 +360,11 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     },
   );
   it("denies every built-in client mutation to a read-only application administrator", async () => {
+    const { getOidcClients, updateOidcClientFn } = await import("./oidc.functions");
     const readHeaders = sessionHeaders("application-reader-session");
-    expect((await fetch(`${baseURL}/api/oidc/clients`, { headers: readHeaders })).status).toBe(200);
+    expect((await callAs("application-reader-session", getOidcClients, undefined)).status).toBe(
+      200,
+    );
     for (const [path, body] of [
       ["create-client", { redirect_uris: ["https://example.com/callback"] }],
       [
@@ -359,10 +381,9 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       });
       expect(response.status).toBe(401);
     }
-    const response = await fetch(`${baseURL}/api/oidc/client-update`, {
-      method: "POST",
-      headers: readHeaders,
-      body: JSON.stringify({ clientId: "integration-foreign-client", disabled: true }),
+    const response = await callAs("application-reader-session", updateOidcClientFn, {
+      clientId: "integration-foreign-client",
+      disabled: true,
     });
     expect(response.status).toBe(403);
   });
@@ -440,8 +461,9 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     },
   );
   it.skipIf(!adminUserId || !process.env.OAUTH_BACKEND_RESOURCE_URI)(
-    "links only shared-pool clients through the service-resource route",
+    "links only shared-pool clients through the service-resource function",
     async () => {
+      const { linkOidcResourceFn } = await import("./oidc.functions");
       const resource = process.env.OAUTH_BACKEND_RESOURCE_URI!;
       await pool.query(
         `INSERT INTO oauth_client (id, client_id, name, reference_id, redirect_uris)
@@ -449,11 +471,7 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
                  'polinetwork', ARRAY['https://example.invalid/callback'])`,
       );
       const link = (token: string, clientId: string) =>
-        fetch(`${baseURL}/api/oidc/resource-link`, {
-          method: "POST",
-          headers: sessionHeaders(token),
-          body: JSON.stringify({ clientId, resource: "backend" }),
-        });
+        callAs(token, linkOidcResourceFn, { clientId, resource: "backend" });
       try {
         expect(
           (await link("application-writer-session", "integration-service-client")).status,
@@ -480,18 +498,16 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
   it.skipIf(!adminUserId || !process.env.OAUTH_INTERNAL_RESOURCE_URI)(
     "registers a private-key service client with an isolated public key and internal resource",
     async () => {
+      const { registerServiceClientFn, saveServiceJwksFn, updateOidcClientFn } =
+        await import("./oidc.functions");
       const pair = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
       const jwks = { keys: [{ ...(await exportJWK(pair.publicKey)), kid: "integration-service" }] };
       const register = (token: string) =>
-        fetch(`${baseURL}/api/oidc/service-client`, {
-          method: "POST",
-          headers: sessionHeaders(token),
-          body: JSON.stringify({ kind: "backend", jwks }),
-        });
+        callAs(token, registerServiceClientFn, { kind: "backend", jwks });
       expect((await register("application-writer-session")).status).toBe(403);
       const response = await register("integration-master-session");
-      expect(response.status).toBe(201);
-      const created: { clientId: string; linked: boolean } = await response.json();
+      expect(response.status).toBe(200);
+      const created = response.result!;
       try {
         expect(created.linked).toBe(true);
         const { rows } = await pool.query<{
@@ -514,22 +530,17 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
           body: JSON.stringify({ client_id: created.clientId }),
         });
         expect(writerDelete.status).toBe(401);
-        const writerUpdate = await fetch(`${baseURL}/api/oidc/client-update`, {
-          method: "POST",
-          headers: sessionHeaders("application-writer-session"),
-          body: JSON.stringify({ clientId: created.clientId, disabled: true }),
+        const writerUpdate = await callAs("application-writer-session", updateOidcClientFn, {
+          clientId: created.clientId,
+          disabled: true,
         });
         expect(writerUpdate.status).toBe(403);
         const replacement = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
         const rotatedJwks = {
           keys: [jwks.keys[0], { ...(await exportJWK(replacement.publicKey)), kid: "replacement" }],
         };
-        const updateKeys = (token: string, keys: unknown) =>
-          fetch(`${baseURL}/api/oidc/service-client`, {
-            method: "PATCH",
-            headers: sessionHeaders(token),
-            body: JSON.stringify({ clientId: created.clientId, jwks: keys }),
-          });
+        const updateKeys = (token: string, keys: { keys: Record<string, unknown>[] }) =>
+          callAs(token, saveServiceJwksFn, { clientId: created.clientId, jwks: keys });
         expect((await updateKeys("application-writer-session", rotatedJwks)).status).toBe(403);
         expect((await updateKeys("integration-master-session", rotatedJwks)).status).toBe(200);
         expect(
@@ -572,6 +583,7 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
   it.skipIf(!adminUserId || !process.env.OAUTH_BACKEND_RESOURCE_URI)(
     "applies the three backend-client templates with separate keys and resource links",
     async () => {
+      const { registerServiceClientFn } = await import("./oidc.functions");
       for (const [kind, expectedScopes, expectedGrants] of [
         [
           "telegram-bot",
@@ -586,19 +598,15 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
         ],
       ] as const) {
         const pair = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
-        const response = await fetch(`${baseURL}/api/oidc/service-client`, {
-          method: "POST",
-          headers: sessionHeaders("integration-master-session"),
-          body: JSON.stringify({
-            kind,
-            jwks: { keys: [{ ...(await exportJWK(pair.publicKey)), kid: kind }] },
-            ...(kind === "admin-dashboard"
-              ? { redirectUri: "https://dashboard.example.invalid/callback" }
-              : {}),
-          }),
+        const response = await callAs("integration-master-session", registerServiceClientFn, {
+          kind,
+          jwks: { keys: [{ ...(await exportJWK(pair.publicKey)), kid: kind }] },
+          ...(kind === "admin-dashboard"
+            ? { redirectUri: "https://dashboard.example.invalid/callback" }
+            : {}),
         });
-        expect(response.status).toBe(201);
-        const created: { clientId: string; linked: boolean } = await response.json();
+        expect(response.status).toBe(200);
+        const created = response.result!;
         try {
           expect(created.linked).toBe(true);
           const { rows } = await pool.query<{
@@ -710,11 +718,8 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       `INSERT INTO student_verification_challenge (user_id, email, code_hash, expires_at, last_sent_at) VALUES ('integration-user', $1, $2, NOW() + interval '10 minutes', NOW())`,
       [email, codeHash],
     );
-    const response = await fetch(`${baseURL}/api/student-verification`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ action: "confirm", email, code }),
-    });
+    const { confirmStudentVerificationFn } = await import("./account.functions");
+    const response = await callAs(token, confirmStudentVerificationFn, { email, code });
     expect(response.status).toBe(200);
     expect(await (await fetch(`${baseURL}/api/identity`, { headers })).json()).toEqual({
       states: ["student"],
@@ -724,12 +729,8 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     });
   });
   it("removes identity evidence on unlink and protects the last login method", async () => {
-    const unlink = (accountId: string) =>
-      fetch(`${baseURL}/api/accounts/unlink`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ accountId }),
-      });
+    const { unlinkAccountFn } = await import("./account.functions");
+    const unlink = (accountId: string) => callAs(token, unlinkAccountFn, { accountId });
     expect((await unlink("integration-pn")).status).toBe(200);
     expect(await (await fetch(`${baseURL}/api/identity`, { headers })).json()).toEqual({
       states: ["student"],

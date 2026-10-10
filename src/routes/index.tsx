@@ -1,31 +1,39 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { useState } from "react";
+import { getAccount, unlinkAccountFn } from "@/auth/account.functions";
 import { authClient } from "@/auth/client";
-import { type IdentityClaims, isLoginProvider } from "@/auth/policy";
+import { isLoginProvider } from "@/auth/policy";
 import { STATIC_ROLES } from "@/auth/rbac";
+import type { Viewer } from "@/auth/session.functions";
+import { useProviders, useViewer } from "@/components/access";
 import { StudentVerificationForm } from "@/components/student-verification-form";
 import { UserAvatar } from "@/components/user-avatar";
 import { GoogleIcon } from "@/components/google-icon";
 import { LoginPage } from "@/components/login-page";
-import { SessionFallback, useSessionGate } from "@/components/session-gate";
 import { PasskeyCard } from "@/components/passkey-card";
 import {
   BadgeCheck,
   Building2,
   Check,
   Fingerprint,
+  LoaderCircle,
   LogOut,
   Send,
   ShieldCheck,
   Unlink,
-  UserRound,
 } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { errorMessage } from "@/lib/action-error";
 
-export const Route = createFileRoute("/")({ component: Home });
+export const Route = createFileRoute("/")({
+  // `/` is also the OIDC sign-in page: it reads the signed OAuth query as it is, so it has
+  // no search validation that could drop or rewrite those parameters.
+  loader: ({ context }) => (context.viewer ? getAccount() : null),
+  component: Home,
+});
 const signInOptions = [
   {
     id: "google",
@@ -39,7 +47,7 @@ const signInOptions = [
   },
 ];
 
-type ProviderCapabilities = { signIn: string[]; link: string[] };
+type Account = NonNullable<Awaited<ReturnType<typeof getAccount>>>;
 
 /** The built-in roles each verified state grants, named for the person who holds them. */
 const STATE_LABELS: Record<string, string> = Object.fromEntries(
@@ -47,90 +55,64 @@ const STATE_LABELS: Record<string, string> = Object.fromEntries(
 );
 
 function Home() {
-  const gate = useSessionGate();
-  const session = gate.session;
-
-  if (gate.status !== "ready") return <SessionFallback gate={gate} />;
-  if (!session) return <LoginPage />;
-  return <AccountPage key={session.user.id} />;
+  const viewer = useViewer();
+  const account = Route.useLoaderData();
+  if (!viewer || !account) return <LoginPage />;
+  return <AccountPage key={viewer.user.id} viewer={viewer} account={account} />;
 }
 
-function AccountPage() {
-  const { data: session, isPending } = authClient.useSession();
-  const [providers, setProviders] = useState<ProviderCapabilities>({ signIn: [], link: [] });
-  const [accounts, setAccounts] = useState<{ id: string; providerId: string; accountId: string }[]>(
-    [],
-  );
-  const [identity, setIdentity] = useState<IdentityClaims | null>(null);
+function AccountPage({ viewer, account }: { viewer: Viewer; account: Account }) {
+  const router = useRouter();
+  const providers = useProviders();
+  const { accounts, identity, passkeys } = account;
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [revision, setRevision] = useState(0);
+  /** The provider being linked, the account being unlinked, or "sign-out", so only that button spins. */
+  const [busy, setBusy] = useState<string | null>(null);
   const loginAccountCount = accounts.filter((account) =>
     isLoginProvider(account.providerId),
   ).length;
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      const response = await fetch("/api/providers");
-      if (!response.ok) throw new Error("Unable to load sign-in methods.");
-      const capabilities: ProviderCapabilities = await response.json();
-      if (active) setProviders(capabilities);
-      if (session) {
-        const linked = await authClient.listAccounts();
-        if (linked.error) throw new Error(linked.error.message);
-        const result = await fetch("/api/identity");
-        if (!result.ok) throw new Error("Unable to load your identity.");
-        const value: IdentityClaims = await result.json();
-        if (active) {
-          setAccounts(linked.data);
-          setIdentity(value);
-        }
-      } else if (active) {
-        setAccounts([]);
-        setIdentity(null);
-      }
-    }
-    void load().catch((cause: unknown) => {
-      if (active) setError(cause instanceof Error ? cause.message : "Unable to load account.");
-    });
-    return () => {
-      active = false;
-    };
-  }, [session, revision]);
 
   async function connect(provider: string) {
-    setBusy(true);
+    setBusy(provider);
     setError("");
     try {
-      const result = session
-        ? await authClient.linkSocial({ provider, callbackURL: "/" })
-        : await authClient.signIn.social({ provider, callbackURL: "/" });
+      const result = await authClient.linkSocial({ provider, callbackURL: "/" });
       if (result.error) setError(result.error.message ?? "Sign-in failed.");
     } catch {
       setError("Unable to contact the identity service.");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
   async function unlink(accountId: string) {
-    setBusy(true);
+    setBusy(accountId);
     setError("");
     try {
-      const response = await fetch("/api/accounts/unlink", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId }),
-      });
-      const result: { error?: string } = await response.json();
-      if (!response.ok) setError(result.error ?? "Unable to unlink account.");
-      else setRevision((value) => value + 1);
-    } catch {
-      setError("Unable to unlink account.");
+      await unlinkAccountFn({ data: { accountId } });
+      // Brings the accounts, membership and student status up to date.
+      await router.invalidate({ sync: true });
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to unlink account."));
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  }
+  async function signOut() {
+    setBusy("sign-out");
+    setError("");
+    try {
+      const result = await authClient.signOut();
+      if (result.error) setError(result.error.message ?? "Unable to sign out.");
+      // The root context still holds the old session until it loads again.
+      else await router.invalidate({ sync: true });
+    } catch {
+      setError("Unable to sign out.");
+    } finally {
+      setBusy(null);
     }
   }
   const telegramAccounts = accounts.filter((account) => account.providerId === "telegram");
+  const studentAccount = accounts.find((account) => account.providerId === "polimi-email");
   return (
     <div className="min-h-screen">
       <AppHeader active="account" />
@@ -138,12 +120,10 @@ function AccountPage() {
         <div className="mb-9 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
-              {session ? "Your place in PoliNetwork." : "Your PoliNetwork starts here."}
+              Your place in PoliNetwork.
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-              {session
-                ? "Your accounts, your membership. Together in one place."
-                : "Sign in to bring your accounts and university identity together."}
+              Your accounts, your membership. Together in one place.
             </p>
           </div>
           <Badge className="bg-card text-muted-foreground">Preview</Badge>
@@ -165,23 +145,17 @@ function AccountPage() {
                   <Fingerprint className="size-6" aria-hidden="true" />
                 </div>
                 <div className="mt-12 flex size-16 items-center justify-center overflow-hidden rounded-2xl border border-white/30 bg-white/10 text-2xl font-semibold">
-                  {session ? (
-                    <UserAvatar name={session.user.name} image={session.user.image} />
-                  ) : (
-                    <UserRound className="size-7" aria-hidden="true" />
-                  )}
+                  <UserAvatar name={viewer.user.name} image={viewer.user.image} />
                 </div>
                 <h2 className="mt-5 break-words text-2xl font-bold tracking-tight">
-                  {isPending ? "Loading…" : (session?.user.name ?? "One community. Your identity.")}
+                  {viewer.user.name}
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-blue-100">
-                  {session ? "Your PoliNetwork identity" : "For the people who make PoliNetwork."}
-                </p>
+                <p className="mt-2 text-sm leading-6 text-blue-100">Your PoliNetwork identity</p>
                 <div
                   className="mt-8 flex min-h-9 flex-wrap gap-2 border-t border-white/25 pt-5"
                   aria-live="polite"
                 >
-                  {session && identity?.states.length ? (
+                  {identity.states.length ? (
                     identity.states.map((state) => (
                       <Badge key={state} className="border-white/30 bg-white/15 text-white">
                         <BadgeCheck className="size-3.5" />
@@ -190,11 +164,7 @@ function AccountPage() {
                     ))
                   ) : (
                     <p className="text-xs leading-5 text-blue-100">
-                      {isPending || (session && !identity)
-                        ? "Loading your identity…"
-                        : session
-                          ? "Link your accounts to add membership and student status."
-                          : "Sign in to create your identity."}
+                      Link your accounts to add membership and student status.
                     </p>
                   )}
                 </div>
@@ -206,19 +176,19 @@ function AccountPage() {
                 Membership is checked automatically. Your linked accounts stay under your control.
               </p>
             </div>
-            {session && (
-              <Button
-                variant="ghost"
-                className="text-muted-foreground"
-                onClick={async () => {
-                  const result = await authClient.signOut();
-                  if (result.error) setError(result.error.message ?? "Unable to sign out.");
-                }}
-              >
+            <Button
+              variant="ghost"
+              className="text-muted-foreground"
+              disabled={busy !== null}
+              onClick={() => void signOut()}
+            >
+              {busy === "sign-out" ? (
+                <LoaderCircle className="animate-spin" aria-hidden="true" />
+              ) : (
                 <LogOut />
-                Sign out
-              </Button>
-            )}
+              )}
+              Sign out
+            </Button>
           </aside>
           <div className="space-y-6">
             <Card>
@@ -262,15 +232,14 @@ function AccountPage() {
                       </div>
                       {linked.length === 0 ? (
                         <Button
-                          variant={session ? "outline" : "default"}
-                          disabled={busy || isPending || !providers.signIn.includes(option.id)}
+                          variant="outline"
+                          disabled={busy !== null || !providers.signIn.includes(option.id)}
                           onClick={() => void connect(option.id)}
                         >
-                          {!providers.signIn.includes(option.id)
-                            ? "Unavailable"
-                            : session
-                              ? "Link account"
-                              : "Continue"}
+                          {busy === option.id && (
+                            <LoaderCircle className="animate-spin" aria-hidden="true" />
+                          )}
+                          {providers.signIn.includes(option.id) ? "Link account" : "Unavailable"}
                         </Button>
                       ) : (
                         linked.map((account) => (
@@ -278,10 +247,14 @@ function AccountPage() {
                             key={account.id}
                             variant="destructive"
                             size="sm"
-                            disabled={busy || loginAccountCount < 2}
+                            disabled={busy !== null || loginAccountCount < 2}
                             onClick={() => void unlink(account.id)}
                           >
-                            <Unlink className="size-3.5" />
+                            {busy === account.id ? (
+                              <LoaderCircle className="animate-spin" aria-hidden="true" />
+                            ) : (
+                              <Unlink className="size-3.5" />
+                            )}
                             Unlink
                           </Button>
                         ))
@@ -291,7 +264,7 @@ function AccountPage() {
                 })}
               </CardContent>
             </Card>
-            <PasskeyCard />
+            <PasskeyCard passkeys={passkeys} />
             <Card>
               <CardHeader>
                 <CardTitle>Community & university</CardTitle>
@@ -312,21 +285,19 @@ function AccountPage() {
                     {telegramAccounts.length > 0 && (
                       <p className="mt-2 inline-flex items-center gap-1 text-xs text-primary">
                         <Check className="size-3.5" />
-                        Linked{identity?.telegramId ? ` · ${identity.telegramId}` : ""}
-                      </p>
-                    )}
-                    {!session && (
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Sign in first to link Telegram.
+                        Linked{identity.telegramId ? ` · ${identity.telegramId}` : ""}
                       </p>
                     )}
                   </div>
-                  {session && !telegramAccounts.length && (
+                  {!telegramAccounts.length && (
                     <Button
                       variant="outline"
-                      disabled={busy || !providers.link.includes("telegram")}
+                      disabled={busy !== null || !providers.link.includes("telegram")}
                       onClick={() => void connect("telegram")}
                     >
+                      {busy === "telegram" && (
+                        <LoaderCircle className="animate-spin" aria-hidden="true" />
+                      )}
                       {providers.link.includes("telegram") ? "Link account" : "Unavailable"}
                     </Button>
                   )}
@@ -335,21 +306,24 @@ function AccountPage() {
                       key={account.id}
                       variant="destructive"
                       size="sm"
-                      disabled={busy}
+                      disabled={busy !== null}
                       onClick={() => void unlink(account.id)}
                     >
-                      <Unlink className="size-3.5" />
+                      {busy === account.id ? (
+                        <LoaderCircle className="animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Unlink className="size-3.5" />
+                      )}
                       Unlink
                     </Button>
                   ))}
                 </section>
                 <StudentVerificationForm
                   configured={providers.link.includes("polimi-email")}
-                  signedIn={!!session}
-                  linkedAccount={accounts.find((account) => account.providerId === "polimi-email")}
-                  verified={identity?.states.includes("student") ?? false}
-                  canUnlink={!!session && !busy}
-                  onChanged={() => setRevision((value) => value + 1)}
+                  linkedAccount={studentAccount}
+                  verified={identity.states.includes("student")}
+                  canUnlink={busy === null}
+                  unlinking={!!studentAccount && busy === studentAccount.id}
                   onUnlink={unlink}
                 />
               </CardContent>

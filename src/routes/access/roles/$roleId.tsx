@@ -1,6 +1,7 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowLeft, Sparkles, Trash2 } from "lucide-react";
+import { z } from "zod";
+import { ArrowLeft, Sparkles } from "lucide-react";
 import {
   type RbacDraftErrors,
   type RoleDraft,
@@ -8,24 +9,39 @@ import {
   roleDraftFrom,
   staticRole,
 } from "@/auth/rbac";
-import { useIdpAccessContext } from "@/components/idp-access";
-import { RbacApiError, deleteRole, errorMessage, saveRole } from "@/components/rbac/api";
+import { deleteRoleFn, getCatalog, getRoleMembers, saveRoleFn } from "@/auth/rbac.functions";
+import { requireAccess, useAccess } from "@/components/access";
+import { ConfirmDelete } from "@/components/confirm-delete";
 import { KeyChip } from "@/components/rbac/fields";
 import { RoleForm } from "@/components/rbac/role-form";
 import { RoleMembers } from "@/components/rbac/role-members";
 import { canGrantRole } from "@/components/rbac/delegation";
-import { RequirePermission } from "@/components/rbac/require-permission";
-import { useCatalog } from "@/components/rbac/use-catalog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { errorFields, errorMessage } from "@/lib/action-error";
 
-export const Route = createFileRoute("/access/roles/$roleId")({ component: GuardedRoleDetail });
+export const Route = createFileRoute("/access/roles/$roleId")({
+  // A page of the member list after `after`, so a long list can be paged through and linked.
+  validateSearch: z.object({ after: z.string().optional() }),
+  beforeLoad: ({ context }) => requireAccess(context.viewer, "idp:roles:read"),
+  loaderDeps: ({ search }) => ({ after: search.after }),
+  loader: async ({ params, deps }) => {
+    const [catalog, members] = await Promise.all([
+      getCatalog(),
+      getRoleMembers({ data: { roleId: params.roleId, after: deps.after } }),
+    ]);
+    return { catalog, members };
+  },
+  component: RoleDetail,
+});
 
 function RoleDetail() {
   const { roleId } = Route.useParams();
   const navigate = useNavigate();
-  const access = useIdpAccessContext();
-  const { catalog, loading, error: loadError, reload } = useCatalog();
+  const router = useRouter();
+  const access = useAccess();
+  const { catalog, members } = Route.useLoaderData();
+  const { after } = Route.useSearch();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -50,11 +66,11 @@ function RoleDetail() {
     setSaved(false);
     setFields(undefined);
     try {
-      await saveRole(draft, roleId);
+      await saveRoleFn({ data: { roleId, draft } });
+      await router.invalidate({ sync: true });
       setSaved(true);
-      reload();
     } catch (cause) {
-      if (cause instanceof RbacApiError) setFields(cause.fields);
+      setFields(errorFields(cause));
       setError(errorMessage(cause, "Unable to save the role."));
     } finally {
       setBusy(false);
@@ -62,12 +78,10 @@ function RoleDetail() {
   }
 
   async function remove() {
-    if (!role) return;
-    if (!window.confirm(`Delete ${role.name}? Everyone holding it loses its permissions.`)) return;
     setBusy(true);
     setError("");
     try {
-      await deleteRole(roleId);
+      await deleteRoleFn({ data: { roleId } });
       await navigate({ to: "/access/roles" });
     } catch (cause) {
       setError(errorMessage(cause, "Unable to delete the role."));
@@ -75,15 +89,11 @@ function RoleDetail() {
     }
   }
 
-  if (loading) {
-    return <p className="py-10 text-center text-sm text-muted-foreground">Loading the role…</p>;
-  }
-  if (loadError || !role) {
+  if (!role) {
     return (
       <div className="mx-auto max-w-lg space-y-4 py-10 text-center">
-        <p role="alert">{loadError || "This role no longer exists."}</p>
+        <p role="alert">This role no longer exists.</p>
         <div className="flex flex-wrap justify-center gap-3">
-          {loadError && <Button onClick={reload}>Try again</Button>}
           <Button variant="ghost" asChild>
             <Link to="/access/roles">
               <ArrowLeft aria-hidden="true" />
@@ -189,7 +199,14 @@ function RoleDetail() {
               list to edit here.
             </p>
           ) : (
-            <RoleMembers key={role.id} roleId={role.id} roleName={role.name} canWrite={canAssign} />
+            <RoleMembers
+              key={role.id}
+              roleId={role.id}
+              roleName={role.name}
+              canWrite={canAssign}
+              page={members}
+              after={after}
+            />
           )}
         </CardContent>
       </Card>
@@ -206,21 +223,16 @@ function RoleDetail() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button variant="destructive" disabled={busy} onClick={() => void remove()}>
-              <Trash2 aria-hidden="true" />
-              Delete role
-            </Button>
+            <ConfirmDelete
+              label="Delete role"
+              title={`Delete ${role.name}?`}
+              description="Everyone holding it loses its permissions."
+              busy={busy}
+              onConfirm={remove}
+            />
           </CardContent>
         </Card>
       )}
     </div>
-  );
-}
-
-function GuardedRoleDetail() {
-  return (
-    <RequirePermission permission="idp:roles:read">
-      <RoleDetail />
-    </RequirePermission>
   );
 }

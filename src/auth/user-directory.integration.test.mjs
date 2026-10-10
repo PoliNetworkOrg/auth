@@ -29,8 +29,8 @@ vi.mock("./membership", () => ({
   checkEntraGroupMember: mocks.graph,
   listEntraGroupMembers: mocks.list,
 }));
-// Only session authentication is substituted; routes, authorization, SQL and transactions
-// are real.
+// Only session authentication is substituted; server functions, authorization, SQL and
+// transactions are real.
 vi.mock("./index", () => ({
   auth: {
     api: {
@@ -41,14 +41,21 @@ vi.mock("./index", () => ({
     },
   },
 }));
+// Server functions run through the harness: CSRF check, middleware, validator and handler.
+vi.mock("@tanstack/react-start", async (importOriginal) =>
+  (await import("./server-fn-harness")).mockReactStart(await importOriginal()),
+);
+vi.mock(
+  "@tanstack/react-start/server",
+  async () => (await import("./server-fn-harness")).startServerMock,
+);
 
 import { db } from "../db/index";
 import { assignRole, saveRole, searchUsers, unassignRole } from "./rbac-store";
 import { getUserDetail, listUsers } from "./user-directory";
-import { Route as roleMembersRoute } from "../routes/api/rbac/role-members";
-import { Route as peopleSearchRoute } from "../routes/api/rbac/users";
-import { Route as usersRoute } from "../routes/api/users/index";
-import { Route as userRoute } from "../routes/api/users/$userId";
+import { getRoleMembers, searchPeople } from "./rbac.functions";
+import { callServerFn } from "./server-fn-harness";
+import { getUser, getUsers } from "./users.functions";
 
 const root = "directory-root";
 const ordinary = "directory-ordinary";
@@ -61,12 +68,11 @@ const draftRole = (key, permissions = []) => ({
   parents: [],
 });
 
-function get(route, actor, path, params = {}) {
-  return route.options.server.handlers.GET({
-    request: new Request(`http://localhost:35439${path}`, {
-      headers: actor ? { "x-test-user": actor } : {},
-    }),
-    params,
+/** Calls a server function from this app's pages, as `actor` (signed out when null). */
+function call(fn, actor, data) {
+  return callServerFn(fn, {
+    headers: { ...(actor ? { "x-test-user": actor } : {}), Origin: "http://localhost:35439" },
+    data,
   });
 }
 
@@ -204,10 +210,10 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
 
   const names = (page) => page.users.map((user) => user.id);
 
-  it("refuses anyone without the permission, at HTTP and in the repository", async () => {
-    expect((await get(usersRoute, null, "/api/users")).status).toBe(401);
-    expect((await get(usersRoute, ordinary, "/api/users")).status).toBe(403);
-    expect((await get(userRoute, ordinary, `/api/users/${ada}`, { userId: ada })).status).toBe(403);
+  it("refuses anyone without the permission, in server functions and the repository", async () => {
+    expect((await call(getUsers, null, {})).status).toBe(401);
+    expect((await call(getUsers, ordinary, {})).status).toBe(403);
+    expect((await call(getUser, ordinary, { userId: ada })).status).toBe(403);
     await expect(listUsers(ordinary, {})).rejects.toMatchObject({ status: 403 });
     await expect(getUserDetail(ordinary, chiara)).rejects.toMatchObject({ status: 403 });
     // Finding people is not enough to browse what their accounts prove.
@@ -258,35 +264,29 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
   });
 
   it("keeps people without a known email visible, searchable, and assignable", async () => {
-    const search = await get(
-      peopleSearchRoute,
-      root,
-      `/api/rbac/users?q=${ordinary}&role_id=${moderator.id}`,
-    );
+    const search = await call(searchPeople, root, { query: ordinary, roleId: moderator.id });
     expect(search.status).toBe(200);
-    expect(await search.json()).toEqual([
+    expect(search.result).toEqual([
       expect.objectContaining({ id: ordinary, email: null, holdsRole: false }),
     ]);
 
-    const directory = await get(usersRoute, root, `/api/users?q=${ordinary}`);
+    const directory = await call(getUsers, root, { q: ordinary });
     expect(directory.status).toBe(200);
-    expect((await directory.json()).users).toEqual([
+    expect(directory.result.users).toEqual([
       expect.objectContaining({ id: ordinary, email: null }),
     ]);
 
-    const detail = await get(userRoute, root, `/api/users/${ordinary}`, { userId: ordinary });
+    const detail = await call(getUser, root, { userId: ordinary });
     expect(detail.status).toBe(200);
-    expect(await detail.json()).toMatchObject({ id: ordinary, email: null });
+    expect(detail.result).toMatchObject({ id: ordinary, email: null });
+    // Personal data stays out of shared caches.
+    expect(detail.headers.get("cache-control")).toBe("no-store");
 
     try {
       await assignRole(root, moderator.id, ordinary);
-      const members = await get(
-        roleMembersRoute,
-        root,
-        `/api/rbac/role-members?role_id=${moderator.id}`,
-      );
+      const members = await call(getRoleMembers, root, { roleId: moderator.id });
       expect(members.status).toBe(200);
-      expect((await members.json()).members).toContainEqual(
+      expect(members.result.members).toContainEqual(
         expect.objectContaining({ userId: ordinary, email: null }),
       );
     } finally {
@@ -339,9 +339,9 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
     });
     const detail = await getUserDetail(browser, bruno);
     expect(detail).toMatchObject({ assignedRoles: null, roles: null, permissions: null });
-    const response = await get(usersRoute, browser, `/api/users?q=${tag}&telegram=yes`);
+    const response = await call(getUsers, browser, { q: tag, telegram: "yes" });
     expect(response.status).toBe(200);
-    expect((await response.json()).users.map((user) => user.id)).toEqual([ada]);
+    expect(response.result.users.map((user) => user.id)).toEqual([ada]);
   });
 
   it("shows one person's accounts, live status, and every role they hold", async () => {
@@ -370,8 +370,6 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
     expect(other.roles).toEqual([moderator.key]);
 
     await expect(getUserDetail(root, unique("missing"))).rejects.toMatchObject({ status: 404 });
-    expect(
-      (await get(userRoute, root, "/api/users/missing", { userId: unique("missing") })).status,
-    ).toBe(404);
+    expect((await call(getUser, root, { userId: unique("missing") })).status).toBe(404);
   });
 });
