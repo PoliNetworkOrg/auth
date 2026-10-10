@@ -66,6 +66,24 @@ export function findBundleProblems(sources) {
   return problems;
 }
 
+/**
+ * The dev sign-in (`src/dev/`) is imported only behind `import.meta.env.DEV`, so a
+ * production build must not contain it. Its shared marker, `DEV_LOGIN_KIND` in
+ * `src/dev/shared.ts`, is how a leak would show: anything that pulls the dev code in
+ * pulls the marker in with it.
+ */
+export const DEV_LOGIN_MARKER = "pn-dev-login";
+
+/** @param {{ path: string, code: string }[]} sources */
+export function findDevLoginLeaks(sources) {
+  return sources
+    .filter(({ code }) => code.includes(DEV_LOGIN_MARKER))
+    .map(
+      ({ path }) =>
+        `the development-only sign-in is bundled into ${path}. Import \`src/dev/\` only behind \`import.meta.env.DEV\`.`,
+    );
+}
+
 async function serverChunks(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = await Promise.all(
@@ -78,15 +96,27 @@ async function serverChunks(directory) {
   return files.flat();
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const serverDir = fileURLToPath(new URL("../.output/server", import.meta.url));
-  const chunks = await serverChunks(serverDir);
-  const sources = await Promise.all(
+async function readChunks(directory) {
+  const chunks = await serverChunks(directory);
+  return Promise.all(
     chunks.map(async (path) => ({
-      path: path.slice(serverDir.length + 1),
+      path: path.slice(directory.length + 1),
       code: await readFile(path, "utf8"),
     })),
   );
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const sources = await readChunks(fileURLToPath(new URL("../.output/server", import.meta.url)));
+  const browserSources = await readChunks(
+    fileURLToPath(new URL("../.output/public", import.meta.url)),
+  );
+
+  const leaks = findDevLoginLeaks([...sources, ...browserSources]);
+  if (leaks.length) {
+    console.error(`Production build check failed:\n- ${leaks.join("\n- ")}`);
+    process.exit(1);
+  }
 
   const problems = findBundleProblems(sources);
   if (problems.length) {
@@ -98,5 +128,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(1);
   }
 
-  console.info("Server bundle check passed: per-request state is not duplicated.");
+  console.info(
+    "Server bundle check passed: per-request state is not duplicated and the dev sign-in is absent.",
+  );
 }

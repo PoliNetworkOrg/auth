@@ -32,6 +32,7 @@ import { Route as AccessRolesRoleIdRouteImport } from './routes/access/roles/$ro
 import { Route as AccessRolesNewRouteImport } from './routes/access/roles/new'
 import { Route as ApiAccountsUnlinkRouteImport } from './routes/api/accounts/unlink'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiDevLoginRouteImport } from './routes/api/dev/login'
 import { Route as ApiIdpAccessRouteImport } from './routes/api/idp/access'
 import { Route as ApiInternalAccessSnapshotRouteImport } from './routes/api/internal/access-snapshot'
 import { Route as ApiOidcClientUpdateRouteImport } from './routes/api/oidc/client-update'
@@ -162,6 +163,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDevLoginRoute = ApiDevLoginRouteImport.update({
+  id: '/api/dev/login',
+  path: '/api/dev/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiIdpAccessRoute = ApiIdpAccessRouteImport.update({
   id: '/api/idp/access',
   path: '/api/idp/access',
@@ -251,6 +257,7 @@ export interface FileRoutesByFullPath {
   '/access/roles/new': typeof AccessRolesNewRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/dev/login': typeof ApiDevLoginRoute
   '/api/idp/access': typeof ApiIdpAccessRoute
   '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
@@ -286,6 +293,7 @@ export interface FileRoutesByTo {
   '/access/roles/new': typeof AccessRolesNewRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/dev/login': typeof ApiDevLoginRoute
   '/api/idp/access': typeof ApiIdpAccessRoute
   '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
@@ -325,6 +333,7 @@ export interface FileRoutesById {
   '/access/roles/new': typeof AccessRolesNewRoute
   '/api/accounts/unlink': typeof ApiAccountsUnlinkRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/dev/login': typeof ApiDevLoginRoute
   '/api/idp/access': typeof ApiIdpAccessRoute
   '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
   '/api/oidc/client-update': typeof ApiOidcClientUpdateRoute
@@ -365,6 +374,7 @@ export interface FileRouteTypes {
     | '/access/roles/new'
     | '/api/accounts/unlink'
     | '/api/auth/$'
+    | '/api/dev/login'
     | '/api/idp/access'
     | '/api/internal/access-snapshot'
     | '/api/oidc/client-update'
@@ -400,6 +410,7 @@ export interface FileRouteTypes {
     | '/access/roles/new'
     | '/api/accounts/unlink'
     | '/api/auth/$'
+    | '/api/dev/login'
     | '/api/idp/access'
     | '/api/internal/access-snapshot'
     | '/api/oidc/client-update'
@@ -438,6 +449,7 @@ export interface FileRouteTypes {
     | '/access/roles/new'
     | '/api/accounts/unlink'
     | '/api/auth/$'
+    | '/api/dev/login'
     | '/api/idp/access'
     | '/api/internal/access-snapshot'
     | '/api/oidc/client-update'
@@ -466,6 +478,7 @@ export interface RootRouteChildren {
   ApiStudentVerificationRoute: typeof ApiStudentVerificationRoute
   ApiAccountsUnlinkRoute: typeof ApiAccountsUnlinkRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiDevLoginRoute: typeof ApiDevLoginRoute
   ApiIdpAccessRoute: typeof ApiIdpAccessRoute
   ApiInternalAccessSnapshotRoute: typeof ApiInternalAccessSnapshotRoute
   ApiOidcClientUpdateRoute: typeof ApiOidcClientUpdateRoute
@@ -644,6 +657,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/dev/login': {
+      id: '/api/dev/login'
+      path: '/api/dev/login'
+      fullPath: '/api/dev/login'
+      preLoaderRoute: typeof ApiDevLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/idp/access': {
       id: '/api/idp/access'
       path: '/api/idp/access'
@@ -804,6 +824,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiStudentVerificationRoute: ApiStudentVerificationRoute,
   ApiAccountsUnlinkRoute: ApiAccountsUnlinkRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiDevLoginRoute: ApiDevLoginRoute,
   ApiIdpAccessRoute: ApiIdpAccessRoute,
   ApiInternalAccessSnapshotRoute: ApiInternalAccessSnapshotRoute,
   ApiOidcClientUpdateRoute: ApiOidcClientUpdateRoute,
