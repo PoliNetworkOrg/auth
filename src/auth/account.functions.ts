@@ -3,6 +3,7 @@ import { getRequest } from "@tanstack/react-start/server";
 import { APIError } from "better-auth/api";
 import { z } from "zod";
 import { validate } from "@/lib/validate";
+import { ownSessionToken, readAccountOverview } from "./account-overview";
 import { disconnectAccount } from "./accounts";
 import { getIdentity } from "./identity";
 import { auth } from "./index";
@@ -11,18 +12,25 @@ import { confirmStudentVerification, requestStudentVerification } from "./studen
 
 /**
  * Everything the account page shows about the signed-in person: the accounts they linked,
- * their identity (the same claims `/api/identity` returns), and their passkeys.
+ * their identity (the same claims `/api/identity` returns), their passkeys, and the overview
+ * from `readAccountOverview` (addresses, groups, permissions, sessions).
  */
 export const getAccount = createServerFn({ method: "GET" })
   .middleware([sessionMiddleware])
   .handler(async ({ context }) => {
     const headers = getRequest().headers;
-    const [accounts, identity, passkeys] = await Promise.all([
+    const [accounts, identity, passkeys, current] = await Promise.all([
       auth.api.listUserAccounts({ headers }),
       getIdentity(context.session.userId),
       // The `after` hook in `./index` names each passkey after its authenticator.
       auth.api.listPasskeys({ headers }),
+      auth.api.getSession({ headers }),
     ]);
+    const overview = await readAccountOverview(
+      context.session.userId,
+      current?.session.id ?? "",
+      identity,
+    );
     return {
       accounts: accounts.map(({ id, providerId, accountId }) => ({ id, providerId, accountId })),
       identity,
@@ -31,7 +39,30 @@ export const getAccount = createServerFn({ method: "GET" })
         name: name ?? null,
         createdAt,
       })),
+      ...overview,
     };
+  });
+
+export type AccountDetails = Awaited<ReturnType<typeof getAccount>>;
+
+/**
+ * Ends one of the person's other sessions. It goes through Better Auth instead of deleting the
+ * row, so the OAuth provider's delete hook also revokes the apps' tokens from that session.
+ */
+export const revokeSessionFn = createServerFn({ method: "POST" })
+  .middleware([sessionMiddleware])
+  .validator(validate(z.object({ sessionId: z.string().min(1).max(200) })))
+  .handler(async ({ context, data }) => {
+    const token = await ownSessionToken(context.session.userId, data.sessionId);
+    if (!token) return;
+    await auth.api.revokeSession({ body: { token }, headers: getRequest().headers });
+  });
+
+/** Ends every session but the one making the request, through Better Auth for the same reason. */
+export const revokeOtherSessionsFn = createServerFn({ method: "POST" })
+  .middleware([sessionMiddleware])
+  .handler(async () => {
+    await auth.api.revokeOtherSessions({ headers: getRequest().headers });
   });
 
 /** Removes one of the person's linked accounts; the last login method is refused. */

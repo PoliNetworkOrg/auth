@@ -11,6 +11,9 @@ const buttonVariants = cva(
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+        /** For actions that end something but are safe to repeat, like signing out. */
+        "destructive-soft":
+          "border border-destructive/25 text-destructive/90 hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive active:scale-[0.97] dark:border-red-300/20 dark:text-red-300/90 dark:hover:border-red-300/35 dark:hover:bg-destructive/15 dark:hover:text-red-300",
         outline:
           "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
