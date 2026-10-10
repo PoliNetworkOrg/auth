@@ -1,8 +1,8 @@
 # Authentication rate-limit audit
 
-Reviewed on 2026-10-10. Target: `PoliNetworkOrg/auth`, commit `82af618`, in
-`/home/dev/.t3/worktrees/auth/fix-rate-limit-normal-usage`, branch
-`fix/rate-limit-normal-usage`. The admin checkout has not been changed.
+Reviewed on 2026-10-10. Target: `PoliNetworkOrg/auth`, commit
+[`82af618`](https://github.com/PoliNetworkOrg/auth/commit/82af618).
+The audit did not change the admin repository.
 
 The request is to keep protection against bots, brute-force attempts and denial
 of service while fixing rate limits that reject normal use. This is an audit of
@@ -25,7 +25,8 @@ was a hypothesis, not an observed cause. It must not be presented as the finding
 
 ## Resolution (2026-10-11)
 
-Implemented on `fix/rate-limit-normal-usage`. The findings below are kept as the audit's
+Implemented in [`95ecf71`](https://github.com/PoliNetworkOrg/auth/commit/95ecf71).
+The findings below are kept as the audit's
 historical evidence; the README section "Rate limits and client addresses" holds the current
 rules.
 
@@ -107,8 +108,10 @@ the declared configuration and upstream behavior, not a captured live request.
 `CF-Connecting-IP` carries Cloudflare's visitor address and is not one of the
 headers removed by Traefik's forwarded-header middleware. No repository header
 rewrite was found on the Auth route. The CD Auth Deployment lacked the new
-required `AUTH_CLIENT_IP_HEADER`; the local `fix/auth-client-ip-header` worktree
-now sets it to `cf-connecting-ip`. Vaultwarden already uses the same header.
+required `AUTH_CLIENT_IP_HEADER`.
+[Deployment PR #25](https://github.com/PoliNetworkOrg/polinetwork-cd/pull/25)
+sets it to `cf-connecting-ip` and was merged before the Auth fix. Vaultwarden
+already uses the same header.
 
 Terraform's active `environments/k3s/network.tf` attaches an NSG containing
 `DenyAllInbound` to the node subnet. The node's public IP is for outbound
@@ -124,8 +127,8 @@ IdP URL. Their token traffic consequently shares the fallback bucket when it
 carries no accepted address, confirming the shared-server capacity concern.
 
 Remaining runtime checks are the reconciled manifests/image, headers reaching
-Auth, and the remote tunnel/Cloudflare header-transform settings. No live Azure
-or Cloudflare configuration was inspected, and nothing was pushed or deployed.
+Auth, and the remote tunnel/Cloudflare header-transform settings. This audit
+did not inspect live Azure or Cloudflare configuration.
 
 References: [Traefik forwarded-header defaults](https://doc.traefik.io/traefik/reference/install-configuration/entrypoints/#forwarded-headers),
 [Traefik forwarded-header implementation](https://github.com/traefik/traefik/blob/master/pkg/middlewares/forwardedheaders/forwarded_header.go),
@@ -286,14 +289,15 @@ deployed image dependencies remain outside source visibility. Application
 database limits remain one layer of protection; this audit makes no claim to
 verify live Cloudflare or network-level protection.
 
-## Evidence and handoff
+## Evidence and acceptance criteria
 
-Trusted harnesses are in
-`/home/dev/.t3/scratch/admin-rate-limit-audit-20261010/repro.mjs` and
-`postgres-repro.mjs`. They use dummy identities, IPs and credentials. The first
-uses the actual HTTP handler with in-memory fixture data and database storage;
-the second exercises the actual limiter with PostgreSQL and the repository's
-Drizzle schema. No production request or credential was used.
+Maintained regression coverage is in
+[`src/auth/rate-limit.test.ts`](../src/auth/rate-limit.test.ts) and
+[`src/auth/rate-limit.integration.test.ts`](../src/auth/rate-limit.integration.test.ts).
+The initial reproductions used the actual HTTP handler with in-memory fixture
+data and database storage, and the actual limiter with PostgreSQL and the
+repository's Drizzle schema. All fixtures used dummy identities, addresses and
+credentials. No production request or credential was used.
 
 Execution used preinstalled `node:24.19.0-bookworm` and `postgres:17-alpine`
 images, read-only target/toolchain mounts, an internal-only Docker network (or
@@ -301,14 +305,11 @@ no network), scratch-local environment and storage, explicit memory/CPU/process
 limits, bounded temporary files and a 45-second command timeout. Temporary DB
 containers are task-owned and stopped after validation.
 
-Opus 5.5 should implement and validate the fix in the fresh Auth worktree. The
-acceptance criteria are independent caller quotas under the documented trusted
+The acceptance criteria are independent caller quotas under the documented trusted
 header contract, sustained below-quota traffic without false 429s, exact
 concurrent quota enforcement in real PostgreSQL, bounded token traffic,
 cross-replica state, accurate expiry/retry handling and no weakened challenge or
-client-authentication controls. Run repository-required checks and a production
-build; use Conventional Commits. Keep changes local unless publication is
-separately requested.
+client-authentication controls, passing repository checks and a production build.
 
 Primary references: [Better Auth rate limiting](https://better-auth.com/docs/concepts/rate-limit),
 [OAuth provider limits](https://better-auth.com/docs/plugins/oauth-provider#rate-limiting),
