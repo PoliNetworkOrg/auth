@@ -18,22 +18,17 @@ import {
 } from "lucide-react";
 import { authClient } from "@/auth/client";
 import {
+  credentialLabels,
   draftFromClient,
   normalizeClientDraft,
   type OidcClientDraft,
   type OidcClientDraftErrors,
 } from "@/auth/oidc-clients";
-import {
-  getOidcClient,
-  linkOidcResourceFn,
-  saveServiceJwksFn,
-  updateOidcClientFn,
-} from "@/auth/oidc.functions";
+import { getOidcClient, getOidcClientOptions, updateOidcClientFn } from "@/auth/oidc.functions";
 import { requireAccess, useAccess } from "@/components/access";
 import { CopyButton } from "@/components/copy-button";
 import { AppLogo } from "@/components/oidc/app-logo";
 import { ClientForm } from "@/components/oidc/client-form";
-import { publicJwks } from "@/components/oidc/public-jwks";
 import { CredentialField, CredentialsReveal } from "@/components/oidc/secret-reveal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,22 +44,32 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { RouteError } from "@/components/route-error";
 import { ActionError, errorFields, errorMessage } from "@/lib/action-error";
 
 export const Route = createFileRoute("/applications/$clientId")({
   head: () => ({ meta: [{ title: "Application · PoliNetwork Auth" }] }),
   beforeLoad: ({ context }) => requireAccess(context.viewer, "idp:applications:read"),
-  loader: ({ params }) => getOidcClient({ data: { clientId: params.clientId } }),
+  loader: async ({ params }) => {
+    const [client, options] = await Promise.all([
+      getOidcClient({ data: { clientId: params.clientId } }),
+      getOidcClientOptions(),
+    ]);
+    return { client, ...options };
+  },
   // Another application starts from a clean page: no notice, revealed secret, or draft.
   remountDeps: ({ params }) => params.clientId,
   component: ApplicationDetail,
   errorComponent: ApplicationError,
 });
 
-function prettyJwks(jwks: string | null) {
-  return jwks ? JSON.stringify(JSON.parse(jwks), null, 2) : "";
+function keyCount(jwks: string) {
+  try {
+    const count = (JSON.parse(jwks) as { keys?: unknown[] }).keys?.length ?? 0;
+    return count === 1 ? "1 key" : `${count} keys`;
+  } catch {
+    return "Unreadable";
+  }
 }
 
 function formatDate(value: string | null) {
@@ -101,27 +106,18 @@ function ToggleRow({
 
 function ApplicationDetail() {
   const { clientId } = Route.useParams();
-  const client = Route.useLoaderData();
+  const { client, apiAccess } = Route.useLoaderData();
   const navigate = useNavigate();
   const router = useRouter();
   const { can, isMasterAdmin } = useAccess();
   const canWrite = can("idp:applications:write");
 
-  const [busy, setBusy] = useState<
-    "save" | "toggle" | "rotate" | "delete" | "jwks" | "link" | null
-  >(null);
+  const [busy, setBusy] = useState<"save" | "toggle" | "rotate" | "delete" | null>(null);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<OidcClientDraftErrors | undefined>();
   const [notice, setNotice] = useState("");
   const [formResetKey, setFormResetKey] = useState(0);
   const [rotatedSecret, setRotatedSecret] = useState<string | null>(null);
-  const [jwksDraft, setJwksDraft] = useState(() => prettyJwks(client.jwks));
-  // Shows the saved JWKS once it changes on the server, replacing what was typed.
-  const [loadedJwks, setLoadedJwks] = useState(client.jwks);
-  if (client.jwks !== loadedJwks) {
-    setLoadedJwks(client.jwks);
-    setJwksDraft(prettyJwks(client.jwks));
-  }
   const [rotateOpen, setRotateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
@@ -137,11 +133,20 @@ function ApplicationDetail() {
     setError("");
     setFieldErrors(undefined);
     try {
-      await updateOidcClientFn({ data: { clientId, draft: normalizeClientDraft(input) } });
+      const result = await updateOidcClientFn({
+        data: { clientId, draft: normalizeClientDraft(input) },
+      });
+      // A newly issued secret is shown before the refresh, which could fail and lose it.
+      if (result.clientSecret) setRotatedSecret(result.clientSecret);
+      else if (result.client.credential !== "secret") setRotatedSecret(null);
+      if (result.secretPending)
+        setError("Settings saved, but no secret was issued. Rotate the secret to get one.");
+      setNotice(
+        result.clientSecret ? "Settings saved. A new client secret was issued." : "Settings saved.",
+      );
       await router.invalidate({ sync: true });
       // The form now reloads the saved values from the fresh loader data.
       setFormResetKey((value) => value + 1);
-      setNotice("Settings saved.");
     } catch (cause) {
       // Field errors come back in the form's own shape, item lists included.
       setFieldErrors(errorFields<OidcClientDraftErrors>(cause));
@@ -155,7 +160,7 @@ function ApplicationDetail() {
     setBusy("toggle");
     setError("");
     try {
-      const updated = await updateOidcClientFn({ data: { clientId, ...patch } });
+      const { client: updated } = await updateOidcClientFn({ data: { clientId, ...patch } });
       await router.invalidate({ sync: true });
       setNotice(
         patch.disabled !== undefined
@@ -212,40 +217,9 @@ function ApplicationDetail() {
     }
   }
 
-  async function saveJwks() {
-    setBusy("jwks");
-    setError("");
-    try {
-      const jwks = publicJwks(jwksDraft);
-      await saveServiceJwksFn({ data: { clientId, jwks } });
-      await router.invalidate({ sync: true });
-      setNotice("Public JWKS saved.");
-    } catch (cause) {
-      setError(errorMessage(cause, "Unable to save the public JWKS."));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function linkResource() {
-    setBusy("link");
-    setError("");
-    try {
-      const resource = client.clientCredentialsScopes.includes("idp:access:read")
-        ? "internal"
-        : "backend";
-      await linkOidcResourceFn({ data: { clientId, resource } });
-      await router.invalidate({ sync: true });
-      setNotice("Resource linked.");
-    } catch (cause) {
-      setError(errorMessage(cause, "Unable to link the configured resource."));
-    } finally {
-      setBusy(null);
-    }
-  }
-
   const deleteReady = deleteConfirmation.trim() === client.name.trim();
-  const canManage = client.service ? isMasterAdmin : canWrite;
+  const canManage = client.restricted ? isMasterAdmin : canWrite;
+  const signsIn = client.grantTypes.includes("authorization_code");
 
   return (
     <div className="space-y-8">
@@ -273,12 +247,16 @@ function ApplicationDetail() {
                 </Badge>
               )}
               <Badge className="bg-card text-muted-foreground">
-                {client.confidential ? "Confidential" : "Public"}
+                {credentialLabels[client.credential]}
               </Badge>
-              {client.service && <Badge className="bg-card text-muted-foreground">Service</Badge>}
-              <Badge className="bg-card text-muted-foreground">
-                {client.applicationType === "native" ? "Native" : "Web"}
-              </Badge>
+              {client.restricted && (
+                <Badge className="bg-card text-muted-foreground">API access</Badge>
+              )}
+              {signsIn && (
+                <Badge className="bg-card text-muted-foreground">
+                  {client.applicationType === "native" ? "Native" : "Web"}
+                </Badge>
+              )}
             </div>
             <div className="mt-2 flex items-center gap-1 text-sm text-muted-foreground">
               <code className="truncate font-mono text-xs">{client.clientId}</code>
@@ -316,111 +294,33 @@ function ApplicationDetail() {
 
       <div className="grid items-start gap-8 lg:grid-cols-[1fr_340px]">
         <div className="space-y-8">
-          {client.service ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Service configuration</CardTitle>
-                <CardDescription>
-                  Only Master Admin may change this client's access.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm">
-                <div>
-                  <span className="font-medium">Authentication</span>
-                  <p className="font-mono text-xs">{client.authMethod}</p>
-                </div>
-                <div>
-                  <span className="font-medium">Grants</span>
-                  <p className="font-mono text-xs">{client.grantTypes.join(" ")}</p>
-                </div>
-                <div>
-                  <span className="font-medium">Scopes</span>
-                  <p className="font-mono text-xs break-all">
-                    {(client.clientCredentialsScopes.length
-                      ? client.clientCredentialsScopes
-                      : client.scopes
-                    ).join(" ")}
-                  </p>
-                </div>
-                <div>
-                  <span className="font-medium">Linked resources</span>
-                  <p className="font-mono text-xs break-all">
-                    {client.resourceIds.join(" ") || "None"}
-                  </p>
-                </div>
-                {client.enableEndSession && <p>End-session is enabled for this client.</p>}
-                {client.resourceIds.length === 0 && canManage && (
-                  <Button
-                    variant="outline"
-                    disabled={busy !== null}
-                    onClick={() => void linkResource()}
-                  >
-                    {busy === "link" && (
-                      <LoaderCircle className="animate-spin" aria-hidden="true" />
-                    )}
-                    Link configured resource
-                  </Button>
-                )}
-                {client.jwks && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span>Public JWKS</span>
-                      <CopyButton value={client.jwks} label="Copy public JWKS" size="icon-xs" />
-                    </div>
-                    {canManage && (
-                      <>
-                        <p className="text-xs text-muted-foreground">
-                          For rotation, add the new public key, deploy its private key to the
-                          service, then remove the old public key after the overlap.
-                        </p>
-                        <Textarea
-                          rows={8}
-                          className="font-mono text-xs"
-                          value={jwksDraft}
-                          onChange={(event) => setJwksDraft(event.target.value)}
-                          aria-label="Public JWKS"
-                        />
-                        <Button
-                          variant="outline"
-                          disabled={busy !== null}
-                          onClick={() => void saveJwks()}
-                        >
-                          {busy === "jwks" && (
-                            <LoaderCircle className="animate-spin" aria-hidden="true" />
-                          )}
-                          Save public JWKS
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>Settings</CardTitle>
-                <CardDescription>
-                  Changes apply to the next sign-in. Redirect URIs must match your app exactly.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <fieldset disabled={!canWrite} className="border-0 p-0">
-                  <ClientForm
-                    mode="edit"
-                    initial={draftFromClient(client)}
-                    confidential={client.confidential}
-                    readOnly={!canWrite}
-                    busy={busy === "save"}
-                    resetKey={formResetKey}
-                    serverErrors={fieldErrors}
-                    submitLabel="Save changes"
-                    onSubmit={(draft) => void save(draft)}
-                  />
-                </fieldset>
-              </CardContent>
-            </Card>
-          )}
+          <Card>
+            <CardHeader>
+              <CardTitle>Settings</CardTitle>
+              <CardDescription>
+                {client.restricted && !isMasterAdmin
+                  ? "This application has API access, so only Master Admin can change it."
+                  : "Changes apply to the next sign-in or token request. Redirect URIs must match your app exactly."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <fieldset disabled={!canManage} className="border-0 p-0">
+                <ClientForm
+                  mode="edit"
+                  initial={draftFromClient(client)}
+                  savedCredential={client.credential}
+                  apiAccess={apiAccess}
+                  canGrantApiAccess={isMasterAdmin}
+                  readOnly={!canManage}
+                  busy={busy === "save"}
+                  resetKey={formResetKey}
+                  serverErrors={fieldErrors}
+                  submitLabel="Save changes"
+                  onSubmit={(draft) => void save(draft)}
+                />
+              </fieldset>
+            </CardContent>
+          </Card>
 
           {canManage && (
             <Card className="border-destructive/40">
@@ -459,9 +359,9 @@ function ApplicationDetail() {
                 Credentials
               </CardTitle>
               <CardDescription>
-                {client.authMethod === "private_key_jwt"
+                {client.credential === "private-key"
                   ? "The client signs assertions with its own private key. Only its public JWKS is stored here."
-                  : client.confidential
+                  : client.credential === "secret"
                     ? "The client authenticates to the token endpoint with its ID and secret."
                     : "Public client: no secret. The app must use PKCE."}
               </CardDescription>
@@ -477,7 +377,18 @@ function ApplicationDetail() {
               ) : (
                 <CredentialField label="Client ID" value={client.clientId} />
               )}
-              {client.confidential && client.authMethod !== "private_key_jwt" && !rotatedSecret && (
+              {client.credential === "private-key" && client.jwks && (
+                <div className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
+                  <span className="text-sm">
+                    Public JWKS
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {keyCount(client.jwks)}
+                    </span>
+                  </span>
+                  <CopyButton value={client.jwks} label="Copy public JWKS" size="icon-xs" />
+                </div>
+              )}
+              {client.credential === "secret" && !rotatedSecret && (
                 <div>
                   <p className="text-xs font-medium text-muted-foreground">Client secret</p>
                   <div className="mt-1 flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2">
@@ -522,13 +433,15 @@ function ApplicationDetail() {
                 description={
                   client.disabled
                     ? "Sign-ins are paused. Existing tokens expire within minutes."
-                    : "People can sign in through this application."
+                    : signsIn
+                      ? "People can sign in through this application."
+                      : "The application can request tokens."
                 }
                 checked={!client.disabled}
                 disabled={!canManage || busy !== null}
                 onCheckedChange={(checked) => void toggle({ disabled: !checked })}
               />
-              {!client.service && (
+              {signsIn && (
                 <ToggleRow
                   id="client-skip-consent"
                   title="Skip consent screen"

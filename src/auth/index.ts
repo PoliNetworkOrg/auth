@@ -19,8 +19,14 @@ import { startKeyPruning } from "./key-pruning";
 import { logAuthorizationDenial } from "./denial-log";
 import { hasIdpPermission } from "./idp-access";
 import { canAdministerIdp } from "./oidc-admin";
-import { OIDC_CLIENT_REFERENCE } from "./oidc-clients";
-import { isServiceClient } from "./service-client-policy";
+import { validateClientJwks } from "./client-jwks";
+import {
+  apiScopes,
+  isApiScope,
+  isRestrictedClient,
+  OIDC_CLIENT_REFERENCE,
+  parsePublicJwks,
+} from "./oidc-clients";
 import { isLinkOnlyProvider, standardIdTokenClaims } from "./policy";
 import { providers } from "./providers";
 import {
@@ -35,14 +41,7 @@ const backendScopes = [
   "profile",
   "email",
   "offline_access",
-  "backend:admin",
-  "backend:public:read",
-  "backend:tg:read",
-  "backend:tg:ingest",
-  "backend:tg:groups:sync",
-  "backend:tg:audit",
-  "backend:tg:act-as",
-  "backend:tg:events",
+  ...apiScopes.filter((scope) => scope.resource === "backend").map((scope) => scope.id),
 ];
 const serviceOAuthEnabled = Boolean(
   env.OAUTH_BACKEND_RESOURCE_URI && env.OAUTH_INTERNAL_RESOURCE_URI,
@@ -106,41 +105,64 @@ export const auth = betterAuth({
         "/oauth2/client/rotate-secret",
         "/admin/oauth2/update-client",
       ].includes(context.path);
-      let protectedClient = false;
-      if (creation)
-        protectedClient =
-          body?.token_endpoint_auth_method === "private_key_jwt" ||
-          (typeof body?.scope === "string" &&
-            body.scope
-              .split(" ")
-              .some((scope) => scope.startsWith("backend:") || scope === "idp:access:read"));
+      // Metadata that grants API access, in a create body or an update.
+      const grantsApiAccess = (metadata: Record<string, unknown> | undefined) =>
+        (Array.isArray(metadata?.grant_types) &&
+          // The provider trims grant names before storing them, so this must too.
+          metadata.grant_types.some(
+            (grant) => typeof grant === "string" && grant.trim() === "client_credentials",
+          )) ||
+        (Array.isArray(metadata?.client_credentials_scopes) &&
+          metadata.client_credentials_scopes.length > 0) ||
+        (typeof metadata?.scope === "string" && metadata.scope.split(" ").some(isApiScope));
+      let protectedClient = creation && grantsApiAccess(body);
       if (mutation && typeof body?.client_id === "string") {
         const [client] = await db
           .select({
-            tokenEndpointAuthMethod: schema.oauthClient.tokenEndpointAuthMethod,
             grantTypes: schema.oauthClient.grantTypes,
             clientCredentialsScopes: schema.oauthClient.clientCredentialsScopes,
             scopes: schema.oauthClient.scopes,
           })
           .from(schema.oauthClient)
           .where(eq(schema.oauthClient.clientId, body.client_id));
-        protectedClient = Boolean(client && isServiceClient(client));
-        const update = body.update as Record<string, unknown> | undefined;
-        if (
-          update?.token_endpoint_auth_method === "private_key_jwt" ||
-          (typeof update?.scope === "string" &&
-            update.scope
-              .split(" ")
-              .some((scope) => scope.startsWith("backend:") || scope === "idp:access:read"))
-        )
-          protectedClient = true;
+        const links = await db
+          .select({ resourceId: schema.oauthClientResource.resourceId })
+          .from(schema.oauthClientResource)
+          .where(eq(schema.oauthClientResource.clientId, body.client_id));
+        protectedClient =
+          Boolean(
+            client &&
+            isRestrictedClient({ ...client, resourceIds: links.map((link) => link.resourceId) }),
+          ) || grantsApiAccess(body.update as Record<string, unknown> | undefined);
+      }
+      // Any writer may register a private key, so every path that stores one applies the same
+      // key rules as the application form, not only the provider's looser ones.
+      const metadata = creation ? body : (body?.update as Record<string, unknown> | undefined);
+      if ((creation || mutation) && metadata?.jwks_uri !== undefined)
+        throw new APIError("BAD_REQUEST", {
+          code: "JWKS_URI_UNSUPPORTED",
+          message: "Register the public JWKS itself, not a jwks_uri.",
+        });
+      if ((creation || mutation) && metadata?.jwks !== undefined) {
+        try {
+          await validateClientJwks(
+            parsePublicJwks(JSON.stringify(metadata.jwks)),
+            db,
+            mutation && typeof body?.client_id === "string" ? body.client_id : undefined,
+          );
+        } catch (error) {
+          throw new APIError("BAD_REQUEST", {
+            code: "INVALID_JWKS",
+            message: error instanceof Error ? error.message : "The public JWKS is invalid.",
+          });
+        }
       }
       if (protectedClient) {
         const session = await auth.api.getSession({ headers: context.headers ?? new Headers() });
         if (!session || !(await canAdministerIdp(session.user.id, db, true)))
           throw new APIError("UNAUTHORIZED", {
             code: "MASTER_ADMIN_REQUIRED",
-            message: "Only Master Admin may manage service clients.",
+            message: "Only Master Admin may manage applications with API access.",
           });
       }
     }),
