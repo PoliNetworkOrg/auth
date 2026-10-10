@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
 import { type PermissionDraft, type RbacDraftErrors, emptyPermissionDraft } from "@/auth/rbac";
 import { getCatalog, savePermissionFn } from "@/auth/rbac.functions";
 import { requireAccess } from "@/components/access";
@@ -20,12 +21,10 @@ function NewPermission() {
   const navigate = useNavigate();
   const catalog = Route.useLoaderData();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const [fields, setFields] = useState<RbacDraftErrors>();
 
   async function create(draft: PermissionDraft) {
     setBusy(true);
-    setError("");
     setFields(undefined);
     try {
       const permission = await savePermissionFn({ data: { draft } });
@@ -35,7 +34,7 @@ function NewPermission() {
       });
     } catch (cause) {
       setFields(errorFields(cause));
-      setError(errorMessage(cause, "Unable to create the permission."));
+      toast.error(errorMessage(cause, "Unable to create the permission."));
     } finally {
       setBusy(false);
     }
@@ -55,14 +54,6 @@ function NewPermission() {
           Applications check for the key you choose here, so pick one you can live with.
         </p>
       </div>
-      {error && (
-        <p
-          role="alert"
-          className="rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
-        >
-          {error}
-        </p>
-      )}
       <Card>
         <CardContent className="pt-6">
           <PermissionForm

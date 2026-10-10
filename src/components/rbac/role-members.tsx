@@ -1,6 +1,7 @@
 import { Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { LoaderCircle, Search, UserMinus, UserPlus } from "lucide-react";
+import { toast } from "sonner";
 import type { RoleMemberPage, UserSearchResult } from "@/auth/rbac";
 import { changeRoleMemberFn, searchPeople } from "@/auth/rbac.functions";
 import { useAccess } from "@/components/access";
@@ -55,7 +56,6 @@ export function RoleMembers({
   const [results, setResults] = useState<UserSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [busyUser, setBusyUser] = useState("");
-  const [error, setError] = useState("");
   const canSearch = canWrite && can("idp:people:read");
   const members = page.members;
 
@@ -78,7 +78,7 @@ export function RoleMembers({
         })
         .catch((cause: unknown) => {
           if (!active) return;
-          setError(errorMessage(cause, "Unable to search people."));
+          toast.error(errorMessage(cause, "Unable to search people."));
           setSearching(false);
         });
     }, 250);
@@ -90,7 +90,6 @@ export function RoleMembers({
 
   async function change(action: "assign" | "unassign", userId: string) {
     setBusyUser(userId);
-    setError("");
     try {
       await changeRoleMemberFn({ data: { action, roleId, userId } });
       // Reloads this page's members, the role counts, and the person's own access, which
@@ -106,7 +105,7 @@ export function RoleMembers({
       );
       if (action === "assign") setQuery("");
     } catch (cause) {
-      setError(errorMessage(cause, "Unable to change who holds this role."));
+      toast.error(errorMessage(cause, "Unable to change who holds this role."));
     } finally {
       setBusyUser("");
     }
@@ -118,14 +117,6 @@ export function RoleMembers({
 
   return (
     <div className="space-y-5">
-      {error && (
-        <p
-          role="alert"
-          className="rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
-        >
-          {error}
-        </p>
-      )}
       {canSearch && (
         <div className="space-y-3">
           <div className="relative">

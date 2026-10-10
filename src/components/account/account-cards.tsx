@@ -2,6 +2,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { cn } from "cn";
 import { BadgeCheck, Link2, Unlink } from "lucide-react";
+import { toast } from "sonner";
 import {
   confirmStudentVerificationFn,
   requestStudentVerificationFn,
@@ -262,11 +263,9 @@ function StudentVerification({ onDone }: { onDone: () => void }) {
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
 
   async function submit() {
     setBusy(true);
-    setError("");
     try {
       if (!sent) {
         await requestStudentVerificationFn({ data: { email } });
@@ -275,10 +274,11 @@ function StudentVerification({ onDone }: { onDone: () => void }) {
         await confirmStudentVerificationFn({ data: { email, code } });
         // Shows the linked address and the student status before the dialog closes.
         await router.invalidate({ sync: true });
+        toast.success("Your student status is verified.");
         onDone();
       }
     } catch (cause) {
-      setError(errorMessage(cause, "Student verification failed."));
+      toast.error(errorMessage(cause, "Student verification failed."));
     } finally {
       setBusy(false);
     }
@@ -327,11 +327,6 @@ function StudentVerification({ onDone }: { onDone: () => void }) {
           {sent ? "Verify" : "Send code"}
         </Button>
       </div>
-      {error && (
-        <p role="alert" className="text-sm text-destructive dark:text-red-300">
-          {error}
-        </p>
-      )}
     </form>
   );
 }

@@ -1,6 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect } from "react";
-import { cn } from "cn";
 import { LogOut } from "lucide-react";
 import { getAccount, type AccountDetails } from "@/auth/account.functions";
 import type { Viewer } from "@/auth/session.functions";
@@ -9,7 +7,7 @@ import { GroupsPanel, PasskeysPanel, PermissionsPanel } from "@/components/accou
 import { DebugPanel } from "@/components/account/debug-panel";
 import { Spinner } from "@/components/account/panel";
 import { SessionsPanel } from "@/components/account/sessions-panel";
-import { useAccountActions, type AccountActions } from "@/components/account/use-account-actions";
+import { useAccountActions } from "@/components/account/use-account-actions";
 import { useProviders, useViewer } from "@/components/access";
 import { AppHeader } from "@/components/app-header";
 import { LoginPage } from "@/components/login-page";
@@ -28,28 +26,6 @@ function Home() {
   const details = Route.useLoaderData();
   if (!viewer || !details) return <LoginPage />;
   return <AccountPage key={viewer.user.id} viewer={viewer} details={details} />;
-}
-
-/** Slides in under the header; a notice clears itself, an error stays until the next action. */
-function Feedback({ actions }: { actions: AccountActions }) {
-  const { error, notice, dismiss } = actions;
-  useEffect(() => {
-    if (!notice) return;
-    const timer = setTimeout(dismiss, 4000);
-    return () => clearTimeout(timer);
-  }, [notice, dismiss]);
-  if (!error && !notice) return null;
-  return (
-    <p
-      role={error ? "alert" : "status"}
-      className={cn(
-        "animate-in rounded-xl border px-4 py-3 text-sm fade-in slide-in-from-top-1 duration-200 motion-reduce:animate-none",
-        error ? "border-destructive/50 bg-destructive/10" : "bg-card text-muted-foreground",
-      )}
-    >
-      {error || notice}
-    </p>
-  );
 }
 
 function AccountPage({ viewer, details }: { viewer: Viewer; details: AccountDetails }) {
@@ -81,8 +57,6 @@ function AccountPage({ viewer, details }: { viewer: Viewer; details: AccountDeta
             Sign out
           </Button>
         </header>
-
-        <Feedback actions={actions} />
 
         <AccountCards details={details} providers={providers} actions={actions} />
 

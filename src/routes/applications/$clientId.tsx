@@ -5,8 +5,9 @@ import {
   useNavigate,
   useRouter,
 } from "@tanstack/react-router";
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { ArrowLeft, Clock, LoaderCircle, RefreshCw, Trash2, Users } from "lucide-react";
+import { toast } from "sonner";
 import {
   credentialLabels,
   draftFromClient,
@@ -59,7 +60,7 @@ export const Route = createFileRoute("/applications/$clientId")({
     ]);
     return { client, ...options };
   },
-  // Another application starts from a clean page: no notice, revealed secret, or draft.
+  // Another application starts from a clean page: no revealed secret or draft.
   remountDeps: ({ params }) => params.clientId,
   component: ApplicationDetail,
   errorComponent: ApplicationError,
@@ -129,24 +130,15 @@ function ApplicationDetail() {
   const canWrite = can("idp:applications:write");
 
   const [busy, setBusy] = useState<"save" | "toggle" | "rotate" | "delete" | null>(null);
-  const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<OidcClientDraftErrors | undefined>();
-  const [notice, setNotice] = useState("");
   const [formResetKey, setFormResetKey] = useState(0);
   const [rotatedSecret, setRotatedSecret] = useState<string | null>(null);
   const [rotateOpen, setRotateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
 
-  useEffect(() => {
-    if (!notice) return;
-    const timer = setTimeout(() => setNotice(""), 4000);
-    return () => clearTimeout(timer);
-  }, [notice]);
-
   async function save(input: OidcClientDraft) {
     setBusy("save");
-    setError("");
     setFieldErrors(undefined);
     try {
       const result = await updateOidcClientFn({
@@ -155,7 +147,7 @@ function ApplicationDetail() {
       // A newly issued secret is shown before the refresh, which could fail and lose it.
       if (result.clientSecret) setRotatedSecret(result.clientSecret);
       else if (result.client.credential !== "secret") setRotatedSecret(null);
-      setNotice(
+      toast.success(
         result.clientSecret ? "Settings saved. A new client secret was issued." : "Settings saved.",
       );
       await router.invalidate({ sync: true });
@@ -164,7 +156,7 @@ function ApplicationDetail() {
     } catch (cause) {
       // Field errors come back in the form's own shape, item lists included.
       setFieldErrors(errorFields<OidcClientDraftErrors>(cause));
-      setError(errorMessage(cause, "Unable to save the application."));
+      toast.error(errorMessage(cause, "Unable to save the application."));
     } finally {
       setBusy(null);
     }
@@ -172,11 +164,10 @@ function ApplicationDetail() {
 
   async function toggle(patch: { disabled?: boolean; skipConsent?: boolean }) {
     setBusy("toggle");
-    setError("");
     try {
       const { client: updated } = await updateOidcClientFn({ data: { clientId, ...patch } });
       await router.invalidate({ sync: true });
-      setNotice(
+      toast.success(
         patch.disabled !== undefined
           ? updated.disabled
             ? "Sign-ins through this application are paused."
@@ -186,7 +177,7 @@ function ApplicationDetail() {
             : "Consent screen restored.",
       );
     } catch (cause) {
-      setError(errorMessage(cause, "Unable to update the application."));
+      toast.error(errorMessage(cause, "Unable to update the application."));
     } finally {
       setBusy(null);
     }
@@ -194,15 +185,14 @@ function ApplicationDetail() {
 
   async function rotate() {
     setBusy("rotate");
-    setError("");
     try {
       const { clientSecret } = await rotateOidcClientSecretFn({ data: { clientId } });
       // The response is the only copy of the new secret. A failed loader refresh would
       // replace this page and discard it before the administrator can save it.
       setRotatedSecret(clientSecret);
-      setNotice("Secret rotated. The previous secret no longer works.");
+      toast.success("Secret rotated. The previous secret no longer works.");
     } catch (cause) {
-      setError(errorMessage(cause, "Unable to rotate the secret."));
+      toast.error(errorMessage(cause, "Unable to rotate the secret."));
     } finally {
       setBusy(null);
       setRotateOpen(false);
@@ -211,12 +201,11 @@ function ApplicationDetail() {
 
   async function remove() {
     setBusy("delete");
-    setError("");
     try {
       await deleteOidcClientFn({ data: { clientId } });
       await navigate({ to: "/applications" });
     } catch (cause) {
-      setError(errorMessage(cause, "Unable to delete the application."));
+      toast.error(errorMessage(cause, "Unable to delete the application."));
       setDeleteOpen(false);
     } finally {
       setBusy(null);
@@ -288,22 +277,6 @@ function ApplicationDetail() {
             onChange={(enabled) => void toggle({ disabled: !enabled })}
           />
         </div>
-      </div>
-
-      <div aria-live="polite" className="space-y-3">
-        {notice && (
-          <p role="status" className="rounded-xl border border-primary/40 bg-primary/5 p-4 text-sm">
-            {notice}
-          </p>
-        )}
-        {error && (
-          <p
-            role="alert"
-            className="rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
-          >
-            {error}
-          </p>
-        )}
       </div>
 
       <div ref={sectionsRef} className="grid items-start gap-10 lg:grid-cols-[160px_1fr]">

@@ -45,6 +45,19 @@ export const env = createEnv({
     AZURE_EMAIL_SENDER: z.email().default("noreply@polinetwork.org"),
     STUDENT_VERIFICATION_TTL_DAYS: z.coerce.number().int().positive().default(365),
 
+    // The header the trusted edge overwrites with the client address, and the exact proxies
+    // allowed before it in x-forwarded-for. Rate limits are kept per address.
+    AUTH_CLIENT_IP_HEADER: z.enum(["cf-connecting-ip", "x-real-ip", "x-forwarded-for"]).optional(),
+    AUTH_TRUSTED_PROXIES: z
+      .string()
+      .default("")
+      .transform((value) =>
+        value
+          .split(",")
+          .map((ip) => ip.trim())
+          .filter(Boolean),
+      ),
+
     // Break-glass allowlist of local user IDs that always hold Master Admin. Every other
     // administrative right is an ordinary permission granted through a role.
     IDP_ADMIN_USER_IDS: z

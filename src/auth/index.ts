@@ -24,6 +24,7 @@ import { rawClientMutationPaths, refusedClientMutationPaths } from "./client-end
 import { apiScopes, isApiScope, OIDC_CLIENT_REFERENCE, parsePublicJwks } from "./oidc-clients";
 import { isLinkOnlyProvider, standardIdTokenClaims } from "./policy";
 import { providers } from "./providers";
+import { clientIpOptions, oauthRateLimit, postgresRateLimitStorage } from "./rate-limit";
 import {
   passkeyLabel,
   passkeyListSchema,
@@ -164,8 +165,8 @@ export const auth = betterAuth({
     },
   },
   session: { cookieCache: { enabled: false } },
-  advanced: { cookiePrefix: AUTH_COOKIE_PREFIX },
-  rateLimit: { enabled: true, storage: "database" },
+  advanced: { cookiePrefix: AUTH_COOKIE_PREFIX, ipAddress: clientIpOptions(env) },
+  rateLimit: { enabled: true, customStorage: postgresRateLimitStorage(db) },
   plugins: [
     passkey({
       rpName: "PoliNetwork Auth",
@@ -191,6 +192,7 @@ export const auth = betterAuth({
         : ["authorization_code", "refresh_token"],
       resources: serviceResources,
       resourceSeedMode: "overwrite",
+      rateLimit: oauthRateLimit,
       enforcePerClientResources: true,
       allowDynamicClientRegistration: false,
       // Lets the login page name the requesting app before the user signs in.

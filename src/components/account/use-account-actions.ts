@@ -1,44 +1,34 @@
 import { useRouter } from "@tanstack/react-router";
-import { useCallback, useState } from "react";
+import { useState } from "react";
+import { toast } from "sonner";
 import { revokeOtherSessionsFn, revokeSessionFn, unlinkAccountFn } from "@/auth/account.functions";
 import { authClient } from "@/auth/client";
 import { errorMessage } from "@/lib/action-error";
 
 /**
  * Every action on the account page, sharing one busy key so only the button that started an
- * action spins, and one message line for its outcome.
+ * action spins. Outcomes show as toasts.
  */
 export function useAccountActions() {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
 
   async function run(key: string, action: () => Promise<string | void>, fallback: string) {
     setBusy(key);
-    setError("");
-    setNotice("");
     try {
       const message = await action();
-      if (message) setNotice(message);
+      if (message) toast.success(message);
     } catch (cause) {
-      setError(errorMessage(cause, fallback));
+      toast.error(errorMessage(cause, fallback));
     } finally {
       setBusy(null);
     }
   }
   /** Brings the accounts, membership, sessions and passkeys up to date. */
   const refresh = () => router.invalidate({ sync: true });
-  const dismiss = useCallback(() => {
-    setError("");
-    setNotice("");
-  }, []);
 
   return {
     busy,
-    error,
-    notice,
-    dismiss,
     link: (provider: string) =>
       run(
         provider,

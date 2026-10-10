@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { LoaderCircle, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { deleteUserFn } from "@/auth/users.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,16 +35,14 @@ export function DeleteUser({
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const matches = confirm.trim() === userName.trim();
 
   async function remove() {
     setBusy(true);
-    setError("");
     try {
       await deleteUserFn({ data: { userId, confirm } });
     } catch (cause) {
-      setError(errorMessage(cause, "Unable to delete this person."));
+      toast.error(errorMessage(cause, "Unable to delete this person."));
       setBusy(false);
       return;
     }
@@ -66,7 +65,6 @@ export function DeleteUser({
             variant="destructive"
             onClick={() => {
               setConfirm("");
-              setError("");
               setOpen(true);
             }}
           >
@@ -94,14 +92,6 @@ export function DeleteUser({
               onChange={(event) => setConfirm(event.target.value)}
             />
           </div>
-          {error && (
-            <p
-              role="alert"
-              className="rounded-xl border border-destructive bg-destructive/5 p-3 text-sm"
-            >
-              {error}
-            </p>
-          )}
           <DialogFooter>
             <Button variant="ghost" disabled={busy} onClick={() => setOpen(false)}>
               Cancel

@@ -12,6 +12,11 @@ const isLoopback = (value) => {
     return false;
   }
 };
+// Headers a trusted edge can overwrite with the client address; see `src/auth/rate-limit.ts`.
+const CLIENT_IP_HEADERS = ["cf-connecting-ip", "x-real-ip", "x-forwarded-for"];
+const trustedProxy = z
+  .union([z.ipv4(), z.ipv6(), z.cidrv4(), z.cidrv6()])
+  .refine((value) => !value.endsWith("/0"), "must not trust every address");
 const schema = z
   .object({
     BETTER_AUTH_URL: z
@@ -54,6 +59,12 @@ const schema = z
     // Turns on the dev sign-in in `vp dev`. Production builds do not contain it at all;
     // this only keeps a stray setting from ever pairing with a public origin.
     DEV_LOGIN: optional(z.literal("1", { error: "DEV_LOGIN must be 1 or unset." })),
+    AUTH_CLIENT_IP_HEADER: optional(z.enum(CLIENT_IP_HEADERS)),
+    AUTH_TRUSTED_PROXIES: z
+      .string()
+      .default("")
+      .transform((value) => (value.trim() === "" ? [] : value.split(",").map((ip) => ip.trim())))
+      .pipe(z.array(trustedProxy)),
     NODE_ENV: z.string().optional(),
   })
   .superRefine((config, context) => {
@@ -130,6 +141,20 @@ const schema = z
       context.addIssue({
         code: "custom",
         message: "DEV_LOGIN is only allowed outside production, with BETTER_AUTH_URL on localhost.",
+      });
+    // Without a client address every caller shares one rate-limit bucket per path.
+    if (config.NODE_ENV === "production" && !config.AUTH_CLIENT_IP_HEADER)
+      context.addIssue({
+        code: "custom",
+        message: `Set AUTH_CLIENT_IP_HEADER to the header your edge overwrites (${CLIENT_IP_HEADERS.join(", ")}).`,
+      });
+    if (
+      config.AUTH_TRUSTED_PROXIES.length > 0 &&
+      config.AUTH_CLIENT_IP_HEADER !== "x-forwarded-for"
+    )
+      context.addIssue({
+        code: "custom",
+        message: "AUTH_TRUSTED_PROXIES applies only with AUTH_CLIENT_IP_HEADER=x-forwarded-for.",
       });
     if (!config.PN_ENTRA_OIDC_ADMIN_GROUP_ID && config.IDP_ADMIN_USER_IDS.length === 0)
       context.addIssue({

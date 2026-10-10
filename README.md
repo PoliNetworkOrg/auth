@@ -30,6 +30,18 @@ Providers are disabled until their credentials are configured. The page shows wh
 
 The included `Dockerfile` builds the app and runs the same migration-first startup command as an unprivileged user. Supply the `DB_*` variables and the other production variables at runtime; do not bake an environment file into the image. The migration connection must go directly to PostgreSQL or through a session-pooling endpoint because PostgreSQL advisory locks belong to a database session. If the deployment platform supports a single migration job before rollout, running this bootstrap there is preferable to making every replica wait for the lock.
 
+### Rate limits and client addresses
+
+Better Auth rate-limits every `/api/auth` request per client address and path, in the shared `rate_limit` table, so all replicas enforce the same counts. Each key gets a fixed window that starts at its first request and is not extended by later or refused requests; any window admits at most twice the limit, at a boundary. Sign-in keeps Better Auth's 3 requests per 10 seconds and authorization the provider's 30 per minute. Token requests get 60 per minute: an app's backend exchanges and refreshes for all its users from one address, and every grant needs a high-entropy credential, so this bounds load rather than guessing. Refused requests get `429` with `Retry-After` and `Cache-Control: no-store`; browsers that navigated get a short page that never retries on its own.
+
+Production startup requires `AUTH_CLIENT_IP_HEADER`, the header your edge overwrites with the client address:
+
+- `cf-connecting-ip` behind Cloudflare, including a Cloudflare Tunnel through Traefik. Cloudflare overwrites it on every request, and Traefik passes it through unless a middleware changes it.
+- `x-forwarded-for` with `AUTH_TRUSTED_PROXIES` set to the exact addresses or CIDR ranges of the proxies in front of this process. The chain is read from the right, skipping those proxies. Without `AUTH_TRUSTED_PROXIES` only a single-value header is accepted, and a chain gives no address.
+- `x-real-ip` when the proxy in front sets it from the connecting address.
+
+The header is only trustworthy if clients cannot reach this process without passing that edge: keep the origin off the public internet (Tunnel only, or a firewall allowing only the proxy), and make sure no route lets a client set the header itself. Never trust a whole private range that also contains clients. Requests that resolve no address, such as servers calling the cluster-internal URL, share one bucket per path; Better Auth logs a warning the first time. IPv6 addresses are grouped by /64.
+
 Google and PoliNetwork Entra create accounts. Once signed in, users can add a passkey from the account page and use it for future logins. Signed-out visitors see a login form with configured providers and passkey sign-in. Email/password login is disabled. The server rejects direct Telegram sign-in requests and protects the last Google or PoliNetwork Entra account from being disconnected, including when passkeys or verifier accounts remain linked.
 
 Roles and permissions require the checked-in `0004` through `0009` migrations, which also move each account's single proven state into a list so one Entra identity can prove both Socio and Direttivo. `0004` carries the old `state` column into the new `states` list and seeds the built-in roles before `0005` drops it, so apply them in order and never `0005` alone. `0006` adds Master Admin and the `idp:*` permissions. `0007` adds immutable RBAC audit history and rejects/quarantines unsafe managed-role links. `0008` adds the `idp:users:read` permission behind the user directory, and `0009` adds `idp:users:delete`. Passkeys require the checked-in `0003` database migration. Run `vp run db:migrate` before using them. Their relying-party ID and origin come from `BETTER_AUTH_URL`; use that exact origin in your browser, with HTTPS in production or localhost in development. Register a passkey after signing in with Google or PoliNetwork Entra. The account page lists and removes registered passkeys.
@@ -346,6 +358,8 @@ IDENTITY_TEST_DATABASE_URL=postgresql://postgres:test@localhost:55439/identity \
 IDENTITY_TEST_SECRET=your-test-server-secret \
 vp test
 ```
+
+Set `RATE_LIMIT_TEST_DATABASE_URL` to a disposable migrated database to also run the rate-limit suite: it drives the real Better Auth handler and races requests through separate connection pools.
 
 The integration suite covers discovery, anonymous rejection, current identity claims, denied client registration, unique account ownership, unlink revocation, and last-account protection. Role and permission resolution, hierarchy expansion, cycle refusal, and the protections around the built-in roles are covered by the unit tests in `src/auth/rbac.test.ts`. Live Google, Entra, Telegram, and Microsoft Graph email delivery require actual app registrations and have not been validated here.
 
