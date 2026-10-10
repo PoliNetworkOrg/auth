@@ -263,7 +263,7 @@ function UsersIndex() {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Name, email, Polimi address, Telegram ID, or user ID"
+              placeholder="Name, email, Polimi address, Telegram ID or username, or user ID"
               aria-label="Search users"
               className="pl-9"
             />
@@ -425,7 +425,15 @@ function UsersIndex() {
                       {user.traits.telegram ? (
                         <span className="inline-flex items-center gap-1.5 text-xs">
                           <Send className="size-3.5 text-primary" aria-hidden="true" />
-                          <span className="font-mono">{user.telegramId ?? "Linked"}</span>
+                          {user.telegramUsername && <span>@{user.telegramUsername}</span>}
+                          <span
+                            className={cn(
+                              "font-mono",
+                              user.telegramUsername && "text-muted-foreground",
+                            )}
+                          >
+                            {user.telegramId ?? "Linked"}
+                          </span>
                         </span>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>

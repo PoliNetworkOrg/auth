@@ -127,6 +127,13 @@
       "when": 1791623746934,
       "tag": "0017_jwks_legacy_alg",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791674187685,
+      "tag": "0018_identity_evidence_telegram_username",
+      "breakpoints": true
     }
   ]
 }

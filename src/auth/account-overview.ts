@@ -41,6 +41,7 @@ export async function readAccountOverview(
         providerId: account.providerId,
         idToken: account.idToken,
         saved: identityEvidence.email,
+        telegramUsername: identityEvidence.telegramUsername,
       })
       .from(account)
       .leftJoin(
@@ -102,6 +103,8 @@ export async function readAccountOverview(
   return {
     primaryEmail: person ? (await appEmail(db, person)).email : null,
     emails,
+    telegramUsername:
+      linked.find((entry) => entry.providerId === "telegram")?.telegramUsername ?? null,
     groups: [...automatic, ...assigned],
     permissions: identity.permissions.map((key) => ({
       key,

@@ -149,7 +149,8 @@ function traitConditions(
 }
 
 function searchCondition(transaction: Transaction, query: string) {
-  const term = `%${query.replace(/[%_\\]/g, (match) => `\\${match}`)}%`;
+  const escaped = query.replace(/[%_\\]/g, (match) => `\\${match}`);
+  const term = `%${escaped}%`;
   return or(
     ilike(user.name, term),
     ilike(user.email, term),
@@ -171,7 +172,11 @@ function searchCondition(transaction: Transaction, query: string) {
       and(
         eq(account.providerId, "telegram"),
         eq(account.issuer, TELEGRAM_ISSUER),
-        eq(identityEvidence.telegramId, query),
+        or(
+          eq(identityEvidence.telegramId, query),
+          // Usernames are case-insensitive on Telegram; the @ is optional.
+          ilike(identityEvidence.telegramUsername, escaped.replace(/^@/, "")),
+        ),
       ),
     ),
   );
@@ -259,6 +264,7 @@ export async function listUsers(actorId: string, search: UserSearch): Promise<Us
               providerId: account.providerId,
               accountId: account.accountId,
               telegramId: identityEvidence.telegramId,
+              telegramUsername: identityEvidence.telegramUsername,
             })
             .from(account)
             .leftJoin(
@@ -318,6 +324,7 @@ export async function listUsers(actorId: string, search: UserSearch): Promise<Us
               passkey: row.passkey,
             },
             telegramId: telegram?.telegramId ?? null,
+            telegramUsername: telegram?.telegramUsername ?? null,
             polimiEmail: polimi?.accountId ?? null,
             roles: canReadRoles
               ? assigned.filter((entry) => entry.userId === row.id).map((entry) => entry.key)
@@ -370,6 +377,7 @@ export async function getUserDetail(actorId: string, userId: string): Promise<Us
           createdAt: account.createdAt,
           validUntil: identityEvidence.validUntil,
           telegramId: identityEvidence.telegramId,
+          telegramUsername: identityEvidence.telegramUsername,
         })
         .from(account)
         .leftJoin(
@@ -424,15 +432,12 @@ export async function getUserDetail(actorId: string, userId: string): Promise<Us
         accounts: accounts.map((entry) => {
           const polimi =
             entry.providerId === "polimi-email" && entry.issuer === POLIMI_EMAIL_ISSUER;
+          const telegram = entry.providerId === "telegram" && entry.issuer === TELEGRAM_ISSUER;
           return {
             id: entry.id,
             providerId: entry.providerId,
-            identifier:
-              entry.providerId === "telegram" && entry.issuer === TELEGRAM_ISSUER
-                ? entry.telegramId
-                : polimi
-                  ? entry.accountId
-                  : null,
+            identifier: telegram ? entry.telegramId : polimi ? entry.accountId : null,
+            username: telegram ? entry.telegramUsername : null,
             linkedAt: entry.createdAt.toISOString(),
             validUntil: polimi && entry.validUntil ? entry.validUntil.toISOString() : null,
           };

@@ -1,5 +1,5 @@
 import type { GenericOAuthConfig } from "better-auth/plugins/generic-oauth";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import { and, eq, sql } from "drizzle-orm";
 import { account } from "../db/auth-schema";
 import { identityEvidence } from "../db/evidence";
@@ -52,6 +52,12 @@ export async function persistVerifiedEvidence(proof: typeof identityEvidence.$in
         set: proof,
       });
   });
+}
+
+/** Telegram's `preferred_username`, without the @. Absent for people with no username. */
+export function telegramUsername(claims: JWTPayload) {
+  const name = claims.preferred_username;
+  return typeof name === "string" && name ? name.replace(/^@/, "") : null;
 }
 
 function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfig {
@@ -108,6 +114,7 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
         externalId: typeof payload.oid === "string" ? payload.oid : null,
         ...membership,
         telegramId,
+        telegramUsername: telegramUsername(payload),
         // Saved on every sign-in, so people who signed up before this was kept get it the
         // next time they sign in.
         email: telegram ? null : (claimEmail(payload) ?? null),

@@ -30,6 +30,8 @@ export type DevAccount = {
   states?: string[];
   /** The address shown for a PoliNetwork account. */
   email?: string;
+  /** The @username of a Telegram account, without the @. */
+  username?: string;
 };
 
 export type DevRole = {
@@ -109,7 +111,7 @@ export const DEV_PERSONAS: DevPersona[] = [
         accountId: "stella.student@mail.polimi.it",
         states: ["student"],
       },
-      { providerId: "telegram", accountId: "100000001" },
+      { providerId: "telegram", accountId: "100000001", username: "stellastudent" },
     ],
   },
   {
@@ -319,6 +321,7 @@ export async function saveDevUser(entry: DevUser, issuers: DevIssuers = devIssue
           states: linked.states ?? [],
           validUntil,
           telegramId,
+          telegramUsername: linked.username ?? null,
           email: linked.email ?? null,
         };
         await transaction

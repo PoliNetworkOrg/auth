@@ -223,7 +223,16 @@ export function AccountCards({
           mark={<BrandMark name="telegram" />}
           name="Telegram"
           linked={!!telegram}
-          detail={telegram ? `ID ${identity.telegramId ?? telegram.accountId}` : null}
+          detail={
+            telegram
+              ? [
+                  details.telegramUsername && `@${details.telegramUsername}`,
+                  `ID ${identity.telegramId ?? telegram.accountId}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : null
+          }
           action={
             telegram ? (
               <UnlinkAction

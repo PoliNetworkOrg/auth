@@ -59,6 +59,7 @@ function LinkedAccounts({ person }: { person: UserDetail }) {
               ) : (
                 linked.map((entry) => (
                   <div key={entry.id} className="mt-0.5 space-y-0.5 text-xs text-muted-foreground">
+                    {entry.username && <p className="text-foreground">@{entry.username}</p>}
                     {entry.identifier && (
                       <p className="flex items-center gap-1 font-mono text-foreground">
                         <span className="truncate">{entry.identifier}</span>

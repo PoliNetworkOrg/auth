@@ -100,6 +100,7 @@ export type UserListItem = {
   createdAt: string;
   traits: Record<UserTrait, boolean>;
   telegramId: string | null;
+  telegramUsername: string | null;
   /** The linked Polimi address. Whether it still proves student status is `traits.student`. */
   polimiEmail: string | null;
   /** Keys of the roles given by hand. Null when the caller may not read roles. */
@@ -119,6 +120,8 @@ export type UserAccountSummary = {
   providerId: string;
   /** What identifies the account to a person: the Telegram ID or the Polimi address. */
   identifier: string | null;
+  /** The Telegram @username, without the @, when the account has one. */
+  username: string | null;
   linkedAt: string;
   /** When the status this account proves stops counting, for accounts that prove one. */
   validUntil: string | null;
