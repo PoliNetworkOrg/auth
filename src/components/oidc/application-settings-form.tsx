@@ -311,6 +311,11 @@ export function ApplicationSettingsForm({
         {draft.signIn && (
           <SettingsSection id="sign-in" title="Sign-in">
             <div className="space-y-8 p-6">
+              <RedirectRule
+                compact
+                value={draft.applicationType}
+                onChange={(value) => update("applicationType", value)}
+              />
               <ListField
                 label="Redirect URIs"
                 required
@@ -322,37 +327,37 @@ export function ApplicationSettingsForm({
                 addLabel="Add redirect URI"
                 onChange={(items) => update("redirectUris", items)}
               />
-              <RedirectRule
-                compact
-                value={draft.applicationType}
-                onChange={(value) => update("applicationType", value)}
-              />
               <div className="space-y-2">
                 <IdentityScopeList dense api={api} legend="What it may ask people for" />
                 <FieldError>{errors.scopes}</FieldError>
               </div>
-              <div className="space-y-3">
-                <ListField
-                  label="Post-logout redirect URIs"
-                  items={draft.postLogoutRedirectUris}
-                  itemErrors={errors.postLogoutRedirectUriItems}
-                  placeholder="https://app.polinetwork.org/"
-                  addLabel="Add post-logout URI"
-                  onChange={(items) => update("postLogoutRedirectUris", items)}
-                />
-                <label
-                  htmlFor={`${id}-end-session`}
-                  className="-mx-2 flex min-h-10 cursor-pointer items-center gap-3 rounded-md px-2 text-sm hover:bg-accent/40"
-                >
-                  <Checkbox
-                    id={`${id}-end-session`}
-                    checked={draft.enableEndSession}
-                    onCheckedChange={(checked) => update("enableEndSession", checked === true)}
-                  />
-                  Signing out of the app also ends the PoliNetwork session
-                </label>
-              </div>
               {signInExtras}
+            </div>
+          </SettingsSection>
+        )}
+
+        {draft.signIn && (
+          <SettingsSection id="logout" title="Logout">
+            <div className="space-y-3 p-6">
+              <ListField
+                label="Post-logout redirect URIs"
+                items={draft.postLogoutRedirectUris}
+                itemErrors={errors.postLogoutRedirectUriItems}
+                placeholder="https://app.polinetwork.org/"
+                addLabel="Add post-logout URI"
+                onChange={(items) => update("postLogoutRedirectUris", items)}
+              />
+              <label
+                htmlFor={`${id}-end-session`}
+                className="-mx-2 flex min-h-10 cursor-pointer items-center gap-3 rounded-md px-2 text-sm hover:bg-accent/40"
+              >
+                <Checkbox
+                  id={`${id}-end-session`}
+                  checked={draft.enableEndSession}
+                  onCheckedChange={(checked) => update("enableEndSession", checked === true)}
+                />
+                Signing out of the app also ends the PoliNetwork session
+              </label>
             </div>
           </SettingsSection>
         )}
