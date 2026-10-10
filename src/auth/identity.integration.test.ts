@@ -140,6 +140,13 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     const { callServerFn } = await import("./server-fn-harness");
     return callServerFn(fn, { headers: sessionHeaders(token), data });
   }
+  /** Rotates or deletes a client through the server functions behind the application page. */
+  async function clientAction(token: string, action: "rotate" | "delete", clientId: string) {
+    const { deleteOidcClientFn, rotateOidcClientSecretFn } = await import("./oidc.functions");
+    return action === "rotate"
+      ? callAs(token, rotateOidcClientSecretFn, { clientId })
+      : callAs(token, deleteOidcClientFn, { clientId });
+  }
   afterAll(async () => {
     await pool.query(
       `DELETE FROM "user" WHERE id IN ('integration-user', 'permission-reader', 'application-reader', 'application-writer')`,
@@ -286,56 +293,59 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     expect(members.status).toBe(403);
   });
   it("denies client registration to ordinary users", async () => {
-    const response = await fetch(`${baseURL}/api/auth/oauth2/create-client`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ redirect_uris: ["http://localhost:4000/callback"] }),
+    const { createOidcClientFn } = await import("./oidc.functions");
+    const response = await callAs(token, createOidcClientFn, {
+      draft: clientDraft({ name: "Ordinary user app" }),
     });
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(403);
   });
   it.skipIf(!process.env.OAUTH_BACKEND_RESOURCE_URI || !process.env.OAUTH_INTERNAL_RESOURCE_URI)(
     "keeps API access unavailable to an ordinary application writer",
     async () => {
-      const service = await fetch(`${baseURL}/api/auth/oauth2/create-client`, {
-        method: "POST",
-        headers: sessionHeaders("application-writer-session"),
-        body: JSON.stringify({
+      usedInternalApi = true;
+      const { auth } = await import("./index");
+      const { createOidcClientFn } = await import("./oidc.functions");
+      const writerHeaders = new Headers(sessionHeaders("application-writer-session"));
+      const register = (
+        body: NonNullable<Parameters<typeof auth.api.adminCreateOAuthClient>[0]>["body"],
+      ) => auth.api.adminCreateOAuthClient({ headers: writerHeaders, body });
+      await expect(
+        register({
           client_name: "Unauthorized service",
           grant_types: ["client_credentials"],
           token_endpoint_auth_method: "client_secret_basic",
           client_credentials_scopes: ["backend:tg:ingest"],
         }),
-      });
-      expect(service.status).toBe(401);
+      ).rejects.toMatchObject({ status: "UNAUTHORIZED" });
       // The provider trims grant names, so padding must not slip past the check.
-      const padded = await fetch(`${baseURL}/api/auth/oauth2/create-client`, {
-        method: "POST",
-        headers: sessionHeaders("application-writer-session"),
-        body: JSON.stringify({
+      await expect(
+        register({
           client_name: "Unauthorized service",
           grant_types: [" client_credentials "],
           token_endpoint_auth_method: "client_secret_basic",
         }),
+      ).rejects.toMatchObject({ status: "UNAUTHORIZED" });
+      expect(
+        (
+          await callAs("application-writer-session", createOidcClientFn, {
+            draft: clientDraft({
+              name: "Unauthorized service",
+              apiScopes: ["backend:public:read"],
+              resources: ["backend"],
+            }),
+          })
+        ).status,
+      ).toBe(403);
+      const response = await callAs("application-writer-session", createOidcClientFn, {
+        draft: clientDraft({ name: "Unauthorized service" }),
       });
-      expect(padded.status).toBe(401);
-      const response = await fetch(`${baseURL}/api/auth/oauth2/create-client`, {
-        method: "POST",
-        headers: sessionHeaders("application-writer-session"),
-        body: JSON.stringify({
-          client_name: "Unauthorized service",
-          redirect_uris: ["https://example.invalid/callback"],
-          token_endpoint_auth_method: "client_secret_basic",
-        }),
-      });
-      expect(response.status).toBe(201);
+      expect(response.status).toBe(200);
       const { rows } = await pool.query<{ client_id: string; scopes: string[] }>(
         `SELECT client_id, scopes FROM oauth_client WHERE name = 'Unauthorized service'`,
       );
       try {
         expect(rows).toHaveLength(1);
         const clientId = rows[0]!.client_id;
-        usedInternalApi = true;
-        const { auth } = await import("./index");
         const promote = await fetch(`${baseURL}/api/auth/oauth2/update-client`, {
           method: "POST",
           headers: sessionHeaders("application-writer-session"),
@@ -344,16 +354,16 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
             update: { scope: "openid backend:tg:ingest" },
           }),
         });
-        expect(promote.status).toBe(401);
+        expect(promote.status).toBe(404);
         await expect(
           auth.api.adminUpdateOAuthClient({
-            headers: new Headers(sessionHeaders("application-writer-session")),
+            headers: writerHeaders,
             body: {
               client_id: clientId,
               update: { client_credentials_scopes: ["backend:tg:ingest"] },
             },
           }),
-        ).rejects.toMatchObject({ status: "UNAUTHORIZED" });
+        ).rejects.toMatchObject({ status: "FORBIDDEN" });
         const { updateOidcClientFn } = await import("./oidc.functions");
         const viaForm = await callAs("application-writer-session", updateOidcClientFn, {
           clientId,
@@ -384,7 +394,7 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       }
     },
   );
-  it("denies every built-in client mutation to a read-only application administrator", async () => {
+  it("denies every client mutation to a read-only application administrator", async () => {
     const { getOidcClients, updateOidcClientFn } = await import("./oidc.functions");
     const readHeaders = sessionHeaders("application-reader-session");
     expect((await callAs("application-reader-session", getOidcClients, undefined)).status).toBe(
@@ -404,21 +414,25 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
         headers: readHeaders,
         body: JSON.stringify(body),
       });
-      expect(response.status).toBe(401);
+      expect(response.status).toBe(404);
     }
     const response = await callAs("application-reader-session", updateOidcClientFn, {
       clientId: "integration-foreign-client",
       disabled: true,
     });
     expect(response.status).toBe(403);
+    for (const action of ["rotate", "delete"] as const)
+      expect(
+        (await clientAction("application-reader-session", action, "integration-foreign-client"))
+          .status,
+      ).toBe(403);
   });
-  it("denies cross-pool built-in client mutation even to an application writer", async () => {
-    const response = await fetch(`${baseURL}/api/auth/oauth2/delete-client`, {
-      method: "POST",
-      headers: sessionHeaders("application-writer-session"),
-      body: JSON.stringify({ client_id: "integration-foreign-client" }),
-    });
-    expect(response.status).toBe(401);
+  it("denies cross-pool client mutation even to an application writer", async () => {
+    for (const action of ["rotate", "delete"] as const)
+      expect(
+        (await clientAction("application-writer-session", action, "integration-foreign-client"))
+          .status,
+      ).toBe(404);
     expect(
       (await pool.query(`SELECT id FROM oauth_client WHERE id = 'integration-foreign-client'`))
         .rows,
@@ -443,46 +457,39 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       ).rejects.toMatchObject({ status: "UNAUTHORIZED" });
   });
   it.skipIf(!adminUserId || !process.env.OAUTH_BACKEND_RESOURCE_URI)(
-    "lets Master Admin link and unlink a configured resource without editing its policy",
+    "links resources only through the application form, even for Master Admin",
     async () => {
       usedInternalApi = true;
       const { auth } = await import("./index");
       const identifier = process.env.OAUTH_BACKEND_RESOURCE_URI!;
       const client_id = "integration-foreign-client";
       const masterHeaders = new Headers(sessionHeaders("integration-master-session"));
-      try {
-        await expect(
-          auth.api.adminLinkClientResource({
-            headers: masterHeaders,
-            params: { identifier, client_id },
-          }),
-        ).resolves.toMatchObject({ linked: true });
-        expect(
-          (
-            await pool.query(
-              `SELECT client_id FROM oauth_client_resource WHERE client_id = $1 AND resource_id = $2`,
-              [client_id, identifier],
-            )
-          ).rows,
-        ).toHaveLength(1);
-        await expect(
-          auth.api.adminCreateOAuthResource({
-            headers: masterHeaders,
-            body: { identifier: "https://example.invalid/forbidden-resource" },
-          }),
-        ).rejects.toMatchObject({ status: "UNAUTHORIZED" });
-        await expect(
-          auth.api.adminUnlinkClientResource({
-            headers: masterHeaders,
-            params: { identifier, client_id },
-          }),
-        ).resolves.toMatchObject({ unlinked: true });
-      } finally {
-        await pool.query(
-          `DELETE FROM oauth_client_resource WHERE client_id = $1 AND resource_id = $2`,
-          [client_id, identifier],
-        );
-      }
+      await expect(auth.api.adminListOAuthResources({ headers: masterHeaders })).resolves.toEqual(
+        expect.any(Array),
+      );
+      // A link made here would skip the RBAC write lock that serializes promotion.
+      await expect(
+        auth.api.adminLinkClientResource({
+          headers: masterHeaders,
+          params: { identifier, client_id },
+        }),
+      ).rejects.toMatchObject({ status: "UNAUTHORIZED" });
+      await expect(
+        auth.api.adminUnlinkClientResource({
+          headers: masterHeaders,
+          params: { identifier, client_id },
+        }),
+      ).rejects.toMatchObject({ status: "UNAUTHORIZED" });
+      await expect(
+        auth.api.adminCreateOAuthResource({
+          headers: masterHeaders,
+          body: { identifier: "https://example.invalid/forbidden-resource" },
+        }),
+      ).rejects.toMatchObject({ status: "UNAUTHORIZED" });
+      expect(
+        (await pool.query(`SELECT id FROM oauth_client_resource WHERE client_id = $1`, [client_id]))
+          .rows,
+      ).toHaveLength(0);
     },
   );
   it.skipIf(!adminUserId || !process.env.OAUTH_BACKEND_RESOURCE_URI)(
@@ -562,7 +569,8 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
   it.skipIf(!adminUserId || !process.env.OAUTH_INTERNAL_RESOURCE_URI)(
     "registers a private-key service client with an isolated public key and internal resource",
     async () => {
-      const { createOidcClientFn, updateOidcClientFn } = await import("./oidc.functions");
+      const { createOidcClientFn, deleteOidcClientFn, updateOidcClientFn } =
+        await import("./oidc.functions");
       const pair = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
       const jwks = { keys: [{ ...(await exportJWK(pair.publicKey)), kid: "integration-service" }] };
       const backend = presetDraft("backend", { jwks: JSON.stringify(jwks) });
@@ -587,12 +595,10 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
           client_credentials_scopes: ["idp:access:read"],
           client_secret: null,
         });
-        const writerDelete = await fetch(`${baseURL}/api/auth/oauth2/delete-client`, {
-          method: "POST",
-          headers: sessionHeaders("application-writer-session"),
-          body: JSON.stringify({ client_id: created.clientId }),
+        const writerDelete = await callAs("application-writer-session", deleteOidcClientFn, {
+          clientId: created.clientId,
         });
-        expect(writerDelete.status).toBe(401);
+        expect(writerDelete.status).toBe(403);
         const writerUpdate = await callAs("application-writer-session", updateOidcClientFn, {
           clientId: created.clientId,
           disabled: true,
@@ -709,17 +715,23 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     },
   );
   it("applies the form's key rules to private keys registered through the provider endpoint", async () => {
+    usedInternalApi = true;
+    const { auth } = await import("./index");
     const create = (extra: Record<string, unknown>) =>
-      fetch(`${baseURL}/api/auth/oauth2/create-client`, {
-        method: "POST",
-        headers: sessionHeaders("application-writer-session"),
-        body: JSON.stringify({
-          client_name: "Raw private key",
-          redirect_uris: ["https://example.invalid/callback"],
-          token_endpoint_auth_method: "private_key_jwt",
-          ...extra,
-        }),
-      });
+      auth.api
+        .adminCreateOAuthClient({
+          headers: new Headers(sessionHeaders("application-writer-session")),
+          body: {
+            client_name: "Raw private key",
+            redirect_uris: ["https://example.invalid/callback"],
+            token_endpoint_auth_method: "private_key_jwt",
+            ...extra,
+          },
+        })
+        .then(
+          () => ({ status: 201 }),
+          (error: { statusCode?: number }) => ({ status: error.statusCode }),
+        );
     const rsa = await generateKeyPair("RS256", { extractable: true });
     const ed = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
     const edKey = { ...(await exportJWK(ed.publicKey)), kid: "raw" };
@@ -775,7 +787,7 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
         }),
       );
       expect(toKey.status).toBe(200);
-      expect(toKey.result).toMatchObject({ clientSecret: null, secretPending: false });
+      expect(toKey.result).toMatchObject({ clientSecret: null });
       expect(await stored()).toMatchObject({
         token_endpoint_auth_method: "private_key_jwt",
         client_secret: null,
@@ -798,6 +810,258 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       expect(row?.token_endpoint_auth_method).toBe("client_secret_basic");
       expect(row?.client_secret).toBe(createHash("sha256").update(issued!).digest("base64url"));
     } finally {
+      await pool.query(`DELETE FROM oauth_client WHERE client_id = $1`, [clientId]);
+    }
+  });
+  /** Introspects a dummy token as the client, so the provider itself checks `clientSecret`. */
+  async function authenticatesAs(clientId: string, clientSecret: string) {
+    const response = await fetch(`${baseURL}/api/auth/oauth2/introspect`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ token: "integration-not-a-token" }),
+    });
+    return response.status !== 401;
+  }
+  /** Adds a pooled client with a known secret straight to the database. */
+  async function insertSecretClient(clientId: string, extra: { grantTypes?: string[] } = {}) {
+    await pool.query(
+      `INSERT INTO oauth_client (id, client_id, name, reference_id, redirect_uris, scopes,
+                                 grant_types, response_types, token_endpoint_auth_method, client_secret)
+       VALUES ($1, $1, $1, 'polinetwork', ARRAY['https://example.invalid/callback'], ARRAY['openid'],
+               $2, ARRAY['code'], 'client_secret_basic', $3)`,
+      [
+        clientId,
+        extra.grantTypes ?? ["authorization_code"],
+        createHash("sha256").update("integration-original-secret").digest("base64url"),
+      ],
+    );
+  }
+  const storedSecret = async (clientId: string) =>
+    (
+      await pool.query<{ client_secret: string | null }>(
+        `SELECT client_secret FROM oauth_client WHERE client_id = $1`,
+        [clientId],
+      )
+    ).rows[0]?.client_secret;
+  const lastAudit = async (clientId: string, operation: string) =>
+    (
+      await pool.query<{ actor_id: string; after: Record<string, unknown> }>(
+        `SELECT actor_id, after FROM rbac_audit_event WHERE target_id = $1 AND operation = $2
+         ORDER BY "createdAt" DESC LIMIT 1`,
+        [clientId, operation],
+      )
+    ).rows[0];
+  it("closes the provider's raw client mutation endpoints to every caller", async () => {
+    usedInternalApi = true;
+    const { auth } = await import("./index");
+    await insertSecretClient("integration-raw-client");
+    try {
+      for (const session of ["application-writer-session", "integration-master-session"])
+        for (const [path, body] of [
+          ["create-client", { redirect_uris: ["https://example.invalid/callback"] }],
+          ["update-client", { client_id: "integration-raw-client", update: { client_name: "X" } }],
+          ["delete-client", { client_id: "integration-raw-client" }],
+          ["client/rotate-secret", { client_id: "integration-raw-client" }],
+        ] as const) {
+          const response = await fetch(`${baseURL}/api/auth/oauth2/${path}`, {
+            method: "POST",
+            headers: sessionHeaders(session),
+            body: JSON.stringify(body),
+          });
+          expect(response.status, `${session} ${path}`).toBe(404);
+        }
+      // Server-side callers get no way around the transactional server functions either.
+      const masterHeaders = new Headers(sessionHeaders("integration-master-session"));
+      const client_id = "integration-raw-client";
+      for (const call of [
+        () => auth.api.rotateClientSecret({ headers: masterHeaders, body: { client_id } }),
+        () => auth.api.deleteOAuthClient({ headers: masterHeaders, body: { client_id } }),
+        () =>
+          auth.api.updateOAuthClient({
+            headers: masterHeaders,
+            body: { client_id, update: { client_name: "X" } },
+          }),
+        () =>
+          auth.api.adminUpdateOAuthClient({
+            headers: masterHeaders,
+            body: { client_id, update: { client_name: "X" } },
+          }),
+        () =>
+          auth.api.createOAuthClient({
+            headers: masterHeaders,
+            body: { redirect_uris: ["https://example.invalid/callback"] },
+          }),
+      ])
+        await expect(call()).rejects.toMatchObject({ status: "FORBIDDEN" });
+      expect(await storedSecret("integration-raw-client")).toBe(
+        createHash("sha256").update("integration-original-secret").digest("base64url"),
+      );
+    } finally {
+      await pool.query(`DELETE FROM oauth_client WHERE client_id = 'integration-raw-client'`);
+    }
+  });
+  it("lets an application writer rotate and delete an unrestricted client", async () => {
+    const { createOidcClientFn, deleteOidcClientFn, rotateOidcClientSecretFn } =
+      await import("./oidc.functions");
+    const created = await callAs("application-writer-session", createOidcClientFn, {
+      draft: clientDraft({ name: "Writer rotation app" }),
+    });
+    expect(created.status).toBe(200);
+    const { clientId, clientSecret: original } = created.result!;
+    try {
+      expect(await authenticatesAs(clientId, original!)).toBe(true);
+      const rotated = await callAs("application-writer-session", rotateOidcClientSecretFn, {
+        clientId,
+      });
+      expect(rotated.status).toBe(200);
+      const secret = rotated.result!.clientSecret;
+      expect(secret).toMatch(/^[A-Za-z]{32}$/);
+      expect(await storedSecret(clientId)).toBe(
+        createHash("sha256").update(secret).digest("base64url"),
+      );
+      // The provider's own client authentication accepts the new secret and not the old one.
+      expect(await authenticatesAs(clientId, secret)).toBe(true);
+      expect(await authenticatesAs(clientId, original!)).toBe(false);
+      expect(await lastAudit(clientId, "oidc-client.update")).toMatchObject({
+        actor_id: "application-writer",
+        after: { secretRotated: true },
+      });
+      const deleted = await callAs("application-writer-session", deleteOidcClientFn, {
+        clientId,
+      });
+      expect(deleted.status).toBe(200);
+      expect(
+        (await pool.query(`SELECT id FROM oauth_client WHERE client_id = $1`, [clientId])).rows,
+      ).toHaveLength(0);
+      expect(await lastAudit(clientId, "oidc-client.delete")).toMatchObject({
+        actor_id: "application-writer",
+      });
+      expect(
+        (await callAs("application-writer-session", rotateOidcClientSecretFn, { clientId })).status,
+      ).toBe(404);
+    } finally {
+      await pool.query(`DELETE FROM oauth_client WHERE client_id = $1`, [clientId]);
+    }
+  });
+  it("refuses rotation without a secret and keeps restricted clients for Master Admin", async () => {
+    const { createOidcClientFn, deleteOidcClientFn, rotateOidcClientSecretFn } =
+      await import("./oidc.functions");
+    const publicClient = await callAs("application-writer-session", createOidcClientFn, {
+      draft: clientDraft({ name: "Writer public app", credential: "public" }),
+    });
+    expect(publicClient.status).toBe(200);
+    await insertSecretClient("integration-restricted-client", {
+      grantTypes: ["authorization_code", "client_credentials"],
+    });
+    const clientId = "integration-restricted-client";
+    try {
+      expect(
+        (
+          await callAs("application-writer-session", rotateOidcClientSecretFn, {
+            clientId: publicClient.result!.clientId,
+          })
+        ).status,
+      ).toBe(400);
+      for (const action of ["rotate", "delete"] as const)
+        expect((await clientAction("application-writer-session", action, clientId)).status).toBe(
+          403,
+        );
+      expect(await authenticatesAs(clientId, "integration-original-secret")).toBe(true);
+      if (!adminUserId) return;
+      const rotated = await callAs("integration-master-session", rotateOidcClientSecretFn, {
+        clientId,
+      });
+      expect(rotated.status).toBe(200);
+      expect(await authenticatesAs(clientId, rotated.result!.clientSecret)).toBe(true);
+      expect(await lastAudit(clientId, "oidc-client.update")).toMatchObject({
+        actor_id: adminUserId,
+      });
+      expect(
+        (await callAs("integration-master-session", deleteOidcClientFn, { clientId })).status,
+      ).toBe(200);
+      expect(await lastAudit(clientId, "oidc-client.delete")).toMatchObject({
+        actor_id: adminUserId,
+      });
+    } finally {
+      await pool.query(`DELETE FROM oauth_client WHERE client_id IN ($1, $2)`, [
+        clientId,
+        publicClient.result!.clientId,
+      ]);
+    }
+  });
+  it("serializes a writer's rotation or deletion behind a concurrent promotion", async () => {
+    const { rotateOidcClientSecretFn } = await import("./oidc.functions");
+    const original = createHash("sha256").update("integration-original-secret").digest("base64url");
+    /** Resolves once another session is queued for the RBAC write lock. */
+    const lockWaiter = async () => {
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const { rows } = await pool.query(
+          `SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`,
+        );
+        if (rows.length) return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error("The writer never waited for the RBAC write lock.");
+    };
+    for (const action of ["rotate", "delete"] as const) {
+      const clientId = `integration-race-${action}`;
+      await insertSecretClient(clientId);
+      // Stands in for Master Admin's promotion: it holds the lock that every RBAC and client
+      // write takes, grants the client API access, and commits only after the writer has
+      // passed every check it can make without the lock.
+      const promotion = await pool.connect();
+      try {
+        await promotion.query("BEGIN");
+        await promotion.query(
+          `SELECT pg_advisory_xact_lock(hashtext('polinetwork-auth'), hashtext('rbac-hierarchy'))`,
+        );
+        if (adminUserId)
+          await promotion.query(`SELECT set_config('polinetwork.actor_id', $1, true)`, [
+            adminUserId,
+          ]);
+        const writer = clientAction("application-writer-session", action, clientId);
+        await lockWaiter();
+        await promotion.query(
+          `UPDATE oauth_client SET grant_types = ARRAY['authorization_code', 'client_credentials']
+           WHERE client_id = $1`,
+          [clientId],
+        );
+        // Nothing the writer asked for has happened while it waited.
+        expect(await storedSecret(clientId)).toBe(original);
+        await promotion.query("COMMIT");
+        const result = await writer;
+        expect(result.status, action).toBe(403);
+        expect(await storedSecret(clientId)).toBe(original);
+      } finally {
+        await promotion.query("ROLLBACK").catch(() => {});
+        promotion.release();
+        await pool.query(`DELETE FROM oauth_client WHERE client_id = $1`, [clientId]);
+      }
+    }
+    // Without a promotion the queued rotation goes ahead once the lock is free.
+    const clientId = "integration-race-unpromoted";
+    await insertSecretClient(clientId);
+    const holder = await pool.connect();
+    try {
+      await holder.query("BEGIN");
+      await holder.query(
+        `SELECT pg_advisory_xact_lock(hashtext('polinetwork-auth'), hashtext('rbac-hierarchy'))`,
+      );
+      const writer = callAs("application-writer-session", rotateOidcClientSecretFn, { clientId });
+      await lockWaiter();
+      expect(await storedSecret(clientId)).toBe(original);
+      await holder.query("COMMIT");
+      const result = await writer;
+      expect(result.status).toBe(200);
+      expect(await storedSecret(clientId)).toBe(
+        createHash("sha256").update(result.result!.clientSecret).digest("base64url"),
+      );
+    } finally {
+      await holder.query("ROLLBACK").catch(() => {});
+      holder.release();
       await pool.query(`DELETE FROM oauth_client WHERE client_id = $1`, [clientId]);
     }
   });

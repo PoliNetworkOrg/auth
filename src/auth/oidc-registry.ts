@@ -3,6 +3,7 @@ import { db } from "../db/index";
 import { oauthClient, oauthClientResource, oauthConsent } from "../db/schema";
 import { env } from "../env";
 import { validateClientJwks } from "./client-jwks";
+import { issueClientSecret } from "./client-secret";
 import { MASTER_ADMIN_ROLE_KEY } from "./rbac";
 import { RbacError, withAuthorizedRbacRead, withAuthorizedRbacWrite } from "./rbac-store";
 import {
@@ -190,23 +191,20 @@ export type OidcClientPatch = {
 };
 
 /**
- * Stands in for a secret until the token endpoint's own rotation replaces it. No presented
- * secret hashes to a value with a colon, so nothing authenticates with it meanwhile.
+ * Runs `change` on a pooled client as `actorId`, under the RBAC write lock that promotion to
+ * API access also takes. The client is read and its restriction checked inside the same
+ * transaction, so a change either lands before a concurrent promotion or sees the promoted
+ * client and is refused. Returns null when the client is not in the pool.
  */
-function unusableSecret() {
-  return `pending:${crypto.randomUUID()}`;
-}
-
-/**
- * Applies validated settings to a pooled client. Returns null when the client is not in the
- * pool. `issueSecret` asks the caller to issue the first secret of a client that now uses
- * one, through the provider's rotation endpoint.
- */
-export async function updateOidcClient(
+async function changePooledClient<T>(
   actorId: string,
   clientId: string,
-  patch: OidcClientPatch,
-): Promise<{ client: OidcClientSummary; issueSecret: boolean } | null> {
+  change: (
+    transaction: Transaction,
+    existing: OidcClientSummary,
+    masterAdmin: boolean,
+  ) => Promise<T>,
+): Promise<T | null> {
   return withAuthorizedRbacWrite(
     actorId,
     "idp:applications:write",
@@ -217,63 +215,104 @@ export async function updateOidcClient(
       const masterAdmin = access.roles.includes(MASTER_ADMIN_ROLE_KEY);
       if (existing.restricted && !masterAdmin)
         throw new RbacError(403, "Only Master Admin may change applications with API access.");
-      const values: Partial<typeof oauthClient.$inferInsert> = { updatedAt: new Date() };
-      let issueSecret = false;
-      if (patch.draft) {
-        const draft = patch.draft;
-        if (isRestrictedDraft(draft) && !masterAdmin)
-          throw new RbacError(403, "Only Master Admin may give an application API access.");
-        const registration = clientRegistration(draft);
-        values.name = draft.name;
-        values.uri = draft.uri || null;
-        values.icon = draft.logo || null;
-        values.redirectUris = registration.redirectUris;
-        values.postLogoutRedirectUris = registration.postLogoutRedirectUris.length
-          ? registration.postLogoutRedirectUris
-          : null;
-        values.contacts = draft.contacts.length ? draft.contacts : null;
-        values.tos = draft.tosUri || null;
-        values.policy = draft.policyUri || null;
-        values.scopes = registration.scopes;
-        values.grantTypes = registration.grantTypes;
-        values.responseTypes = draft.signIn ? ["code"] : null;
-        values.clientCredentialsScopes = registration.clientCredentialsScopes;
-        values.enableEndSession = registration.enableEndSession;
-        values.applicationType = draft.applicationType;
-        if (draft.credential === "private-key") {
-          const jwks = parsePublicJwks(draft.jwks);
-          await validateClientJwks(jwks, transaction, clientId);
-          values.tokenEndpointAuthMethod = "private_key_jwt";
-          values.jwks = JSON.stringify(jwks);
-          values.jwksUri = null;
-          values.clientSecret = null;
-        } else {
-          values.jwks = null;
-          values.jwksUri = null;
-          if (draft.credential === "public") {
-            values.tokenEndpointAuthMethod = "none";
-            values.clientSecret = null;
-          } else if (existing.credential !== "secret") {
-            values.tokenEndpointAuthMethod = "client_secret_basic";
-            values.clientSecret = unusableSecret();
-            issueSecret = true;
-          }
-        }
-        if (masterAdmin) await syncResourceLinks(transaction, clientId, draft.resources);
-      }
-      if (patch.disabled !== undefined) values.disabled = patch.disabled;
-      if (patch.skipConsent !== undefined) values.skipConsent = patch.skipConsent;
-      await transaction
-        .update(oauthClient)
-        .set(values)
-        .where(
-          and(
-            eq(oauthClient.clientId, clientId),
-            eq(oauthClient.referenceId, OIDC_CLIENT_REFERENCE),
-          ),
-        );
-      const [summary] = await readOidcClients(transaction, clientId);
-      return { client: summary!, issueSecret };
+      return change(transaction, existing, masterAdmin);
     },
   );
+}
+
+const pooledClient = (clientId: string) =>
+  and(eq(oauthClient.clientId, clientId), eq(oauthClient.referenceId, OIDC_CLIENT_REFERENCE));
+
+/**
+ * Applies validated settings to a pooled client. Returns null when the client is not in the
+ * pool. `clientSecret` is the first secret of a client that now uses one, shown once.
+ */
+export async function updateOidcClient(
+  actorId: string,
+  clientId: string,
+  patch: OidcClientPatch,
+): Promise<{ client: OidcClientSummary; clientSecret: string | null } | null> {
+  return changePooledClient(actorId, clientId, async (transaction, existing, masterAdmin) => {
+    const values: Partial<typeof oauthClient.$inferInsert> = { updatedAt: new Date() };
+    let clientSecret: string | null = null;
+    if (patch.draft) {
+      const draft = patch.draft;
+      if (isRestrictedDraft(draft) && !masterAdmin)
+        throw new RbacError(403, "Only Master Admin may give an application API access.");
+      const registration = clientRegistration(draft);
+      values.name = draft.name;
+      values.uri = draft.uri || null;
+      values.icon = draft.logo || null;
+      values.redirectUris = registration.redirectUris;
+      values.postLogoutRedirectUris = registration.postLogoutRedirectUris.length
+        ? registration.postLogoutRedirectUris
+        : null;
+      values.contacts = draft.contacts.length ? draft.contacts : null;
+      values.tos = draft.tosUri || null;
+      values.policy = draft.policyUri || null;
+      values.scopes = registration.scopes;
+      values.grantTypes = registration.grantTypes;
+      values.responseTypes = draft.signIn ? ["code"] : null;
+      values.clientCredentialsScopes = registration.clientCredentialsScopes;
+      values.enableEndSession = registration.enableEndSession;
+      values.applicationType = draft.applicationType;
+      if (draft.credential === "private-key") {
+        const jwks = parsePublicJwks(draft.jwks);
+        await validateClientJwks(jwks, transaction, clientId);
+        values.tokenEndpointAuthMethod = "private_key_jwt";
+        values.jwks = JSON.stringify(jwks);
+        values.jwksUri = null;
+        values.clientSecret = null;
+      } else {
+        values.jwks = null;
+        values.jwksUri = null;
+        if (draft.credential === "public") {
+          values.tokenEndpointAuthMethod = "none";
+          values.clientSecret = null;
+        } else if (existing.credential !== "secret") {
+          const issued = issueClientSecret();
+          values.tokenEndpointAuthMethod = "client_secret_basic";
+          values.clientSecret = issued.stored;
+          clientSecret = issued.secret;
+        }
+      }
+      if (masterAdmin) await syncResourceLinks(transaction, clientId, draft.resources);
+    }
+    if (patch.disabled !== undefined) values.disabled = patch.disabled;
+    if (patch.skipConsent !== undefined) values.skipConsent = patch.skipConsent;
+    await transaction.update(oauthClient).set(values).where(pooledClient(clientId));
+    const [summary] = await readOidcClients(transaction, clientId);
+    return { client: summary!, clientSecret };
+  });
+}
+
+/**
+ * Replaces a pooled client's secret and returns the new one, shown once. Returns null when
+ * the client is not in the pool.
+ */
+export async function rotateOidcClientSecret(
+  actorId: string,
+  clientId: string,
+): Promise<{ clientSecret: string } | null> {
+  return changePooledClient(actorId, clientId, async (transaction, existing) => {
+    if (existing.credential !== "secret")
+      throw new RbacError(400, "Only an application that uses a client secret has one to rotate.");
+    const issued = issueClientSecret();
+    await transaction
+      .update(oauthClient)
+      .set({ clientSecret: issued.stored, updatedAt: new Date() })
+      .where(pooledClient(clientId));
+    return { clientSecret: issued.secret };
+  });
+}
+
+/**
+ * Deletes a pooled client; its stored tokens, consents and resource links go with it.
+ * Returns null when the client is not in the pool.
+ */
+export async function deleteOidcClient(actorId: string, clientId: string) {
+  return changePooledClient(actorId, clientId, async (transaction) => {
+    await transaction.delete(oauthClient).where(pooledClient(clientId));
+    return true;
+  });
 }

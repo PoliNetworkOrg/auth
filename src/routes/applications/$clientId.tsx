@@ -16,7 +16,6 @@ import {
   TriangleAlert,
   Users,
 } from "lucide-react";
-import { authClient } from "@/auth/client";
 import {
   credentialLabels,
   draftFromClient,
@@ -24,7 +23,13 @@ import {
   type OidcClientDraft,
   type OidcClientDraftErrors,
 } from "@/auth/oidc-clients";
-import { getOidcClient, getOidcClientOptions, updateOidcClientFn } from "@/auth/oidc.functions";
+import {
+  deleteOidcClientFn,
+  getOidcClient,
+  getOidcClientOptions,
+  rotateOidcClientSecretFn,
+  updateOidcClientFn,
+} from "@/auth/oidc.functions";
 import { requireAccess, useAccess } from "@/components/access";
 import { CopyButton } from "@/components/copy-button";
 import { AppLogo } from "@/components/oidc/app-logo";
@@ -139,8 +144,6 @@ function ApplicationDetail() {
       // A newly issued secret is shown before the refresh, which could fail and lose it.
       if (result.clientSecret) setRotatedSecret(result.clientSecret);
       else if (result.client.credential !== "secret") setRotatedSecret(null);
-      if (result.secretPending)
-        setError("Settings saved, but no secret was issued. Rotate the secret to get one.");
       setNotice(
         result.clientSecret ? "Settings saved. A new client secret was issued." : "Settings saved.",
       );
@@ -182,14 +185,11 @@ function ApplicationDetail() {
     setBusy("rotate");
     setError("");
     try {
-      const result = await authClient.oauth2.client.rotateSecret({ client_id: clientId });
-      if (result.error) setError(result.error.message ?? "Unable to rotate the secret.");
-      else {
-        // The response is the only copy of the new secret. A failed loader refresh would
-        // replace this page and discard it before the administrator can save it.
-        setRotatedSecret(result.data.client_secret ?? null);
-        setNotice("Secret rotated. The previous secret no longer works.");
-      }
+      const { clientSecret } = await rotateOidcClientSecretFn({ data: { clientId } });
+      // The response is the only copy of the new secret. A failed loader refresh would
+      // replace this page and discard it before the administrator can save it.
+      setRotatedSecret(clientSecret);
+      setNotice("Secret rotated. The previous secret no longer works.");
     } catch (cause) {
       setError(errorMessage(cause, "Unable to rotate the secret."));
     } finally {
@@ -202,12 +202,7 @@ function ApplicationDetail() {
     setBusy("delete");
     setError("");
     try {
-      const result = await authClient.oauth2.deleteClient({ client_id: clientId });
-      if (result.error) {
-        setError(result.error.message ?? "Unable to delete the application.");
-        setDeleteOpen(false);
-        return;
-      }
+      await deleteOidcClientFn({ data: { clientId } });
       await navigate({ to: "/applications" });
     } catch (cause) {
       setError(errorMessage(cause, "Unable to delete the application."));
