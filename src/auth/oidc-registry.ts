@@ -16,7 +16,6 @@ import {
   type OidcClientDraft,
   type OidcClientSummary,
   type OidcResourceKey,
-  type PublicJwks,
 } from "./oidc-clients";
 
 type ClientRow = typeof oauthClient.$inferSelect;
@@ -191,25 +190,31 @@ export async function linkNewOidcClient(
 /**
  * Rechecks a newly created client's public keys against every other client, under the RBAC
  * write lock. The provider inserts the client outside that lock, so a key checked before the
- * insert may have been given to another client in the meantime. Deletes the new client and
- * returns false when its key now belongs to another one.
+ * insert may have been given to another client in the meantime. Checks the keys the client
+ * holds now, which a locked save may already have replaced. Deletes the new client and
+ * returns false when one of them belongs to another client.
  */
-export async function recheckNewOidcClientKeys(
-  actorId: string,
-  clientId: string,
-  jwks: PublicJwks,
-) {
-  return withAuthorizedRbacWrite(actorId, "idp:applications:write", async (transaction) => {
-    await transaction.execute(sql`select set_config('polinetwork.actor_id', ${actorId}, true)`);
-    try {
-      await validateClientJwks(jwks, transaction, clientId);
-      return true;
-    } catch (error) {
-      if (!(error instanceof ClientJwksError)) throw error;
-      await transaction.delete(oauthClient).where(pooledClient(clientId));
-      return false;
-    }
-  });
+export async function recheckNewOidcClientKeys(actorId: string, clientId: string) {
+  return withAuthorizedRbacWrite(
+    actorId,
+    "idp:applications:write",
+    async (transaction, _catalog, access) => {
+      await transaction.execute(sql`select set_config('polinetwork.actor_id', ${actorId}, true)`);
+      const [current] = await readOidcClients(transaction, clientId);
+      if (!current?.jwks) return true;
+      try {
+        await validateClientJwks(parsePublicJwks(current.jwks), transaction, clientId);
+        return true;
+      } catch (error) {
+        if (!(error instanceof ClientJwksError)) throw error;
+        // Unreachable in practice: promoting a client saves it under this lock, which
+        // validates its keys. Never let a writer's cleanup delete a restricted client.
+        if (current.restricted && !access.roles.includes(MASTER_ADMIN_ROLE_KEY)) throw error;
+        await transaction.delete(oauthClient).where(pooledClient(clientId));
+        return false;
+      }
+    },
+  );
 }
 
 export type OidcClientPatch = {

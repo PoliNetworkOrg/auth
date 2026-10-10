@@ -1112,6 +1112,53 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       );
     }
   });
+  it("keeps a new client whose key was replaced under the lock before its recheck", async () => {
+    const { createOidcClientFn } = await import("./oidc.functions");
+    const publicJwks = async (kid: string) => {
+      const pair = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
+      return JSON.stringify({ keys: [{ ...(await exportJWK(pair.publicKey)), kid }] });
+    };
+    const original = await publicJwks("original");
+    const replacement = await publicJwks("replacement");
+    await insertSecretClient("integration-key-taker");
+    // While the creation waits to recheck, a locked save gives the new client another key
+    // and API access, and the original key goes to a different client. The recheck must look
+    // at the key the new client holds now, and must not delete it.
+    const holder = await holdRbacLock();
+    try {
+      const creation = callAs("application-writer-session", createOidcClientFn, {
+        draft: clientDraft({ name: "Rekeyed app", credential: "private-key", jwks: original }),
+      });
+      await inProcessLockWaiter();
+      await holder.query(
+        `UPDATE oauth_client SET jwks = $1,
+                                 grant_types = ARRAY['authorization_code', 'client_credentials']
+         WHERE name = 'Rekeyed app'`,
+        [JSON.stringify(JSON.parse(replacement))],
+      );
+      await holder.query(
+        `UPDATE oauth_client SET token_endpoint_auth_method = 'private_key_jwt',
+                                 client_secret = NULL, jwks = $1
+         WHERE client_id = 'integration-key-taker'`,
+        [JSON.stringify(JSON.parse(original))],
+      );
+      await holder.query("COMMIT");
+      expect((await creation).status).toBe(200);
+      expect(
+        (
+          await pool.query<{ jwks: string }>(
+            `SELECT jwks FROM oauth_client WHERE name = 'Rekeyed app'`,
+          )
+        ).rows,
+      ).toEqual([{ jwks: JSON.stringify(JSON.parse(replacement)) }]);
+    } finally {
+      await holder.query("ROLLBACK").catch(() => {});
+      holder.release();
+      await pool.query(
+        `DELETE FROM oauth_client WHERE client_id = 'integration-key-taker' OR name = 'Rekeyed app'`,
+      );
+    }
+  });
   it("does not expose server-only resource administration over HTTP", async () => {
     const response = await fetch(`${baseURL}/api/auth/admin/oauth2/resources`, { headers });
     expect(response.status).toBe(404);
