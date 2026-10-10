@@ -33,7 +33,7 @@ import {
 import { requireAccess, useAccess } from "@/components/access";
 import { CopyButton } from "@/components/copy-button";
 import { AppLogo } from "@/components/oidc/app-logo";
-import { ClientForm } from "@/components/oidc/client-form";
+import { ApplicationSettingsForm } from "@/components/oidc/application-settings-form";
 import { CredentialField, CredentialsReveal } from "@/components/oidc/secret-reveal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -288,34 +288,18 @@ function ApplicationDetail() {
       </div>
 
       <div className="grid items-start gap-8 lg:grid-cols-[1fr_340px]">
-        <div className="space-y-8">
-          <Card>
-            <CardHeader>
-              <CardTitle>Settings</CardTitle>
-              <CardDescription>
-                {client.restricted && !isMasterAdmin
-                  ? "This application has API access, so only Master Admin can change it."
-                  : "Changes apply to the next sign-in or token request. Redirect URIs must match your app exactly."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <fieldset disabled={!canManage} className="border-0 p-0">
-                <ClientForm
-                  mode="edit"
-                  initial={draftFromClient(client)}
-                  savedCredential={client.credential}
-                  apiAccess={apiAccess}
-                  canGrantApiAccess={isMasterAdmin}
-                  readOnly={!canManage}
-                  busy={busy === "save"}
-                  resetKey={formResetKey}
-                  serverErrors={fieldErrors}
-                  submitLabel="Save changes"
-                  onSubmit={(draft) => void save(draft)}
-                />
-              </fieldset>
-            </CardContent>
-          </Card>
+        <div className="min-w-0 space-y-8">
+          <ApplicationSettingsForm
+            initial={draftFromClient(client)}
+            savedCredential={client.credential}
+            apiAccess={apiAccess}
+            canGrantApiAccess={isMasterAdmin}
+            readOnly={!canManage}
+            busy={busy === "save"}
+            resetKey={formResetKey}
+            serverErrors={fieldErrors}
+            onSubmit={(draft) => void save(draft)}
+          />
 
           {canManage && (
             <Card className="border-destructive/40">

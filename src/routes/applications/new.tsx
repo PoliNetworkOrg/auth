@@ -9,11 +9,10 @@ import {
   type OidcClientDraftErrors,
 } from "@/auth/oidc-clients";
 import { createOidcClientFn, getOidcClientOptions } from "@/auth/oidc.functions";
-import { ClientForm } from "@/components/oidc/client-form";
+import { NewApplicationWizard } from "@/components/oidc/new-application-wizard";
 import { CredentialsReveal } from "@/components/oidc/secret-reveal";
 import { requireAccess, useAccess } from "@/components/access";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { errorFields, errorMessage } from "@/lib/action-error";
 
 export const Route = createFileRoute("/applications/new")({
@@ -38,7 +37,6 @@ function NewApplication() {
   const { isMasterAdmin } = useAccess();
   const [initial, setInitial] = useState(emptyClientDraft);
   const [presetId, setPresetId] = useState<string | null>(null);
-  const [formResetKey, setFormResetKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<OidcClientDraftErrors | undefined>();
@@ -47,8 +45,8 @@ function NewApplication() {
   function applyPreset(id: string | null) {
     const preset = CLIENT_PRESETS.find((candidate) => candidate.id === id);
     setPresetId(preset ? preset.id : null);
+    // A new object restarts the wizard from the first step with the preset filled in.
     setInitial({ ...emptyClientDraft(), ...preset?.draft });
-    setFormResetKey((value) => value + 1);
     setFieldErrors(undefined);
   }
 
@@ -130,7 +128,7 @@ function NewApplication() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
+    <div className="mx-auto max-w-5xl space-y-8">
       <div>
         <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" asChild>
           <Link to="/applications">
@@ -180,22 +178,15 @@ function NewApplication() {
           {error}
         </p>
       )}
-      <Card>
-        <CardContent className="pt-6">
-          <ClientForm
-            mode="create"
-            initial={initial}
-            apiAccess={apiAccess}
-            canGrantApiAccess={isMasterAdmin}
-            busy={busy}
-            resetKey={formResetKey}
-            serverErrors={fieldErrors}
-            submitLabel="Create application"
-            onSubmit={(draft) => void create(draft)}
-            onCancel={() => void navigate({ to: "/applications" })}
-          />
-        </CardContent>
-      </Card>
+      <NewApplicationWizard
+        initial={initial}
+        apiAccess={apiAccess}
+        canGrantApiAccess={isMasterAdmin}
+        busy={busy}
+        serverErrors={fieldErrors}
+        onSubmit={(draft) => void create(draft)}
+        onCancel={() => void navigate({ to: "/applications" })}
+      />
     </div>
   );
 }
