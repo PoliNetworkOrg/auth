@@ -13,7 +13,8 @@ import { env } from "../env";
 import { AUTH_COOKIE_PREFIX } from "./cookies";
 import { startAccessDispatcher } from "./access-dispatcher";
 import { getOidcClaims } from "./identity";
-import { jwtOptions } from "./jwt-options";
+import { ensureIdTokenKey, jwtOptions } from "./jwt-options";
+import { startKeyPruning } from "./key-pruning";
 import { logAuthorizationDenial } from "./denial-log";
 import { hasIdpPermission } from "./idp-access";
 import { canAdministerIdp } from "./oidc-admin";
@@ -53,11 +54,13 @@ const serviceResources =
           accessTokenTtl: 3600,
           refreshTokenTtl: 604800,
           allowedScopes: backendScopes,
+          signingAlgorithm: "EdDSA" as const,
         },
         {
           identifier: env.OAUTH_INTERNAL_RESOURCE_URI,
           accessTokenTtl: 300,
           allowedScopes: ["idp:access:read"],
+          signingAlgorithm: "EdDSA" as const,
         },
       ]
     : [];
@@ -80,6 +83,7 @@ export const auth = betterAuth({
       : {},
   hooks: {
     before: createAuthMiddleware(async (context) => {
+      if (context.path === "/oauth2/token") await ensureIdTokenKey(context);
       if (context.path === "/sign-in/social" && isLinkOnlyProvider(context.body?.provider)) {
         throw new APIError("BAD_REQUEST", {
           code: "TELEGRAM_LINK_ONLY",
@@ -236,4 +240,7 @@ export const auth = betterAuth({
   ],
 });
 
-if (import.meta.env.PROD) startAccessDispatcher(auth);
+if (import.meta.env.PROD) {
+  startAccessDispatcher(auth);
+  startKeyPruning();
+}
