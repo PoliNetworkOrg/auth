@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccessRouteRouteImport } from './routes/access/route'
 import { Route as ApplicationsRouteRouteImport } from './routes/applications/route'
 import { Route as ConsentRouteImport } from './routes/consent'
+import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as UsersRouteRouteImport } from './routes/users/route'
 import { Route as AccessIndexRouteImport } from './routes/access/index'
 import { Route as ApiIdentityRouteImport } from './routes/api/identity'
@@ -48,6 +49,11 @@ const ApplicationsRouteRoute = ApplicationsRouteRouteImport.update({
 const ConsentRoute = ConsentRouteImport.update({
   id: '/consent',
   path: '/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LogoutRoute = LogoutRouteImport.update({
+  id: '/logout',
+  path: '/logout',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UsersRouteRoute = UsersRouteRouteImport.update({
@@ -139,6 +145,7 @@ export interface FileRoutesByFullPath {
   '/applications': typeof ApplicationsRouteRouteWithChildren
   '/users': typeof UsersRouteRouteWithChildren
   '/consent': typeof ConsentRoute
+  '/logout': typeof LogoutRoute
   '/api/identity': typeof ApiIdentityRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/consent': typeof ConsentRoute
+  '/logout': typeof LogoutRoute
   '/api/identity': typeof ApiIdentityRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
@@ -181,6 +189,7 @@ export interface FileRoutesById {
   '/applications': typeof ApplicationsRouteRouteWithChildren
   '/users': typeof UsersRouteRouteWithChildren
   '/consent': typeof ConsentRoute
+  '/logout': typeof LogoutRoute
   '/api/identity': typeof ApiIdentityRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
@@ -205,6 +214,7 @@ export interface FileRouteTypes {
     | '/applications'
     | '/users'
     | '/consent'
+    | '/logout'
     | '/api/identity'
     | '/applications/$clientId'
     | '/applications/new'
@@ -224,6 +234,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/consent'
+    | '/logout'
     | '/api/identity'
     | '/applications/$clientId'
     | '/applications/new'
@@ -246,6 +257,7 @@ export interface FileRouteTypes {
     | '/applications'
     | '/users'
     | '/consent'
+    | '/logout'
     | '/api/identity'
     | '/applications/$clientId'
     | '/applications/new'
@@ -269,6 +281,7 @@ export interface RootRouteChildren {
   ApplicationsRouteRoute: typeof ApplicationsRouteRouteWithChildren
   UsersRouteRoute: typeof UsersRouteRouteWithChildren
   ConsentRoute: typeof ConsentRoute
+  LogoutRoute: typeof LogoutRoute
   ApiIdentityRoute: typeof ApiIdentityRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiInternalAccessSnapshotRoute: typeof ApiInternalAccessSnapshotRoute
@@ -302,6 +315,13 @@ declare module '@tanstack/react-router' {
       path: '/consent'
       fullPath: '/consent'
       preLoaderRoute: typeof ConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logout': {
+      id: '/logout'
+      path: '/logout'
+      fullPath: '/logout'
+      preLoaderRoute: typeof LogoutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/users': {
@@ -478,6 +498,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApplicationsRouteRoute: ApplicationsRouteRouteWithChildren,
   UsersRouteRoute: UsersRouteRouteWithChildren,
   ConsentRoute: ConsentRoute,
+  LogoutRoute: LogoutRoute,
   ApiIdentityRoute: ApiIdentityRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiInternalAccessSnapshotRoute: ApiInternalAccessSnapshotRoute,
