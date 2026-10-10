@@ -3,19 +3,24 @@ import { cn } from "cn";
 import {
   ChevronRight,
   Globe,
+  KeyRound,
   LoaderCircle,
   Lock,
+  LogIn,
   Plus,
+  Server,
   Smartphone,
   Trash2,
   Unlock,
 } from "lucide-react";
 import {
+  apiScopes,
   hasDraftErrors,
   MAX_CLIENT_NAME_LENGTH,
-  type OidcApplicationType,
+  type OidcClientCredential,
   type OidcClientDraft,
   type OidcClientDraftErrors,
+  oidcResources,
   oidcScopes,
   validateClientDraft,
 } from "@/auth/oidc-clients";
@@ -24,13 +29,17 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 type ClientFormProps = {
   mode: "create" | "edit";
   initial: OidcClientDraft;
-  /** Confidential clients receive a secret. Only selectable when creating. */
-  confidential?: boolean;
-  onConfidentialChange?: (confidential: boolean) => void;
+  /** The credential the client uses now, to explain what switching does. */
+  savedCredential?: OidcClientCredential;
+  /** Whether this deployment has API resources to grant. */
+  apiAccess: boolean;
+  /** Whether the person may grant API scopes, service access, and resources. */
+  canGrantApiAccess: boolean;
   /** Shows the registered settings without offering controls that will be rejected. */
   readOnly?: boolean;
   busy: boolean;
@@ -79,6 +88,7 @@ function ChoiceCard({
   title,
   description,
   disabled,
+  role = "radio",
 }: {
   checked: boolean;
   onSelect: () => void;
@@ -86,17 +96,18 @@ function ChoiceCard({
   title: string;
   description: string;
   disabled?: boolean;
+  role?: "radio" | "checkbox";
 }) {
   return (
     <button
       type="button"
-      role="radio"
+      role={role}
       aria-checked={checked}
       disabled={disabled}
       onClick={onSelect}
       className={cn(
-        "flex flex-1 items-start gap-3 rounded-xl border p-4 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60",
-        checked ? "border-primary bg-primary/5" : "hover:bg-accent/60",
+        "flex items-start gap-3 rounded-xl border p-4 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60",
+        checked ? "border-primary bg-primary/5" : "enabled:hover:bg-accent/60",
       )}
     >
       <span
@@ -205,11 +216,77 @@ function UriList({
   );
 }
 
+function SectionHeading({
+  id,
+  title,
+  children,
+}: {
+  id: string;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <h3 id={id} className="text-base font-semibold">
+        {title}
+      </h3>
+      <p className="mt-1 text-sm text-muted-foreground">{children}</p>
+    </div>
+  );
+}
+
+function FieldError({ children }: { children?: string }) {
+  if (!children) return null;
+  return (
+    <p role="alert" className="text-xs leading-5 text-destructive">
+      {children}
+    </p>
+  );
+}
+
+const credentialChoices: {
+  id: OidcClientCredential;
+  icon: ReactNode;
+  title: string;
+  description: string;
+}[] = [
+  {
+    id: "secret",
+    icon: <Lock className="size-4" />,
+    title: "Client secret",
+    description: "A backend keeps a shared secret. Fits server-rendered apps.",
+  },
+  {
+    id: "private-key",
+    icon: <KeyRound className="size-4" />,
+    title: "Private key",
+    description: "Signs its requests with its own key; you register the public JWKS.",
+  },
+  {
+    id: "public",
+    icon: <Unlock className="size-4" />,
+    title: "Public",
+    description: "Runs in the browser or on a device. No secret; PKCE is required.",
+  },
+];
+
+/** What saving does to the credentials the app uses now. */
+function credentialChangeNote(from: OidcClientCredential, to: OidcClientCredential) {
+  if (from === to) return null;
+  if (to === "secret") return "A new client secret is issued when you save. It is shown once.";
+  if (to === "private-key")
+    return "The current secret stops working when you save. The app must sign with its key.";
+  return from === "secret"
+    ? "The current secret stops working when you save. The app must use PKCE."
+    : "The registered keys stop working when you save. The app must use PKCE.";
+}
+
 export function ClientForm({
   mode,
   initial,
-  confidential = true,
-  onConfidentialChange,
+  savedCredential,
+  apiAccess,
+  canGrantApiAccess,
   readOnly = false,
   busy,
   resetKey,
@@ -228,15 +305,21 @@ export function ClientForm({
     setDraft(initial);
     setAttempted(false);
   }
-  const localErrors = attempted ? validateClientDraft(draft) : {};
+  const localErrors = attempted ? validateClientDraft(draft, { apiAccess }) : {};
   const errors: OidcClientDraftErrors = { ...serverErrors, ...localErrors };
   const showSummary = attempted && hasDraftErrors(errors);
+  const apiLocked = readOnly || !canGrantApiAccess;
 
   function update<K extends keyof OidcClientDraft>(key: K, value: OidcClientDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
-  function setApplicationType(applicationType: OidcApplicationType) {
-    update("applicationType", applicationType);
+  function setCredential(credential: OidcClientCredential) {
+    // Public clients cannot authenticate, so they cannot obtain tokens as themselves.
+    setDraft((current) => ({
+      ...current,
+      credential,
+      ...(credential === "public" ? { serviceAccess: false, signIn: true } : {}),
+    }));
   }
   function toggleScope(scopeId: string, checked: boolean) {
     update(
@@ -244,11 +327,45 @@ export function ClientForm({
       checked ? [...draft.scopes, scopeId] : draft.scopes.filter((scope) => scope !== scopeId),
     );
   }
+  function toggleApiScope(scopeId: string, checked: boolean) {
+    const resource = apiScopes.find((scope) => scope.id === scopeId)?.resource;
+    setDraft((current) => ({
+      ...current,
+      apiScopes: checked
+        ? [...current.apiScopes, scopeId]
+        : current.apiScopes.filter((scope) => scope !== scopeId),
+      // A scope is only usable on a token addressed to its resource.
+      resources:
+        checked && resource && !current.resources.includes(resource)
+          ? [...current.resources, resource]
+          : current.resources,
+    }));
+  }
+  function toggleResource(resourceId: (typeof oidcResources)[number]["id"], checked: boolean) {
+    setDraft((current) => ({
+      ...current,
+      resources: checked
+        ? [...current.resources, resourceId]
+        : current.resources.filter((resource) => resource !== resourceId),
+      apiScopes: checked
+        ? current.apiScopes
+        : current.apiScopes.filter(
+            (scope) => apiScopes.find((known) => known.id === scope)?.resource !== resourceId,
+          ),
+    }));
+  }
 
   const redirectHint =
     draft.applicationType === "web"
-      ? "Exact https URLs on a public host. Web apps cannot use localhost; create a native app for local development."
+      ? "Exact https URLs on a public host. Web apps cannot use localhost; choose Native or local for local development."
       : "Exact URLs. Native apps may use http://localhost, http://127.0.0.1, http://[::1], or a reverse-domain scheme such as org.polinetwork.app:/callback.";
+  const credentialNote =
+    mode === "edit" && savedCredential
+      ? credentialChangeNote(savedCredential, draft.credential)
+      : null;
+  const showGrants = apiAccess || draft.serviceAccess;
+  const apiInUse = draft.serviceAccess || draft.apiScopes.length > 0 || draft.resources.length > 0;
+  const showApiAccess = apiAccess || apiInUse;
 
   return (
     <form
@@ -257,19 +374,14 @@ export function ClientForm({
       onSubmit={(event) => {
         event.preventDefault();
         setAttempted(true);
-        if (hasDraftErrors(validateClientDraft(draft))) return;
+        if (hasDraftErrors(validateClientDraft(draft, { apiAccess }))) return;
         onSubmit(draft);
       }}
     >
       <section className="space-y-5" aria-labelledby={`${id}-basics`}>
-        <div>
-          <h3 id={`${id}-basics`} className="text-base font-semibold">
-            Basics
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            What people see on the sign-in and consent screens.
-          </p>
-        </div>
+        <SectionHeading id={`${id}-basics`} title="Basics">
+          What people see on the sign-in and consent screens.
+        </SectionHeading>
         <div className="flex flex-wrap items-start gap-5">
           <AppLogo name={draft.name || "New app"} logo={draft.logo} className="size-16 text-lg" />
           <div className="min-w-0 flex-1 basis-64 space-y-5">
@@ -326,130 +438,265 @@ export function ClientForm({
       </section>
 
       <section className="space-y-5" aria-labelledby={`${id}-type`}>
-        <div>
-          <h3 id={`${id}-type`} className="text-base font-semibold">
-            Application type
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Determines which redirect URIs are allowed and whether a secret is issued.
+        <SectionHeading id={`${id}-type`} title="Application type">
+          {draft.signIn
+            ? "Decides which redirect URIs are allowed and how the app proves who it is."
+            : "Decides how the app proves who it is."}
+        </SectionHeading>
+        {draft.signIn && (
+          <div className="space-y-2">
+            <p id={`${id}-platform`} className="text-sm font-medium">
+              Platform
+            </p>
+            <div
+              role="radiogroup"
+              aria-labelledby={`${id}-platform`}
+              className="grid gap-3 sm:grid-cols-2"
+            >
+              <ChoiceCard
+                checked={draft.applicationType === "web"}
+                onSelect={() => update("applicationType", "web")}
+                icon={<Globe className="size-4" />}
+                title="Web"
+                description="Websites and web apps served over https."
+              />
+              <ChoiceCard
+                checked={draft.applicationType === "native"}
+                onSelect={() => update("applicationType", "native")}
+                icon={<Smartphone className="size-4" />}
+                title="Native or local"
+                description="Mobile, desktop, CLI tools, and local development on localhost."
+              />
+            </div>
+          </div>
+        )}
+        <div className="space-y-2">
+          <p id={`${id}-credential`} className="text-sm font-medium">
+            Credentials
           </p>
-        </div>
-        <div role="radiogroup" aria-label="Platform" className="flex flex-col gap-3 sm:flex-row">
-          <ChoiceCard
-            checked={draft.applicationType === "web"}
-            onSelect={() => setApplicationType("web")}
-            icon={<Globe className="size-4" />}
-            title="Web"
-            description="Websites and web apps served over https."
-          />
-          <ChoiceCard
-            checked={draft.applicationType === "native"}
-            onSelect={() => setApplicationType("native")}
-            icon={<Smartphone className="size-4" />}
-            title="Native or local"
-            description="Mobile, desktop, CLI tools, and local development on localhost."
-          />
-        </div>
-        {mode === "create" ? (
           <div
             role="radiogroup"
-            aria-label="Client type"
-            className="flex flex-col gap-3 sm:flex-row"
+            aria-labelledby={`${id}-credential`}
+            className="grid gap-3 sm:grid-cols-3"
           >
+            {credentialChoices.map((choice) => (
+              <ChoiceCard
+                key={choice.id}
+                checked={draft.credential === choice.id}
+                onSelect={() => setCredential(choice.id)}
+                icon={choice.icon}
+                title={choice.title}
+                description={choice.description}
+              />
+            ))}
+          </div>
+          {credentialNote && (
+            <p role="status" className="text-xs leading-5 text-muted-foreground">
+              {credentialNote}
+            </p>
+          )}
+        </div>
+        {draft.credential === "private-key" && (
+          <Field
+            id={`${id}-jwks`}
+            label="Public JWKS"
+            hint="Ed25519 or P-256 public keys, up to five. To rotate, add the new key, deploy its private key, then remove the old one."
+            error={errors.jwks}
+          >
+            <Textarea
+              id={`${id}-jwks`}
+              rows={8}
+              spellCheck={false}
+              autoComplete="off"
+              className="max-h-80 font-mono text-xs md:text-xs"
+              placeholder={'{"keys":[{"kty":"OKP","crv":"Ed25519","x":"…","kid":"…"}]}'}
+              value={draft.jwks}
+              aria-invalid={!!errors.jwks}
+              aria-describedby={errors.jwks ? `${id}-jwks-error` : `${id}-jwks-hint`}
+              onChange={(event) => update("jwks", event.target.value)}
+            />
+          </Field>
+        )}
+      </section>
+
+      {showGrants && (
+        <section className="space-y-5" aria-labelledby={`${id}-grants`}>
+          <SectionHeading id={`${id}-grants`} title="Tokens">
+            How the application obtains tokens. Choose one or both.
+          </SectionHeading>
+          <div className="grid gap-3 sm:grid-cols-2">
             <ChoiceCard
-              checked={confidential}
-              onSelect={() => onConfidentialChange?.(true)}
-              icon={<Lock className="size-4" />}
-              title="Confidential"
-              description="Has a backend that can keep a client secret. Recommended for server-rendered apps and APIs."
+              role="checkbox"
+              checked={draft.signIn}
+              onSelect={() => update("signIn", !draft.signIn)}
+              icon={<LogIn className="size-4" />}
+              title="Signs people in"
+              description="Authorization code with PKCE. People review its access on a consent screen."
             />
             <ChoiceCard
-              checked={!confidential}
-              onSelect={() => onConfidentialChange?.(false)}
-              icon={<Unlock className="size-4" />}
-              title="Public"
-              description="Runs entirely on the device or in the browser. No secret; PKCE is required."
+              role="checkbox"
+              checked={draft.serviceAccess}
+              disabled={apiLocked || draft.credential === "public"}
+              onSelect={() => update("serviceAccess", !draft.serviceAccess)}
+              icon={<Server className="size-4" />}
+              title="Acts as itself"
+              description={
+                draft.credential === "public"
+                  ? "Needs a client secret or a private key."
+                  : "Client credentials, for backends and bots calling PoliNetwork APIs."
+              }
             />
           </div>
-        ) : (
-          <p className="text-xs leading-5 text-muted-foreground">
-            The client type (confidential or public) is fixed after creation. Create a new
-            application to change it.
-          </p>
-        )}
-      </section>
+          <FieldError>{errors.grants}</FieldError>
+        </section>
+      )}
 
-      <section className="space-y-5" aria-labelledby={`${id}-redirects`}>
-        <div>
-          <h3 id={`${id}-redirects`} className="text-base font-semibold">
-            Redirect URIs
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
+      {draft.signIn && (
+        <section className="space-y-5" aria-labelledby={`${id}-redirects`}>
+          <SectionHeading id={`${id}-redirects`} title="Redirect URIs">
             Where PoliNetwork sends people back after they sign in. Must match exactly.
-          </p>
-        </div>
-        <UriList
-          id={`${id}-redirect`}
-          label="Redirect URIs"
-          items={draft.redirectUris}
-          itemErrors={errors.redirectUriItems}
-          error={errors.redirectUris}
-          hint={redirectHint}
-          placeholder={
-            draft.applicationType === "web"
-              ? "https://app.polinetwork.org/auth/callback"
-              : "http://localhost:3000/auth/callback"
-          }
-          addLabel="Add redirect URI"
-          minItems={1}
-          onChange={(items) => update("redirectUris", items)}
-        />
-      </section>
+          </SectionHeading>
+          <UriList
+            id={`${id}-redirect`}
+            label="Redirect URIs"
+            items={draft.redirectUris}
+            itemErrors={errors.redirectUriItems}
+            error={errors.redirectUris}
+            hint={redirectHint}
+            placeholder={
+              draft.applicationType === "web"
+                ? "https://app.polinetwork.org/auth/callback"
+                : "http://localhost:3000/auth/callback"
+            }
+            addLabel="Add redirect URI"
+            minItems={1}
+            onChange={(items) => update("redirectUris", items)}
+          />
+        </section>
+      )}
 
-      <section className="space-y-5" aria-labelledby={`${id}-scopes`}>
-        <div>
-          <h3 id={`${id}-scopes`} className="text-base font-semibold">
-            Permissions
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
+      {draft.signIn && (
+        <section className="space-y-5" aria-labelledby={`${id}-scopes`}>
+          <SectionHeading id={`${id}-scopes`} title="Permissions">
             The most this app may request. People still review each request on the consent screen.
-          </p>
-        </div>
-        <ul className="divide-y rounded-xl border">
-          {oidcScopes.map((scope) => {
-            const checked = scope.required || draft.scopes.includes(scope.id);
-            const checkboxId = `${id}-scope-${scope.id}`;
-            return (
-              <li key={scope.id} className="flex items-start gap-3 p-4">
-                <Checkbox
-                  id={checkboxId}
-                  checked={checked}
-                  disabled={scope.required}
-                  className="mt-0.5"
-                  onCheckedChange={(value) => toggleScope(scope.id, value === true)}
-                />
-                <div className="min-w-0 flex-1">
-                  <Label htmlFor={checkboxId} className="cursor-pointer">
-                    {scope.label}
-                    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-normal text-muted-foreground">
-                      {scope.id}
-                    </code>
-                  </Label>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    {scope.description}
-                    {scope.required && " Required."}
-                  </p>
+          </SectionHeading>
+          <ul className="divide-y rounded-xl border">
+            {oidcScopes.map((scope) => {
+              const checked = scope.required || draft.scopes.includes(scope.id);
+              const checkboxId = `${id}-scope-${scope.id}`;
+              return (
+                <li key={scope.id} className="flex items-start gap-3 p-4">
+                  <Checkbox
+                    id={checkboxId}
+                    checked={checked}
+                    disabled={scope.required}
+                    className="mt-0.5"
+                    onCheckedChange={(value) => toggleScope(scope.id, value === true)}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <Label htmlFor={checkboxId} className="cursor-pointer">
+                      {scope.label}
+                      <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-normal text-muted-foreground">
+                        {scope.id}
+                      </code>
+                    </Label>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {scope.description}
+                      {scope.required && " Required."}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          <FieldError>{errors.scopes}</FieldError>
+        </section>
+      )}
+
+      {showApiAccess && (
+        <details
+          className="group/api rounded-xl border"
+          open={apiInUse || undefined}
+          aria-labelledby={`${id}-api`}
+        >
+          <summary className="flex cursor-pointer list-none items-start gap-2 p-4 marker:content-none">
+            <ChevronRight
+              className="mt-0.5 size-4 shrink-0 transition-transform group-open/api:rotate-90"
+              aria-hidden="true"
+            />
+            <span>
+              <span id={`${id}-api`} className="block text-sm font-semibold">
+                API access
+                {apiInUse && (
+                  <span className="ml-2 font-normal text-muted-foreground">
+                    {draft.apiScopes.length} {draft.apiScopes.length === 1 ? "scope" : "scopes"}
+                  </span>
+                )}
+              </span>
+              <span className="mt-1 block text-sm text-muted-foreground">
+                PoliNetwork APIs the app may call, for the people it signs in or as itself.
+                {!canGrantApiAccess && " Only Master Admin can change these."}
+              </span>
+            </span>
+          </summary>
+          <div className="space-y-3 border-t p-4 sm:p-5">
+            {oidcResources.map((resource) => {
+              const resourceId = `${id}-resource-${resource.id}`;
+              return (
+                <div key={resource.id} className="rounded-xl border">
+                  <div className="flex items-start gap-3 p-4">
+                    <Checkbox
+                      id={resourceId}
+                      checked={draft.resources.includes(resource.id)}
+                      disabled={apiLocked}
+                      className="mt-0.5"
+                      onCheckedChange={(value) => toggleResource(resource.id, value === true)}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <Label htmlFor={resourceId} className="cursor-pointer">
+                        {resource.label}
+                      </Label>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        {resource.description}
+                      </p>
+                    </div>
+                  </div>
+                  <ul className="divide-y border-t bg-muted/30">
+                    {apiScopes
+                      .filter((scope) => scope.resource === resource.id)
+                      .map((scope) => {
+                        const checkboxId = `${id}-api-${scope.id}`;
+                        return (
+                          <li key={scope.id} className="flex items-start gap-3 py-3 pr-4 pl-11">
+                            <Checkbox
+                              id={checkboxId}
+                              checked={draft.apiScopes.includes(scope.id)}
+                              disabled={apiLocked}
+                              className="mt-0.5"
+                              onCheckedChange={(value) => toggleApiScope(scope.id, value === true)}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <Label htmlFor={checkboxId} className="cursor-pointer">
+                                {scope.label}
+                                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-normal text-muted-foreground">
+                                  {scope.id}
+                                </code>
+                              </Label>
+                              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                {scope.description}
+                              </p>
+                            </div>
+                          </li>
+                        );
+                      })}
+                  </ul>
                 </div>
-              </li>
-            );
-          })}
-        </ul>
-        {errors.scopes && (
-          <p role="alert" className="text-xs leading-5 text-destructive">
-            {errors.scopes}
-          </p>
-        )}
-      </section>
+              );
+            })}
+            <FieldError>{errors.apiScopes}</FieldError>
+          </div>
+        </details>
+      )}
 
       <details className="group rounded-xl border">
         <summary className="flex cursor-pointer list-none items-center gap-2 p-4 text-sm font-semibold marker:content-none">
@@ -459,20 +706,41 @@ export function ClientForm({
           />
           Advanced
           <span className="font-normal text-muted-foreground">
-            Sign-out redirects, contacts, policies
+            {draft.signIn ? "Sign-out, contacts, policies" : "Contacts, policies"}
           </span>
         </summary>
         <div className="space-y-8 border-t p-4 sm:p-5">
-          <UriList
-            id={`${id}-post-logout`}
-            label="Post-logout redirect URIs"
-            items={draft.postLogoutRedirectUris}
-            itemErrors={errors.postLogoutRedirectUriItems}
-            hint="Where people may be sent after signing out of PoliNetwork from this app."
-            placeholder="https://app.polinetwork.org/signed-out"
-            addLabel="Add post-logout URI"
-            onChange={(items) => update("postLogoutRedirectUris", items)}
-          />
+          {draft.signIn && (
+            <>
+              <UriList
+                id={`${id}-post-logout`}
+                label="Post-logout redirect URIs"
+                items={draft.postLogoutRedirectUris}
+                itemErrors={errors.postLogoutRedirectUriItems}
+                hint="Where people may be sent after signing out of PoliNetwork from this app."
+                placeholder="https://app.polinetwork.org/signed-out"
+                addLabel="Add post-logout URI"
+                onChange={(items) => update("postLogoutRedirectUris", items)}
+              />
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id={`${id}-end-session`}
+                  checked={draft.enableEndSession}
+                  className="mt-0.5"
+                  onCheckedChange={(value) => update("enableEndSession", value === true)}
+                />
+                <div className="min-w-0 flex-1">
+                  <Label htmlFor={`${id}-end-session`} className="cursor-pointer">
+                    Let the app sign people out of PoliNetwork
+                  </Label>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Enables RP-initiated logout, so signing out of the app also ends the PoliNetwork
+                    session.
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
           <UriList
             id={`${id}-contacts`}
             label="Contact emails"

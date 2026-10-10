@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AppWindow, ChevronRight, ExternalLink, Plus, Users } from "lucide-react";
-import type { OidcClientSummary } from "@/auth/oidc-clients";
+import { credentialLabels, type OidcClientSummary } from "@/auth/oidc-clients";
 import { getOidcClients } from "@/auth/oidc.functions";
 import { accessOf, useAccess } from "@/components/access";
 import { CopyButton } from "@/components/copy-button";
@@ -24,13 +24,11 @@ function ClientBadges({ client }: { client: OidcClientSummary }) {
       {client.disabled && (
         <Badge className="border-destructive/40 bg-destructive/5 text-destructive">Disabled</Badge>
       )}
-      <Badge className="bg-card text-muted-foreground">
-        {client.confidential ? "Confidential" : "Public"}
-      </Badge>
+      <Badge className="bg-card text-muted-foreground">{credentialLabels[client.credential]}</Badge>
       {client.applicationType === "native" && (
         <Badge className="bg-card text-muted-foreground">Native</Badge>
       )}
-      {client.service && <Badge className="bg-card text-muted-foreground">Service</Badge>}
+      {client.restricted && <Badge className="bg-card text-muted-foreground">API access</Badge>}
       {client.skipConsent && <Badge className="bg-card text-muted-foreground">Skips consent</Badge>}
     </div>
   );
@@ -80,7 +78,7 @@ function IntegrationCard() {
 }
 
 function ApplicationsIndex() {
-  const { can, isMasterAdmin } = useAccess();
+  const { can } = useAccess();
   const canWrite = can("idp:applications:write");
   const clients = Route.useLoaderData();
 
@@ -94,11 +92,6 @@ function ApplicationsIndex() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {isMasterAdmin && (
-            <Button variant="outline" asChild>
-              <Link to="/applications/service-new">Register service client</Link>
-            </Button>
-          )}
           {canWrite && (
             <Button asChild>
               <Link to="/applications/new">
@@ -143,7 +136,7 @@ function ApplicationsIndex() {
                   <h2 className="text-lg font-semibold">No applications yet</h2>
                   <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
                     Register the first service that should offer “Sign in with PoliNetwork”. You'll
-                    get a client ID and, for confidential apps, a secret.
+                    get a client ID and, if it uses one, a secret.
                   </p>
                 </div>
                 {canWrite && (

@@ -19,7 +19,6 @@ import { Route as ApiIdentityRouteImport } from './routes/api/identity'
 import { Route as ApplicationsIndexRouteImport } from './routes/applications/index'
 import { Route as ApplicationsClientIdRouteImport } from './routes/applications/$clientId'
 import { Route as ApplicationsNewRouteImport } from './routes/applications/new'
-import { Route as ApplicationsServiceNewRouteImport } from './routes/applications/service-new'
 import { Route as UsersIndexRouteImport } from './routes/users/index'
 import { Route as UsersUserIdRouteImport } from './routes/users/$userId'
 import { Route as AccessPermissionsIndexRouteImport } from './routes/access/permissions/index'
@@ -79,11 +78,6 @@ const ApplicationsClientIdRoute = ApplicationsClientIdRouteImport.update({
 const ApplicationsNewRoute = ApplicationsNewRouteImport.update({
   id: '/new',
   path: '/new',
-  getParentRoute: () => ApplicationsRouteRoute,
-} as any)
-const ApplicationsServiceNewRoute = ApplicationsServiceNewRouteImport.update({
-  id: '/service-new',
-  path: '/service-new',
   getParentRoute: () => ApplicationsRouteRoute,
 } as any)
 const UsersIndexRoute = UsersIndexRouteImport.update({
@@ -148,7 +142,6 @@ export interface FileRoutesByFullPath {
   '/api/identity': typeof ApiIdentityRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
-  '/applications/service-new': typeof ApplicationsServiceNewRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/access/': typeof AccessIndexRoute
   '/applications/': typeof ApplicationsIndexRoute
@@ -168,7 +161,6 @@ export interface FileRoutesByTo {
   '/api/identity': typeof ApiIdentityRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
-  '/applications/service-new': typeof ApplicationsServiceNewRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/access': typeof AccessIndexRoute
   '/applications': typeof ApplicationsIndexRoute
@@ -192,7 +184,6 @@ export interface FileRoutesById {
   '/api/identity': typeof ApiIdentityRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
-  '/applications/service-new': typeof ApplicationsServiceNewRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/access/': typeof AccessIndexRoute
   '/applications/': typeof ApplicationsIndexRoute
@@ -217,7 +208,6 @@ export interface FileRouteTypes {
     | '/api/identity'
     | '/applications/$clientId'
     | '/applications/new'
-    | '/applications/service-new'
     | '/users/$userId'
     | '/access/'
     | '/applications/'
@@ -237,7 +227,6 @@ export interface FileRouteTypes {
     | '/api/identity'
     | '/applications/$clientId'
     | '/applications/new'
-    | '/applications/service-new'
     | '/users/$userId'
     | '/access'
     | '/applications'
@@ -260,7 +249,6 @@ export interface FileRouteTypes {
     | '/api/identity'
     | '/applications/$clientId'
     | '/applications/new'
-    | '/applications/service-new'
     | '/users/$userId'
     | '/access/'
     | '/applications/'
@@ -356,13 +344,6 @@ declare module '@tanstack/react-router' {
       path: '/new'
       fullPath: '/applications/new'
       preLoaderRoute: typeof ApplicationsNewRouteImport
-      parentRoute: typeof ApplicationsRouteRoute
-    }
-    '/applications/service-new': {
-      id: '/applications/service-new'
-      path: '/service-new'
-      fullPath: '/applications/service-new'
-      preLoaderRoute: typeof ApplicationsServiceNewRouteImport
       parentRoute: typeof ApplicationsRouteRoute
     }
     '/users/': {
@@ -465,14 +446,12 @@ const AccessRouteRouteWithChildren = AccessRouteRoute._addFileChildren(
 interface ApplicationsRouteRouteChildren {
   ApplicationsClientIdRoute: typeof ApplicationsClientIdRoute
   ApplicationsNewRoute: typeof ApplicationsNewRoute
-  ApplicationsServiceNewRoute: typeof ApplicationsServiceNewRoute
   ApplicationsIndexRoute: typeof ApplicationsIndexRoute
 }
 
 const ApplicationsRouteRouteChildren: ApplicationsRouteRouteChildren = {
   ApplicationsClientIdRoute: ApplicationsClientIdRoute,
   ApplicationsNewRoute: ApplicationsNewRoute,
-  ApplicationsServiceNewRoute: ApplicationsServiceNewRoute,
   ApplicationsIndexRoute: ApplicationsIndexRoute,
 }
 

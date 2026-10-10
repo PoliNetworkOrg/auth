@@ -1,18 +1,43 @@
-import { and, countDistinct, desc, eq, sql } from "drizzle-orm";
+import { and, countDistinct, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/index";
-import { withAuthorizedRbacRead, withAuthorizedRbacWrite } from "./rbac-store";
-import { RbacError } from "./rbac-store";
-import { MASTER_ADMIN_ROLE_KEY } from "./rbac";
-import { isServiceClient } from "./service-client-policy";
 import { oauthClient, oauthClientResource, oauthConsent } from "../db/schema";
+import { env } from "../env";
+import { validateClientJwks } from "./client-jwks";
+import { MASTER_ADMIN_ROLE_KEY } from "./rbac";
+import { RbacError, withAuthorizedRbacRead, withAuthorizedRbacWrite } from "./rbac-store";
 import {
-  grantTypesForScopes,
+  clientRegistration,
+  credentialOf,
+  isRestrictedClient,
+  isRestrictedDraft,
   OIDC_CLIENT_REFERENCE,
+  parsePublicJwks,
   type OidcClientDraft,
   type OidcClientSummary,
+  type OidcResourceKey,
 } from "./oidc-clients";
 
 type ClientRow = typeof oauthClient.$inferSelect;
+
+/** The resource identifiers this deployment configures, by key. */
+export function configuredResources(): Partial<Record<OidcResourceKey, string>> {
+  return {
+    ...(env.OAUTH_BACKEND_RESOURCE_URI ? { backend: env.OAUTH_BACKEND_RESOURCE_URI } : {}),
+    ...(env.OAUTH_INTERNAL_RESOURCE_URI ? { internal: env.OAUTH_INTERNAL_RESOURCE_URI } : {}),
+  };
+}
+
+/** Service OAuth runs only with both resources configured; see `src/auth/index.ts`. */
+export function apiAccessEnabled() {
+  return Boolean(env.OAUTH_BACKEND_RESOURCE_URI && env.OAUTH_INTERNAL_RESOURCE_URI);
+}
+
+function resourceKeys(resourceIds: string[]): OidcResourceKey[] {
+  const configured = configuredResources();
+  return (Object.keys(configured) as OidcResourceKey[]).filter((key) =>
+    resourceIds.includes(configured[key]!),
+  );
+}
 
 function toSummary(
   row: ClientRow,
@@ -30,12 +55,13 @@ function toSummary(
     tosUri: row.tos ?? null,
     policyUri: row.policy ?? null,
     scopes: row.scopes ?? [],
-    confidential: row.tokenEndpointAuthMethod !== "none",
-    service: isServiceClient(row),
+    credential: credentialOf(row.tokenEndpointAuthMethod),
+    restricted: isRestrictedClient({ ...row, resourceIds }),
     authMethod: row.tokenEndpointAuthMethod ?? null,
     grantTypes: row.grantTypes ?? [],
     clientCredentialsScopes: row.clientCredentialsScopes ?? [],
     resourceIds,
+    resources: resourceKeys(resourceIds),
     enableEndSession: row.enableEndSession ?? false,
     jwks: row.jwks ?? null,
     applicationType: row.applicationType === "native" ? "native" : "web",
@@ -92,59 +118,152 @@ export async function listOidcClients(
   );
 }
 
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Makes the client's links to the configured resources match `resources`. Links to
+ * identifiers this deployment does not configure are left alone.
+ */
+async function syncResourceLinks(
+  transaction: Transaction,
+  clientId: string,
+  resources: OidcResourceKey[],
+) {
+  const configured = configuredResources();
+  const managed = Object.values(configured);
+  if (!managed.length) return;
+  const wanted = resources.flatMap((key) => (configured[key] ? [configured[key]] : []));
+  const existing = (
+    await transaction
+      .select({ resourceId: oauthClientResource.resourceId })
+      .from(oauthClientResource)
+      .where(eq(oauthClientResource.clientId, clientId))
+  ).map((link) => link.resourceId);
+  const stale = existing.filter((id) => managed.includes(id) && !wanted.includes(id));
+  if (stale.length)
+    await transaction
+      .delete(oauthClientResource)
+      .where(
+        and(
+          eq(oauthClientResource.clientId, clientId),
+          inArray(oauthClientResource.resourceId, stale),
+        ),
+      );
+  const missing = wanted.filter((id) => !existing.includes(id));
+  if (missing.length)
+    await transaction.insert(oauthClientResource).values(
+      missing.map((resourceId) => ({
+        id: crypto.randomUUID(),
+        clientId,
+        resourceId,
+        createdAt: new Date(),
+      })),
+    );
+}
+
+/**
+ * Links a newly created client to the resources its draft asks for. Master Admin only,
+ * like every resource link.
+ */
+export async function linkNewOidcClient(
+  actorId: string,
+  clientId: string,
+  resources: OidcResourceKey[],
+) {
+  if (!resources.length) return;
+  await withAuthorizedRbacWrite(
+    actorId,
+    "idp:applications:write",
+    async (transaction, _catalog, access) => {
+      if (!access.roles.includes(MASTER_ADMIN_ROLE_KEY))
+        throw new RbacError(403, "Only Master Admin may link API resources.");
+      await transaction.execute(sql`select set_config('polinetwork.actor_id', ${actorId}, true)`);
+      await syncResourceLinks(transaction, clientId, resources);
+    },
+  );
+}
+
 export type OidcClientPatch = {
   draft?: OidcClientDraft;
   disabled?: boolean;
   skipConsent?: boolean;
 };
 
-/** Applies validated settings to a pooled client. Returns null when the client is not in the pool. */
+/**
+ * Stands in for a secret until the token endpoint's own rotation replaces it. No presented
+ * secret hashes to a value with a colon, so nothing authenticates with it meanwhile.
+ */
+function unusableSecret() {
+  return `pending:${crypto.randomUUID()}`;
+}
+
+/**
+ * Applies validated settings to a pooled client. Returns null when the client is not in the
+ * pool. `issueSecret` asks the caller to issue the first secret of a client that now uses
+ * one, through the provider's rotation endpoint.
+ */
 export async function updateOidcClient(
   actorId: string,
   clientId: string,
   patch: OidcClientPatch,
-): Promise<OidcClientSummary | null> {
+): Promise<{ client: OidcClientSummary; issueSecret: boolean } | null> {
   return withAuthorizedRbacWrite(
     actorId,
     "idp:applications:write",
     async (transaction, _catalog, access) => {
       await transaction.execute(sql`select set_config('polinetwork.actor_id', ${actorId}, true)`);
-      const [existing] = await transaction
-        .select({
-          tokenEndpointAuthMethod: oauthClient.tokenEndpointAuthMethod,
-          grantTypes: oauthClient.grantTypes,
-          clientCredentialsScopes: oauthClient.clientCredentialsScopes,
-          scopes: oauthClient.scopes,
-        })
-        .from(oauthClient)
-        .where(
-          and(
-            eq(oauthClient.clientId, clientId),
-            eq(oauthClient.referenceId, OIDC_CLIENT_REFERENCE),
-          ),
-        );
-      if (existing && isServiceClient(existing) && !access.roles.includes(MASTER_ADMIN_ROLE_KEY))
-        throw new RbacError(403, "Only Master Admin may change service clients.");
+      const [existing] = await readOidcClients(transaction, clientId);
+      if (!existing) return null;
+      const masterAdmin = access.roles.includes(MASTER_ADMIN_ROLE_KEY);
+      if (existing.restricted && !masterAdmin)
+        throw new RbacError(403, "Only Master Admin may change applications with API access.");
       const values: Partial<typeof oauthClient.$inferInsert> = { updatedAt: new Date() };
+      let issueSecret = false;
       if (patch.draft) {
         const draft = patch.draft;
+        if (isRestrictedDraft(draft) && !masterAdmin)
+          throw new RbacError(403, "Only Master Admin may give an application API access.");
+        const registration = clientRegistration(draft);
         values.name = draft.name;
         values.uri = draft.uri || null;
         values.icon = draft.logo || null;
-        values.redirectUris = draft.redirectUris;
-        values.postLogoutRedirectUris = draft.postLogoutRedirectUris.length
-          ? draft.postLogoutRedirectUris
+        values.redirectUris = registration.redirectUris;
+        values.postLogoutRedirectUris = registration.postLogoutRedirectUris.length
+          ? registration.postLogoutRedirectUris
           : null;
         values.contacts = draft.contacts.length ? draft.contacts : null;
         values.tos = draft.tosUri || null;
         values.policy = draft.policyUri || null;
-        values.scopes = draft.scopes;
-        values.grantTypes = grantTypesForScopes(draft.scopes);
+        values.scopes = registration.scopes;
+        values.grantTypes = registration.grantTypes;
+        values.responseTypes = draft.signIn ? ["code"] : null;
+        values.clientCredentialsScopes = registration.clientCredentialsScopes;
+        values.enableEndSession = registration.enableEndSession;
         values.applicationType = draft.applicationType;
+        if (draft.credential === "private-key") {
+          const jwks = parsePublicJwks(draft.jwks);
+          await validateClientJwks(jwks, transaction, clientId);
+          values.tokenEndpointAuthMethod = "private_key_jwt";
+          values.jwks = JSON.stringify(jwks);
+          values.jwksUri = null;
+          values.clientSecret = null;
+        } else {
+          values.jwks = null;
+          values.jwksUri = null;
+          if (draft.credential === "public") {
+            values.tokenEndpointAuthMethod = "none";
+            values.clientSecret = null;
+          } else if (existing.credential !== "secret") {
+            values.tokenEndpointAuthMethod = "client_secret_basic";
+            values.clientSecret = unusableSecret();
+            issueSecret = true;
+          }
+        }
+        if (masterAdmin) await syncResourceLinks(transaction, clientId, draft.resources);
       }
       if (patch.disabled !== undefined) values.disabled = patch.disabled;
       if (patch.skipConsent !== undefined) values.skipConsent = patch.skipConsent;
-      const [updated] = await transaction
+      await transaction
         .update(oauthClient)
         .set(values)
         .where(
@@ -152,11 +271,9 @@ export async function updateOidcClient(
             eq(oauthClient.clientId, clientId),
             eq(oauthClient.referenceId, OIDC_CLIENT_REFERENCE),
           ),
-        )
-        .returning();
-      if (!updated) return null;
+        );
       const [summary] = await readOidcClients(transaction, clientId);
-      return summary ?? toSummary(updated, 0);
+      return { client: summary!, issueSecret };
     },
   );
 }

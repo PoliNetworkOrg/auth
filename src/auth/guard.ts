@@ -1,6 +1,7 @@
 import { isNotFound, isRedirect } from "@tanstack/react-router";
 import { ActionError } from "@/lib/action-error";
 import { AccountError } from "./accounts";
+import { ClientJwksError } from "./client-jwks";
 import { logAuthorizationDenial } from "./denial-log";
 import { auth } from "./index";
 import { idpPermissions } from "./idp-access";
@@ -56,6 +57,8 @@ export function toActionError(cause: unknown): unknown {
   if (cause instanceof RbacError) return new ActionError(cause.status, cause.message, cause.fields);
   if (cause instanceof AccountError || cause instanceof StudentVerificationError)
     return new ActionError(cause.status, cause.message);
+  if (cause instanceof ClientJwksError)
+    return new ActionError(cause.status, cause.message, { jwks: cause.message });
   console.error(cause);
   return new ActionError(500, "Something went wrong. Try again.");
 }
