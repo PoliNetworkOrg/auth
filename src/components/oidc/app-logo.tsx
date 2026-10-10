@@ -27,7 +27,8 @@ export function AppLogo({
           src={logo}
           alt=""
           referrerPolicy="no-referrer"
-          className="size-full object-cover"
+          // Logos are drawn to their own edges, so the tile leaves a margin around them.
+          className="size-[64%] object-contain"
           onError={() => setFailedLogo(logo)}
         />
       ) : (
