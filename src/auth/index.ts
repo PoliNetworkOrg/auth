@@ -19,7 +19,14 @@ import { startKeyPruning } from "./key-pruning";
 import { logAuthorizationDenial } from "./denial-log";
 import { hasIdpPermission } from "./idp-access";
 import { canAdministerIdp } from "./oidc-admin";
-import { apiScopes, isApiScope, isRestrictedClient, OIDC_CLIENT_REFERENCE } from "./oidc-clients";
+import { validateClientJwks } from "./client-jwks";
+import {
+  apiScopes,
+  isApiScope,
+  isRestrictedClient,
+  OIDC_CLIENT_REFERENCE,
+  parsePublicJwks,
+} from "./oidc-clients";
 import { isLinkOnlyProvider, standardIdTokenClaims } from "./policy";
 import { providers } from "./providers";
 import {
@@ -127,6 +134,28 @@ export const auth = betterAuth({
             client &&
             isRestrictedClient({ ...client, resourceIds: links.map((link) => link.resourceId) }),
           ) || grantsApiAccess(body.update as Record<string, unknown> | undefined);
+      }
+      // Any writer may register a private key, so every path that stores one applies the same
+      // key rules as the application form, not only the provider's looser ones.
+      const metadata = creation ? body : (body?.update as Record<string, unknown> | undefined);
+      if ((creation || mutation) && metadata?.jwks_uri !== undefined)
+        throw new APIError("BAD_REQUEST", {
+          code: "JWKS_URI_UNSUPPORTED",
+          message: "Register the public JWKS itself, not a jwks_uri.",
+        });
+      if ((creation || mutation) && metadata?.jwks !== undefined) {
+        try {
+          await validateClientJwks(
+            parsePublicJwks(JSON.stringify(metadata.jwks)),
+            db,
+            mutation && typeof body?.client_id === "string" ? body.client_id : undefined,
+          );
+        } catch (error) {
+          throw new APIError("BAD_REQUEST", {
+            code: "INVALID_JWKS",
+            message: error instanceof Error ? error.message : "The public JWKS is invalid.",
+          });
+        }
       }
       if (protectedClient) {
         const session = await auth.api.getSession({ headers: context.headers ?? new Headers() });

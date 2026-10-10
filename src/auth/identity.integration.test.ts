@@ -708,6 +708,37 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       }
     },
   );
+  it("applies the form's key rules to private keys registered through the provider endpoint", async () => {
+    const create = (extra: Record<string, unknown>) =>
+      fetch(`${baseURL}/api/auth/oauth2/create-client`, {
+        method: "POST",
+        headers: sessionHeaders("application-writer-session"),
+        body: JSON.stringify({
+          client_name: "Raw private key",
+          redirect_uris: ["https://example.invalid/callback"],
+          token_endpoint_auth_method: "private_key_jwt",
+          ...extra,
+        }),
+      });
+    const rsa = await generateKeyPair("RS256", { extractable: true });
+    const ed = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
+    const edKey = { ...(await exportJWK(ed.publicKey)), kid: "raw" };
+    try {
+      expect(
+        (await create({ jwks: { keys: [{ ...(await exportJWK(rsa.publicKey)), kid: "rsa" }] } }))
+          .status,
+      ).toBe(400);
+      expect((await create({ jwks_uri: `${baseURL}/api/auth/jwks` })).status).toBe(400);
+      expect((await create({ jwks: { keys: [edKey] } })).status).toBe(201);
+      // The same key may not authenticate a second client.
+      expect((await create({ jwks: { keys: [edKey] } })).status).toBe(400);
+      expect(
+        (await pool.query(`SELECT id FROM oauth_client WHERE name = 'Raw private key'`)).rows,
+      ).toHaveLength(1);
+    } finally {
+      await pool.query(`DELETE FROM oauth_client WHERE name = 'Raw private key'`);
+    }
+  });
   it("lets an application writer switch a client between secret, private key, and public", async () => {
     const { createOidcClientFn, updateOidcClientFn } = await import("./oidc.functions");
     const created = await callAs("application-writer-session", createOidcClientFn, {
