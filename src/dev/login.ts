@@ -6,7 +6,7 @@
  */
 import { makeSignature } from "better-auth/crypto";
 import { auth } from "../auth";
-import { findPersona, listPersonas, saveDevUser } from "./personas";
+import { DevFixtureConflict, findPersona, listPersonas, saveDevUser } from "./personas";
 import { DEV_LOGIN_KIND, localRedirect, type DevLoginListing } from "./shared";
 
 const noStore = { "Cache-Control": "no-store" };
@@ -50,7 +50,12 @@ export async function handleDevLogin(request: Request): Promise<Response> {
       { status: 400, headers: noStore },
     );
 
-  await saveDevUser(persona);
+  try {
+    await saveDevUser(persona);
+  } catch (error) {
+    if (!(error instanceof DevFixtureConflict)) throw error;
+    return Response.json({ error: error.message }, { status: 409, headers: noStore });
+  }
   const context = await auth.$context;
   const session = await context.internalAdapter.createSession(persona.id);
   const cookie = context.authCookies.sessionToken;

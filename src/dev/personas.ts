@@ -3,8 +3,9 @@
  * sign-in endpoint and `src/dev/seed.ts` import this module, and production builds include
  * neither, so nothing here can run against production.
  */
-import { inArray, eq } from "drizzle-orm";
+import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { db } from "../db";
+import { authorizationMutationLock } from "../db/security-lock";
 import {
   account,
   identityEvidence,
@@ -31,7 +32,14 @@ export type DevAccount = {
   email?: string;
 };
 
-export type DevRole = { key: string; name: string; description: string; permissions: string[] };
+export type DevRole = {
+  /** Stable row ID, so the role is found again after its key is renamed in the role editor. */
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  permissions: string[];
+};
 
 export type DevUser = {
   id: string;
@@ -44,14 +52,20 @@ export type DevUser = {
 
 type DevPersona = DevUser & { key: string; description: string };
 
-const ISSUERS: Record<Provider, string> = {
-  google: "https://accounts.google.com",
-  // Without a configured tenant no Entra evidence is trusted anyway, so any well-formed
-  // issuer will do for display.
-  "pn-entra": `https://login.microsoftonline.com/${env.PN_ENTRA_TENANT_ID ?? "00000000-0000-0000-0000-000000000000"}/v2.0`,
-  telegram: "https://oauth.telegram.org",
-  "polimi-email": "https://mail.polimi.it",
-};
+export type DevIssuers = Record<Provider, string>;
+
+/** The issuer each provider's accounts are saved under. Entra's depends on the configured
+ * tenant, so it changes when `.env.local` gains or changes `PN_ENTRA_TENANT_ID`. */
+export function devIssuers(entraTenantId = env.PN_ENTRA_TENANT_ID): DevIssuers {
+  return {
+    google: "https://accounts.google.com",
+    // Without a configured tenant no Entra evidence is trusted anyway, so any well-formed
+    // issuer will do for display.
+    "pn-entra": `https://login.microsoftonline.com/${entraTenantId ?? "00000000-0000-0000-0000-000000000000"}/v2.0`,
+    telegram: "https://oauth.telegram.org",
+    "polimi-email": "https://mail.polimi.it",
+  };
+}
 
 /** The persona that holds Master Admin, when `.env.local` lists it in `IDP_ADMIN_USER_IDS`. */
 export const DEV_ADMIN_ID = "dev-admin";
@@ -74,6 +88,7 @@ export const DEV_PERSONAS: DevPersona[] = [
     accounts: [{ providerId: "google", accountId: "dev-staff" }],
     roles: [
       {
+        id: "dev-staff",
         key: "dev-staff",
         name: "Dev staff",
         description: "Created by the dev sign-in for the staff persona.",
@@ -126,15 +141,23 @@ export function listPersonas(): DevPersonaSummary[] {
 
 type Writer = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+/** Thrown instead of silently moving an identity between people. */
+export class DevFixtureConflict extends Error {}
+
+/** Finds the fixture role by its stable ID, so a key renamed in the role editor still matches;
+ * then by key, so a role created by hand under that key is reused rather than collided with. */
 async function saveRole(transaction: Writer, userId: string, entry: DevRole) {
-  await transaction
-    .insert(role)
-    .values({ id: entry.key, key: entry.key, name: entry.name, description: entry.description })
-    .onConflictDoNothing({ target: role.key });
-  const [saved] = await transaction
-    .select({ id: role.id })
-    .from(role)
-    .where(eq(role.key, entry.key));
+  const byId = await transaction.select({ id: role.id }).from(role).where(eq(role.id, entry.id));
+  const byKey = byId.length
+    ? byId
+    : await transaction.select({ id: role.id }).from(role).where(eq(role.key, entry.key));
+  let roleId = byKey[0]?.id;
+  if (!roleId) {
+    await transaction
+      .insert(role)
+      .values({ id: entry.id, key: entry.key, name: entry.name, description: entry.description });
+    roleId = entry.id;
+  }
   const permissions = await transaction
     .select({ id: permission.id })
     .from(permission)
@@ -143,63 +166,172 @@ async function saveRole(transaction: Writer, userId: string, entry: DevRole) {
   if (permissions.length)
     await transaction
       .insert(rolePermission)
-      .values(permissions.map(({ id }) => ({ roleId: saved!.id, permissionId: id })))
+      .values(permissions.map(({ id }) => ({ roleId, permissionId: id })))
       .onConflictDoNothing();
   await transaction
     .insert(userRole)
-    .values({ userId, roleId: saved!.id, assignedBy: "dev-login" })
+    .values({ userId, roleId, assignedBy: "dev-login" })
     .onConflictDoNothing();
 }
 
-/** Creates or refreshes a test person, their linked accounts, evidence, and roles. */
-export async function saveDevUser(entry: DevUser) {
+/** Fixture-owned accounts have this ID; accounts linked by hand get random ones and are never
+ * touched here. */
+function fixtureAccountId(userId: string, providerId: Provider) {
+  return `${userId}:${providerId}`;
+}
+
+async function deleteEvidence(
+  transaction: Writer,
+  proof: { issuer: string; subject: string; providerId: string },
+) {
+  await transaction
+    .delete(identityEvidence)
+    .where(
+      and(
+        eq(identityEvidence.issuer, proof.issuer),
+        eq(identityEvidence.subject, proof.subject),
+        eq(identityEvidence.providerId, proof.providerId),
+      ),
+    );
+}
+
+/**
+ * Creates or refreshes a test person, their linked accounts, evidence, and roles, in one
+ * transaction. Accounts are reconciled to the fixture: a changed issuer or subject (for example
+ * after `PN_ENTRA_TENANT_ID` is configured) moves the account and its evidence together, and
+ * fixture accounts the person no longer has are removed with their evidence. It refuses, rather
+ * than reassigns, an identity or Telegram ID that belongs to someone else.
+ */
+export async function saveDevUser(entry: DevUser, issuers: DevIssuers = devIssuers()) {
   const now = new Date();
   const validUntil = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1_000);
-  await db.transaction(async (transaction) => {
-    await transaction
-      .insert(user)
-      .values({
-        id: entry.id,
-        name: entry.name,
-        email: entry.email,
-        emailVerified: false,
-        ...(entry.createdAt ? { createdAt: entry.createdAt, updatedAt: entry.createdAt } : {}),
-      })
-      .onConflictDoUpdate({ target: user.id, set: { name: entry.name, email: entry.email } });
-
-    for (const linked of entry.accounts) {
-      const issuer = ISSUERS[linked.providerId];
+  await db.transaction(
+    async (transaction) => {
+      // Linked evidence is mutated under the same lock as every other writer of it.
+      await transaction.execute(authorizationMutationLock);
       await transaction
-        .insert(account)
+        .insert(user)
         .values({
-          id: `${entry.id}:${linked.providerId}`,
-          accountId: linked.accountId,
-          providerId: linked.providerId,
-          issuer,
-          userId: entry.id,
-          updatedAt: now,
+          id: entry.id,
+          name: entry.name,
+          email: entry.email,
+          emailVerified: false,
+          ...(entry.createdAt ? { createdAt: entry.createdAt, updatedAt: entry.createdAt } : {}),
         })
-        .onConflictDoNothing();
-      if (linked.providerId === "google") continue;
-      // Evidence is refreshed on every save so it never expires mid-session.
-      const proof = {
-        issuer,
-        subject: linked.accountId,
-        providerId: linked.providerId,
-        states: linked.states ?? [],
-        validUntil,
-        telegramId: linked.providerId === "telegram" ? linked.accountId : null,
-        email: linked.email ?? null,
-      };
-      await transaction
-        .insert(identityEvidence)
-        .values(proof)
-        .onConflictDoUpdate({
-          target: [identityEvidence.issuer, identityEvidence.subject],
-          set: proof,
-        });
-    }
+        .onConflictDoUpdate({ target: user.id, set: { name: entry.name, email: entry.email } });
 
-    for (const entryRole of entry.roles ?? []) await saveRole(transaction, entry.id, entryRole);
-  });
+      const wanted = new Set(
+        entry.accounts.map((linked) => fixtureAccountId(entry.id, linked.providerId)),
+      );
+      const owned = (
+        await transaction
+          .select({
+            id: account.id,
+            providerId: account.providerId,
+            issuer: account.issuer,
+            subject: account.accountId,
+          })
+          .from(account)
+          .where(eq(account.userId, entry.id))
+      ).filter((row) => row.id.startsWith(`${entry.id}:`));
+
+      // Fixture accounts the person no longer has go, with whatever evidence they carried.
+      for (const stale of owned.filter((row) => !wanted.has(row.id))) {
+        await deleteEvidence(transaction, stale);
+        await transaction.delete(account).where(eq(account.id, stale.id));
+      }
+
+      for (const linked of entry.accounts) {
+        const id = fixtureAccountId(entry.id, linked.providerId);
+        const issuer = issuers[linked.providerId];
+        const subject = linked.accountId;
+        const [holder] = await transaction
+          .select({ id: account.id, userId: account.userId })
+          .from(account)
+          .where(and(eq(account.issuer, issuer), eq(account.accountId, subject)));
+        if (holder && holder.userId !== entry.id)
+          throw new DevFixtureConflict(
+            `The ${linked.providerId} identity ${subject} already belongs to user ${holder.userId}, not ${entry.id}. Unlink it there first.`,
+          );
+
+        const previous = owned.find((row) => row.id === id);
+        if (previous && (previous.issuer !== issuer || previous.subject !== subject))
+          await deleteEvidence(transaction, previous);
+        // Linked by hand to this same person already: keep that link, refresh its evidence.
+        if (holder && holder.id !== id) {
+          if (previous) await transaction.delete(account).where(eq(account.id, id));
+        } else
+          await transaction
+            .insert(account)
+            .values({
+              id,
+              accountId: subject,
+              providerId: linked.providerId,
+              issuer,
+              userId: entry.id,
+              updatedAt: now,
+            })
+            .onConflictDoUpdate({
+              target: account.id,
+              set: { accountId: subject, providerId: linked.providerId, issuer, updatedAt: now },
+            });
+
+        if (linked.providerId === "google") continue;
+        const telegramId = linked.providerId === "telegram" ? linked.accountId : null;
+        if (telegramId) {
+          // The Telegram ID is unique across evidence. Proof left without an account is
+          // cleared, the way a real link does; proof another person still holds is not.
+          const claims = await transaction
+            .select({
+              issuer: identityEvidence.issuer,
+              subject: identityEvidence.subject,
+              providerId: identityEvidence.providerId,
+              userId: account.userId,
+            })
+            .from(identityEvidence)
+            .leftJoin(
+              account,
+              and(
+                eq(account.issuer, identityEvidence.issuer),
+                eq(account.accountId, identityEvidence.subject),
+                eq(account.providerId, identityEvidence.providerId),
+              ),
+            )
+            .where(
+              and(
+                eq(identityEvidence.telegramId, telegramId),
+                or(ne(identityEvidence.issuer, issuer), ne(identityEvidence.subject, subject)),
+              ),
+            );
+          for (const claim of claims) {
+            if (claim.userId && claim.userId !== entry.id)
+              throw new DevFixtureConflict(
+                `Telegram ID ${telegramId} is already proven for user ${claim.userId}, not ${entry.id}.`,
+              );
+            await deleteEvidence(transaction, claim);
+          }
+        }
+        // Evidence is refreshed on every save so it never expires mid-session.
+        const proof = {
+          issuer,
+          subject,
+          providerId: linked.providerId,
+          states: linked.states ?? [],
+          validUntil,
+          telegramId,
+          email: linked.email ?? null,
+        };
+        await transaction
+          .insert(identityEvidence)
+          .values(proof)
+          .onConflictDoUpdate({
+            target: [identityEvidence.issuer, identityEvidence.subject],
+            set: proof,
+          });
+      }
+
+      for (const entryRole of entry.roles ?? []) await saveRole(transaction, entry.id, entryRole);
+    },
+    { isolationLevel: "read committed" },
+  );
 }
