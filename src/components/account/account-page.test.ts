@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
+import { displayIp } from "./debug-panel";
 import { Email } from "./email";
 import { groupByPrefix } from "./access-panels";
 import { scramble } from "./secret-text";
@@ -18,6 +19,17 @@ describe("hidden debug values", () => {
   it("keeps the layout so the blur reads like the real text", () => {
     expect(scramble("127.0.0.1")).toMatch(/^\w{3}\.\w\.\w\.\w$/);
     expect(scramble("Mozilla/5.0 (Macintosh)")).toMatch(/^\w+\/\w\.\w \(\w+\)$/);
+  });
+});
+
+describe("session IP addresses", () => {
+  it.each([
+    ["2a07:7e81:81db:0000:0000:0000:0000:0000", "2a07:7e81:81db::/64"],
+    ["2001:0db8:0000:0001:0000:0000:0000:0000", "2001:db8:0:1::/64"],
+    ["0000:0000:0000:0000:0000:0000:0000:0000", "::/64"],
+    ["203.0.113.7", "203.0.113.7"],
+  ])("shows %s as %s", (ip, shown) => {
+    expect(displayIp(ip)).toBe(shown);
   });
 });
 

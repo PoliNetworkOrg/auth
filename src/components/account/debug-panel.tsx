@@ -16,6 +16,18 @@ function Keys({ keys }: { keys: string[] }) {
   );
 }
 
+/**
+ * Better Auth saves an IPv6 address as its /64 network, written out in full with the last four
+ * groups zeroed. Show it as the network it is: `2a07:7e81:81db::/64`.
+ */
+export function displayIp(ip: string) {
+  const groups = ip.split(":");
+  if (groups.length !== 8 || groups.slice(4).some((group) => !/^0+$/.test(group))) return ip;
+  const prefix = groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/, ""));
+  while (prefix.at(-1) === "0") prefix.pop();
+  return `${prefix.join(":")}::/64`;
+}
+
 /** IDs and session facts for whoever is debugging a sign-in. Anything identifying starts hidden. */
 export function DebugPanel({ debug }: { debug: AccountDetails["debug"] }) {
   const { session } = debug;
@@ -29,7 +41,7 @@ export function DebugPanel({ debug }: { debug: AccountDetails["debug"] }) {
           [
             "IP address",
             session.ipAddress ? (
-              <SecretText value={session.ipAddress} label="IP address" />
+              <SecretText value={displayIp(session.ipAddress)} label="IP address" />
             ) : (
               <Unknown />
             ),
