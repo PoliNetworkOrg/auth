@@ -19,8 +19,11 @@ import {
 } from "./oidc-clients";
 import {
   apiAccessEnabled,
+  deleteOidcClient,
   linkNewOidcClient,
   listOidcClients,
+  recheckNewOidcClientKeys,
+  rotateOidcClientSecret,
   updateOidcClient,
 } from "./oidc-registry";
 
@@ -34,10 +37,12 @@ export const getOidcClients = createServerFn({ method: "GET" })
   .middleware([permissionMiddleware("idp:applications:read")])
   .handler(({ context }) => listOidcClients(context.session.userId));
 
+const clientIdSchema = z.object({ clientId: z.string().min(1) });
+
 /** One pooled client; refused with 404 when it is not in the pool. */
 export const getOidcClient = createServerFn({ method: "GET" })
   .middleware([permissionMiddleware("idp:applications:read")])
-  .validator(validate(z.object({ clientId: z.string().min(1) })))
+  .validator(validate(clientIdSchema))
   .handler(async ({ context, data }) => {
     const [client] = await listOidcClients(context.session.userId, data.clientId);
     if (!client) throw new ActionError(404, "Application not found.");
@@ -131,6 +136,8 @@ export const createOidcClientFn = createServerFn({ method: "POST" })
       );
     }
 
+    if (jwks && !(await recheckNewOidcClientKeys(actorId, created.client_id)))
+      throw new ActionError(409, "This public key already belongs to another client.");
     let linked = true;
     try {
       await linkNewOidcClient(actorId, created.client_id, draft.resources);
@@ -169,21 +176,24 @@ export const updateOidcClientFn = createServerFn({ method: "POST" })
       skipConsent,
     });
     if (!result) throw new ActionError(404, "Application not found.");
-    let clientSecret: string | null = null;
-    if (result.issueSecret) {
-      try {
-        const rotated = await auth.api.rotateClientSecret({
-          headers: getRequest().headers,
-          body: { client_id: clientId },
-        });
-        clientSecret = rotated.client_secret ?? null;
-      } catch {
-        // The client keeps an unusable placeholder; the page offers rotation instead.
-      }
-    }
-    return {
-      client: result.client,
-      clientSecret,
-      secretPending: result.issueSecret && !clientSecret,
-    };
+    return result;
+  });
+
+/** Replaces a client's secret. The new secret is returned once and never stored in clear. */
+export const rotateOidcClientSecretFn = createServerFn({ method: "POST" })
+  .middleware([permissionMiddleware("idp:applications:write")])
+  .validator(validate(clientIdSchema))
+  .handler(async ({ context, data }) => {
+    const result = await rotateOidcClientSecret(context.session.userId, data.clientId);
+    if (!result) throw new ActionError(404, "Application not found.");
+    return result;
+  });
+
+/** Deletes a client with its refresh tokens, consents and resource links. */
+export const deleteOidcClientFn = createServerFn({ method: "POST" })
+  .middleware([permissionMiddleware("idp:applications:write")])
+  .validator(validate(clientIdSchema))
+  .handler(async ({ context, data }) => {
+    if (!(await deleteOidcClient(context.session.userId, data.clientId)))
+      throw new ActionError(404, "Application not found.");
   });

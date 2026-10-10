@@ -20,13 +20,8 @@ import { logAuthorizationDenial } from "./denial-log";
 import { hasIdpPermission } from "./idp-access";
 import { canAdministerIdp } from "./oidc-admin";
 import { validateClientJwks } from "./client-jwks";
-import {
-  apiScopes,
-  isApiScope,
-  isRestrictedClient,
-  OIDC_CLIENT_REFERENCE,
-  parsePublicJwks,
-} from "./oidc-clients";
+import { rawClientMutationPaths, refusedClientMutationPaths } from "./client-endpoints";
+import { apiScopes, isApiScope, OIDC_CLIENT_REFERENCE, parsePublicJwks } from "./oidc-clients";
 import { isLinkOnlyProvider, standardIdTokenClaims } from "./policy";
 import { providers } from "./providers";
 import {
@@ -76,7 +71,7 @@ export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, { provider: "pg", schema }),
   trustedOrigins: [new URL(env.BETTER_AUTH_URL).origin],
-  disabledPaths: ["/token", "/unlink-account"],
+  disabledPaths: ["/token", "/unlink-account", ...rawClientMutationPaths],
   socialProviders:
     env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
       ? {
@@ -95,61 +90,32 @@ export const auth = betterAuth({
           message: "Telegram can only be connected to an existing account.",
         });
       }
+      if (refusedClientMutationPaths.includes(context.path))
+        throw new APIError("FORBIDDEN", {
+          code: "CLIENT_MUTATION_UNSUPPORTED",
+          message: "Change applications from the application pages.",
+        });
+      if (context.path !== "/admin/oauth2/create-client") return;
       const body = context.body as Record<string, unknown> | undefined;
-      const creation = ["/oauth2/create-client", "/admin/oauth2/create-client"].includes(
-        context.path,
-      );
-      const mutation = [
-        "/oauth2/update-client",
-        "/oauth2/delete-client",
-        "/oauth2/client/rotate-secret",
-        "/admin/oauth2/update-client",
-      ].includes(context.path);
-      // Metadata that grants API access, in a create body or an update.
-      const grantsApiAccess = (metadata: Record<string, unknown> | undefined) =>
-        (Array.isArray(metadata?.grant_types) &&
-          // The provider trims grant names before storing them, so this must too.
-          metadata.grant_types.some(
+      // The provider trims grant names before storing them, so this must too.
+      const protectedClient =
+        (Array.isArray(body?.grant_types) &&
+          body.grant_types.some(
             (grant) => typeof grant === "string" && grant.trim() === "client_credentials",
           )) ||
-        (Array.isArray(metadata?.client_credentials_scopes) &&
-          metadata.client_credentials_scopes.length > 0) ||
-        (typeof metadata?.scope === "string" && metadata.scope.split(" ").some(isApiScope));
-      let protectedClient = creation && grantsApiAccess(body);
-      if (mutation && typeof body?.client_id === "string") {
-        const [client] = await db
-          .select({
-            grantTypes: schema.oauthClient.grantTypes,
-            clientCredentialsScopes: schema.oauthClient.clientCredentialsScopes,
-            scopes: schema.oauthClient.scopes,
-          })
-          .from(schema.oauthClient)
-          .where(eq(schema.oauthClient.clientId, body.client_id));
-        const links = await db
-          .select({ resourceId: schema.oauthClientResource.resourceId })
-          .from(schema.oauthClientResource)
-          .where(eq(schema.oauthClientResource.clientId, body.client_id));
-        protectedClient =
-          Boolean(
-            client &&
-            isRestrictedClient({ ...client, resourceIds: links.map((link) => link.resourceId) }),
-          ) || grantsApiAccess(body.update as Record<string, unknown> | undefined);
-      }
-      // Any writer may register a private key, so every path that stores one applies the same
-      // key rules as the application form, not only the provider's looser ones.
-      const metadata = creation ? body : (body?.update as Record<string, unknown> | undefined);
-      if ((creation || mutation) && metadata?.jwks_uri !== undefined)
+        (Array.isArray(body?.client_credentials_scopes) &&
+          body.client_credentials_scopes.length > 0) ||
+        (typeof body?.scope === "string" && body.scope.split(" ").some(isApiScope));
+      // Any writer may register a private key, so creation applies the same key rules as the
+      // application form, not only the provider's looser ones.
+      if (body?.jwks_uri !== undefined)
         throw new APIError("BAD_REQUEST", {
           code: "JWKS_URI_UNSUPPORTED",
           message: "Register the public JWKS itself, not a jwks_uri.",
         });
-      if ((creation || mutation) && metadata?.jwks !== undefined) {
+      if (body?.jwks !== undefined) {
         try {
-          await validateClientJwks(
-            parsePublicJwks(JSON.stringify(metadata.jwks)),
-            db,
-            mutation && typeof body?.client_id === "string" ? body.client_id : undefined,
-          );
+          await validateClientJwks(parsePublicJwks(JSON.stringify(body.jwks)), db);
         } catch (error) {
           throw new APIError("BAD_REQUEST", {
             code: "INVALID_JWKS",
@@ -244,10 +210,10 @@ export const auth = betterAuth({
           ]);
         return allowed;
       },
-      // Resource policy is seeded from config. Master Admin may inspect/link clients,
-      // but no API caller may edit the resource policy itself.
+      // Resource policy is seeded from config. Master Admin may inspect it, but no API caller
+      // may edit it, and clients are linked only by saving them, under the RBAC write lock.
       resourcePrivileges: ({ action, user }) =>
-        serviceOAuthEnabled && user && ["read", "list", "link", "unlink"].includes(action)
+        serviceOAuthEnabled && user && ["read", "list"].includes(action)
           ? canAdministerIdp(user.id, db, true)
           : false,
       accessTokenExpiresIn: 300,
