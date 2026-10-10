@@ -33,6 +33,7 @@ import { requireAccess, useAccess } from "@/components/access";
 import { CopyButton } from "@/components/copy-button";
 import { AppLogo } from "@/components/oidc/app-logo";
 import { ClientForm } from "@/components/oidc/client-form";
+import { publicJwks } from "@/components/oidc/public-jwks";
 import { CredentialField, CredentialsReveal } from "@/components/oidc/secret-reveal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -214,7 +215,7 @@ function ApplicationDetail() {
     setBusy("jwks");
     setError("");
     try {
-      const jwks = JSON.parse(jwksDraft) as { keys: Record<string, unknown>[] };
+      const jwks = publicJwks(jwksDraft);
       await saveServiceJwksFn({ data: { clientId, jwks } });
       await router.invalidate({ sync: true });
       setNotice("Public JWKS saved.");

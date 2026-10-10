@@ -4,6 +4,7 @@ import { ArrowLeft, CircleCheck, LoaderCircle } from "lucide-react";
 import { SERVICE_CLIENT_TEMPLATES, type ServiceClientKind } from "@/auth/service-client-templates";
 import { linkOidcResourceFn, registerServiceClientFn } from "@/auth/oidc.functions";
 import { requireAccess, useAccess } from "@/components/access";
+import { publicJwks } from "@/components/oidc/public-jwks";
 import { NoAccess } from "@/components/route-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,26 +18,6 @@ export const Route = createFileRoute("/applications/service-new")({
   beforeLoad: ({ context }) => requireAccess(context.viewer, "idp:applications:write"),
   component: ServiceClientRegistration,
 });
-
-function publicJwks(input: string): { keys: Record<string, unknown>[] } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(input);
-  } catch {
-    throw new Error("Paste a valid public JWKS JSON object.");
-  }
-  if (!parsed || typeof parsed !== "object" || !("keys" in parsed))
-    throw new Error("The JWKS needs a keys array.");
-  const keys = (parsed as { keys: unknown }).keys;
-  if (!Array.isArray(keys) || keys.length === 0 || keys.length > 5)
-    throw new Error("The JWKS needs between one and five public keys.");
-  for (const key of keys) {
-    if (!key || typeof key !== "object") throw new Error("Each key must be an object.");
-    if (["d", "p", "q", "dp", "dq", "qi", "oth", "k"].some((field) => field in key))
-      throw new Error("Paste public keys only. Keep private keys in the service's Key Vault.");
-  }
-  return { keys: keys as Record<string, unknown>[] };
-}
 
 function ServiceClientRegistration() {
   const { isMasterAdmin } = useAccess();

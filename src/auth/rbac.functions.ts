@@ -96,5 +96,7 @@ export const changeRoleMemberFn = createServerFn({ method: "POST" })
 /** People matching a search. Scoped to a role, each result says whether they hold it. */
 export const searchPeople = createServerFn({ method: "GET" })
   .middleware([permissionMiddleware("idp:people:read")])
-  .validator(validate(z.object({ query: z.string(), roleId: z.string().optional() })))
+  .validator(
+    validate(z.object({ query: z.string().max(200), roleId: z.string().min(1).optional() })),
+  )
   .handler(({ context, data }) => searchUsers(context.session.userId, data.query, data.roleId));
