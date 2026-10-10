@@ -28,6 +28,7 @@ import { Route as AccessRolesIndexRouteImport } from './routes/access/roles/inde
 import { Route as AccessRolesRoleIdRouteImport } from './routes/access/roles/$roleId'
 import { Route as AccessRolesNewRouteImport } from './routes/access/roles/new'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiDevLoginRouteImport } from './routes/api/dev/login'
 import { Route as ApiInternalAccessSnapshotRouteImport } from './routes/api/internal/access-snapshot'
 
 const IndexRoute = IndexRouteImport.update({
@@ -126,6 +127,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDevLoginRoute = ApiDevLoginRouteImport.update({
+  id: '/api/dev/login',
+  path: '/api/dev/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiInternalAccessSnapshotRoute =
   ApiInternalAccessSnapshotRouteImport.update({
     id: '/api/internal/access-snapshot',
@@ -151,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/access/roles/$roleId': typeof AccessRolesRoleIdRoute
   '/access/roles/new': typeof AccessRolesNewRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/dev/login': typeof ApiDevLoginRoute
   '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
   '/access/permissions/': typeof AccessPermissionsIndexRoute
   '/access/roles/': typeof AccessRolesIndexRoute
@@ -170,6 +177,7 @@ export interface FileRoutesByTo {
   '/access/roles/$roleId': typeof AccessRolesRoleIdRoute
   '/access/roles/new': typeof AccessRolesNewRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/dev/login': typeof ApiDevLoginRoute
   '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
   '/access/permissions': typeof AccessPermissionsIndexRoute
   '/access/roles': typeof AccessRolesIndexRoute
@@ -193,6 +201,7 @@ export interface FileRoutesById {
   '/access/roles/$roleId': typeof AccessRolesRoleIdRoute
   '/access/roles/new': typeof AccessRolesNewRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/dev/login': typeof ApiDevLoginRoute
   '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
   '/access/permissions/': typeof AccessPermissionsIndexRoute
   '/access/roles/': typeof AccessRolesIndexRoute
@@ -217,6 +226,7 @@ export interface FileRouteTypes {
     | '/access/roles/$roleId'
     | '/access/roles/new'
     | '/api/auth/$'
+    | '/api/dev/login'
     | '/api/internal/access-snapshot'
     | '/access/permissions/'
     | '/access/roles/'
@@ -236,6 +246,7 @@ export interface FileRouteTypes {
     | '/access/roles/$roleId'
     | '/access/roles/new'
     | '/api/auth/$'
+    | '/api/dev/login'
     | '/api/internal/access-snapshot'
     | '/access/permissions'
     | '/access/roles'
@@ -258,6 +269,7 @@ export interface FileRouteTypes {
     | '/access/roles/$roleId'
     | '/access/roles/new'
     | '/api/auth/$'
+    | '/api/dev/login'
     | '/api/internal/access-snapshot'
     | '/access/permissions/'
     | '/access/roles/'
@@ -271,6 +283,7 @@ export interface RootRouteChildren {
   ConsentRoute: typeof ConsentRoute
   ApiIdentityRoute: typeof ApiIdentityRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiDevLoginRoute: typeof ApiDevLoginRoute
   ApiInternalAccessSnapshotRoute: typeof ApiInternalAccessSnapshotRoute
 }
 
@@ -409,6 +422,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/dev/login': {
+      id: '/api/dev/login'
+      path: '/api/dev/login'
+      fullPath: '/api/dev/login'
+      preLoaderRoute: typeof ApiDevLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/internal/access-snapshot': {
       id: '/api/internal/access-snapshot'
       path: '/api/internal/access-snapshot'
@@ -480,6 +500,7 @@ const rootRouteChildren: RootRouteChildren = {
   ConsentRoute: ConsentRoute,
   ApiIdentityRoute: ApiIdentityRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiDevLoginRoute: ApiDevLoginRoute,
   ApiInternalAccessSnapshotRoute: ApiInternalAccessSnapshotRoute,
 }
 export const routeTree = rootRouteImport
