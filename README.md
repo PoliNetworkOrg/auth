@@ -271,7 +271,8 @@ Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_a
   "polinetwork_states": "socio student",
   "polinetwork_roles": "socio student",
   "polinetwork_permissions": "membership:read student:verified",
-  "polinetwork_telegram_id": "123456789"
+  "polinetwork_telegram_id": "123456789",
+  "groups": ["socio", "student"]
 }
 ```
 
@@ -283,6 +284,10 @@ capability and treat `roles` as a coarser label. The string `polinetwork_*` clai
 spaces between values and are empty strings when no values apply, as is
 `polinetwork_telegram_id` when no Telegram account is linked. The `/api/identity` response
 keeps the object format shown inside the URL-named claim.
+
+`groups` repeats `roles` as an array under the claim name that apps such as Cloudflare
+Access read for group-based policies. It holds role keys, not display names. Built-in role
+keys cannot change; renaming a custom role's key breaks policies that match the old key.
 
 Managing applications needs the `idp:applications:write` permission, so it can be given to any role. Master Admin holds it only through explicit deployment configuration. To use a Microsoft 365 administrators group distinct from Soci, set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to that group's object ID: only its direct members, checked through the same Graph credentials, keep it. Graph answers are cached for at most 60 seconds from lookup start per user; a failed check denies access instead of caching. `IDP_ADMIN_USER_IDS` remains a break-glass allowlist of local user IDs that always pass. Being a socio never confers administration by itself.
 

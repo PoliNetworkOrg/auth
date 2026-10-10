@@ -40,6 +40,8 @@ export function oidcIdentityClaims(claimName: string, claims: IdentityClaims) {
     polinetwork_roles: claims.roles.join(" "),
     polinetwork_permissions: claims.permissions.join(" "),
     polinetwork_telegram_id: claims.telegramId ?? "",
+    // The conventional claim for apps that map groups to policies, such as Cloudflare Access.
+    groups: claims.roles,
   };
 }
 

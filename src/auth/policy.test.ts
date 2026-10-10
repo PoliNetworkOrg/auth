@@ -68,6 +68,7 @@ describe("identity states", () => {
       polinetwork_roles: "socio student",
       polinetwork_permissions: "membership:read student:verified",
       polinetwork_telegram_id: "123456789",
+      groups: ["socio", "student"],
     });
     expect(
       oidcIdentityClaims("identity", {
@@ -82,6 +83,7 @@ describe("identity states", () => {
       polinetwork_roles: "",
       polinetwork_permissions: "",
       polinetwork_telegram_id: "",
+      groups: [],
     });
   });
   it("accepts only the exact Polimi student email domain", () => {
