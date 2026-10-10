@@ -7,6 +7,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { user } from "./auth-schema";
 
 // Evidence grants nothing until joined to an account owned by the current user.
@@ -21,10 +22,16 @@ export const identityEvidence = pgTable(
     states: text().array().notNull().default([]),
     validUntil: timestamp("valid_until", { withTimezone: true }).notNull(),
     telegramId: text("telegram_id"),
-    // The address the account signs in with, saved at each sign-in. For display and search only.
+    // The address the account signs in with, saved at each sign-in. Shown and searched, and a
+    // PoliNetwork address is also what apps receive as `email` (see `appEmail`).
     email: text(),
   },
-  (table) => [primaryKey({ columns: [table.issuer, table.subject] })],
+  (table) => [
+    primaryKey({ columns: [table.issuer, table.subject] }),
+    uniqueIndex("identity_evidence_telegram_id_uidx")
+      .on(table.telegramId)
+      .where(sql`${table.telegramId} IS NOT NULL`),
+  ],
 );
 
 export const studentVerificationChallenge = pgTable(

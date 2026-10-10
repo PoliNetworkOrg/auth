@@ -16,7 +16,10 @@ import { fileURLToPath } from "node:url";
  * than a fixed list, also covers state added by future Better Auth releases.
  * `vite.config.ts` keeps them in one chunk through `ssr.noExternal`.
  */
-const stateCall = /\b(?:var|let|const)\s+([^=;]+?)\s*=\s*defineRequestState(?:\$\d+)?\(/g;
+// Rolldown emits declarations when chunks are split and assignments when the
+// server graph is inlined. Both forms must count toward the same guard.
+const stateCall =
+  /(?:\b(?:var|let|const)\s+)?(\{[^;\n]+?\}|\(\{[^;\n]+?\}\)|[A-Za-z_$][\w$]*)\s*=\s*defineRequestState(?:\$\d+)?\(/g;
 const coreMarker = "No request state found";
 
 /** @param {{ path: string, code: string }[]} sources */
@@ -24,8 +27,14 @@ export function findBundleProblems(sources) {
   const calls = new Map();
   for (const { path, code } of sources) {
     for (const [, binding] of code.matchAll(stateCall)) {
-      const name = binding.replace(/\s+/g, " ").trim();
-      calls.set(name, [...(calls.get(name) ?? []), path]);
+      const name = binding
+        .replace(/^\((.*)\)$/, "$1")
+        .replace(/\s+/g, " ")
+        .trim();
+      const key = name.replace(/\s+/g, "");
+      const call = calls.get(key) ?? { name, paths: [] };
+      call.paths.push(path);
+      calls.set(key, call);
     }
   }
 
@@ -35,7 +44,7 @@ export function findBundleProblems(sources) {
       "no `defineRequestState()` call found in the build, so this check no longer guards anything. Update it.",
     );
   }
-  for (const [name, paths] of calls) {
+  for (const { name, paths } of calls.values()) {
     if (paths.length > 1) {
       problems.push(
         `request state \`${name}\` is bundled ${paths.length} times (${paths.join(", ")}).`,

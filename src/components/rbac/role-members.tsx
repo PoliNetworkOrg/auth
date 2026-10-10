@@ -1,16 +1,13 @@
+import { Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { LoaderCircle, Search, UserMinus, UserPlus } from "lucide-react";
-import type { RoleMember, UserSearchResult } from "@/auth/rbac";
-import { useIdpAccessContext } from "@/components/idp-access";
-import {
-  changeRoleMember,
-  errorMessage,
-  fetchRoleMembers,
-  searchUsers,
-} from "@/components/rbac/api";
+import type { RoleMemberPage, UserSearchResult } from "@/auth/rbac";
+import { changeRoleMemberFn, searchPeople } from "@/auth/rbac.functions";
+import { useAccess } from "@/components/access";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/user-avatar";
+import { errorMessage } from "@/lib/action-error";
 
 function Person({
   name,
@@ -34,46 +31,33 @@ function Person({
   );
 }
 
-/** Who holds a role, and the search used to add someone. Only for roles that can be given out. */
+/**
+ * Who holds a role, and the search used to add someone. Only for roles that can be given out.
+ * The page of members comes from the route loader; `after` is the cursor it was loaded from.
+ */
 export function RoleMembers({
   roleId,
   roleName,
   canWrite,
+  page,
+  after,
 }: {
   roleId: string;
   roleName: string;
   /** Without it the list is shown but nobody can be added or removed. */
   canWrite: boolean;
+  page: RoleMemberPage;
+  after: string | undefined;
 }) {
-  const [members, setMembers] = useState<RoleMember[] | null>(null);
+  const router = useRouter();
+  const { can } = useAccess();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<UserSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [busyUser, setBusyUser] = useState("");
   const [error, setError] = useState("");
-  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [revision, setRevision] = useState(0);
-  const { can, retry } = useIdpAccessContext();
   const canSearch = canWrite && can("idp:people:read");
-  const cursor = cursors[cursors.length - 1];
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setMembers(null);
-    setNextCursor(null);
-    setError("");
-    fetchRoleMembers(roleId, controller.signal, cursor)
-      .then((page) => {
-        if (controller.signal.aborted) return;
-        setMembers(page.members);
-        setNextCursor(page.nextCursor);
-      })
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setError(errorMessage(cause, "Unable to load members."));
-      });
-    return () => controller.abort();
-  }, [roleId, cursor, revision]);
+  const members = page.members;
 
   useEffect(() => {
     const term = query.trim();
@@ -82,36 +66,44 @@ export function RoleMembers({
       setSearching(false);
       return;
     }
-    const controller = new AbortController();
+    let active = true;
     setSearching(true);
+    // Results as the person types, not route data, so they are asked for here.
     const timer = setTimeout(() => {
-      searchUsers(term, controller.signal, roleId)
+      searchPeople({ data: { query: term, roleId } })
         .then((found) => {
+          if (!active) return;
           setResults(found);
           setSearching(false);
         })
         .catch((cause: unknown) => {
-          if (controller.signal.aborted) return;
+          if (!active) return;
           setError(errorMessage(cause, "Unable to search people."));
           setSearching(false);
         });
     }, 250);
     return () => {
-      controller.abort();
+      active = false;
       clearTimeout(timer);
     };
-    // Revision refreshes the results after a change, so someone just taken off the role
-    // becomes assignable again without retyping.
-  }, [query, canSearch, roleId, revision]);
+  }, [query, canSearch, roleId]);
 
   async function change(action: "assign" | "unassign", userId: string) {
     setBusyUser(userId);
     setError("");
     try {
-      await changeRoleMember(action, roleId, userId);
-      setCursors([undefined]);
-      setRevision((value) => value + 1);
-      retry();
+      await changeRoleMemberFn({ data: { action, roleId, userId } });
+      // Reloads this page's members, the role counts, and the person's own access, which
+      // they may just have changed. The button stays busy until the list shows the change,
+      // so the person is never missing from both the search and the list.
+      await router.invalidate({ sync: true });
+      // Marked in place rather than searched again, so someone just taken off the role
+      // becomes assignable again without retyping or a flash of "Searching…".
+      setResults((found) =>
+        found.map((person) =>
+          person.id === userId ? { ...person, holdsRole: action === "assign" } : person,
+        ),
+      );
       if (action === "assign") setQuery("");
     } catch (cause) {
       setError(errorMessage(cause, "Unable to change who holds this role."));
@@ -120,7 +112,6 @@ export function RoleMembers({
     }
   }
 
-  // Refresh access and the current page after each successful change.
   const changing = busyUser !== "";
   // The search marks every holder of the role, not just the ones on the page shown below.
   const candidates = results.filter((person) => !person.holdsRole);
@@ -185,15 +176,9 @@ export function RoleMembers({
         </div>
       )}
 
-      {members === null && error ? (
-        <Button variant="outline" onClick={() => setRevision((value) => value + 1)}>
-          Retry loading members
-        </Button>
-      ) : members === null ? (
-        <p className="text-sm text-muted-foreground">Loading members…</p>
-      ) : members.length === 0 ? (
+      {members.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          {canSearch && cursors.length === 1
+          {canSearch && !after
             ? `Nobody holds ${roleName} yet. Search above to give it to someone.`
             : `Nobody holds ${roleName} yet.`}
         </p>
@@ -222,22 +207,29 @@ export function RoleMembers({
           ))}
         </ul>
       )}
-      {(cursors.length > 1 || nextCursor) && (
+      {(after || page.nextCursor) && (
         <div className="flex items-center justify-between gap-3">
-          <Button
-            variant="outline"
-            disabled={changing || members === null || cursors.length === 1}
-            onClick={() => setCursors((pages) => pages.slice(0, -1))}
-          >
-            Previous
+          <Button variant="outline" disabled={changing || !after} asChild={!!after && !changing}>
+            {after && !changing ? (
+              <Link to="." search={{}}>
+                First page
+              </Link>
+            ) : (
+              <span>First page</span>
+            )}
           </Button>
-          <span className="text-sm text-muted-foreground">Page {cursors.length}</span>
           <Button
             variant="outline"
-            disabled={changing || members === null || !nextCursor}
-            onClick={() => setCursors((pages) => [...pages, nextCursor!])}
+            disabled={changing || !page.nextCursor}
+            asChild={!!page.nextCursor && !changing}
           >
-            Next
+            {page.nextCursor && !changing ? (
+              <Link to="." search={{ after: page.nextCursor }}>
+                Next
+              </Link>
+            ) : (
+              <span>Next</span>
+            )}
           </Button>
         </div>
       )}

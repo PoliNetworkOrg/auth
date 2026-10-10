@@ -1,4 +1,4 @@
-# PoliNetwork Identity prototype
+# PoliNetwork Auth prototype
 
 A standalone TanStack Start and Better Auth identity provider. The backend remains the active authentication provider for all existing PoliNetwork applications. This repository does not change backend authentication, migrate production data, or grant Telegram moderation access.
 
@@ -144,7 +144,7 @@ when that is what you mean.
 ### Permissions the identity provider defines itself
 
 Administering this service is expressed as permissions like any other capability, so it can
-be delegated to a role instead of being wired to a single group. These nine always exist
+be delegated to a role instead of being wired to a single group. These ten always exist
 and can never be created, deleted, or rekeyed, because the code checks for these exact
 keys; which roles carry them is entirely up to you.
 
@@ -156,29 +156,41 @@ keys; which roles carry them is entirely up to you.
 | `idp:permissions:read`   | Seeing permissions in the `/access` section                |
 | `idp:permissions:write`  | Creating, changing, and deleting permissions               |
 | `idp:roles:read`         | Seeing roles, what they grant, and who holds them          |
-| `idp:roles:write`        | Creating and changing roles, and giving them to people     |
+| `idp:roles:write`        | Creating, changing, and deleting roles                     |
+| `idp:roles:assign`       | Giving roles to people and taking them away                |
 | `idp:applications:read`  | Seeing the OIDC applications at `/applications`            |
 | `idp:applications:write` | Registering and editing applications, and rotating secrets |
 
 They use the permission hierarchy themselves: each `write` grants its `read`,
-`idp:roles:write` also grants `idp:people:read` so a role manager can find who to give a
-role to, `idp:users:read` grants `idp:people:read` because browsing everyone includes finding them, and `idp:roles:read` grants `idp:permissions:read` because a role is meaningless
+`idp:roles:assign` grants `idp:roles:read` and `idp:people:read` so an assigner can see the
+role and find who to give it to, `idp:roles:write` also grants `idp:people:read`, `idp:users:read` grants `idp:people:read` because browsing everyone includes finding them, and `idp:roles:read` grants `idp:permissions:read` because a role is meaningless
 without seeing the permissions it carries. A role with `idp:roles:write` therefore ends up
 with four permissions and still cannot touch applications. `idp:roles:write` granting
-`idp:roles:read`, `idp:permissions:write` granting `idp:permissions:read` and
+`idp:roles:read`, `idp:roles:assign` granting `idp:roles:read`, `idp:permissions:write`
+granting `idp:permissions:read` and
 `idp:users:delete` granting `idp:users:read` are fixed in code: they apply even if the stored edge is missing, and cannot be removed, because
 changing either without seeing what already exists makes no sense. The other implications
 are seeded defaults you can edit.
+
+The permissions that other PoliNetwork services check during the IdP–Telegram migration
+(`admin:access`, `tg:*`, `wa:groups:manage`, `groups:labels:write`, `web:*` and
+`azure:members:create`, see [RFC §4.1](docs/idp-telegram-integration-rfc-v3.md)) are seeded
+as ordinary permissions, with `tg:immune` granting `tg:trusted`. No role is given them:
+Master Admin holds them through its wildcard, and administrators choose which roles grant
+them.
 
 Every administration endpoint and every page checks the specific permission it needs, and
 the navigation only offers what you hold. Because Master Admin is a wildcard over every
 permission, whoever the deployment configures as an administrator holds all of these, which
 is the bootstrap and break-glass path: there is no second kind of check beside RBAC.
 
-Write permissions authorize bounded delegation. Only Master Admin can edit managed roles
+Editing roles and assigning them are separate: `idp:roles:write` changes what roles grant,
+`idp:roles:assign` gives and removes them, and neither implies the other.
+
+Write and assign permissions authorize bounded delegation. Only Master Admin can edit managed roles
 or permissions, including through custom ancestors or implications. Other writers can
 change, assign, revoke or delete only access within their current effective permissions;
-neither writer permission permits self-escalation. A new permission definition confers
+none of them permits self-escalation. A new permission definition confers
 nothing: Master Admin must first grant it before others can delegate it. All checks use
 current authority inside the same serialized transaction as the mutation. Graph lookups
 finish before a database transaction starts. Inside the transaction, authorization rereads
@@ -209,7 +221,7 @@ each hand-made role.
 
 Who holds a role is role data, so the roles column, the role filter and a person's roles
 and permissions are only returned to someone holding `idp:roles:read`
-(`idp:permissions:read` is enough for the permission list). With `idp:roles:write`, the same
+(`idp:permissions:read` is enough for the permission list). With `idp:roles:assign`, the same
 page gives and removes roles through the same endpoint and bounded delegation as a role's
 member list: nobody can hand out, or take away, access they do not hold themselves.
 
@@ -250,8 +262,9 @@ cache. Requests starting after a database revocation commits see it. Group remov
 at most 60 seconds to affect new authorization decisions (subject to Graph propagation);
 a token issued just before expiry can remain valid for another five minutes.
 
-A linked Telegram identity grants no role and no permission. Existing backend Telegram
-roles and group assignments remain authoritative and are not copied or queried here.
+A linked Telegram identity grants no role and no permission. The backend still uses its
+existing Telegram assignments during this phase. The IdP now publishes a separate access
+snapshot for the future backend integration; no current caller uses it yet.
 
 ## OIDC clients
 
@@ -270,7 +283,8 @@ Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_a
   "polinetwork_states": "socio student",
   "polinetwork_roles": "socio student",
   "polinetwork_permissions": "membership:read student:verified",
-  "polinetwork_telegram_id": "123456789"
+  "polinetwork_telegram_id": "123456789",
+  "groups": ["socio", "student"]
 }
 ```
 
@@ -283,9 +297,23 @@ spaces between values and are empty strings when no values apply, as is
 `polinetwork_telegram_id` when no Telegram account is linked. The `/api/identity` response
 keeps the object format shown inside the URL-named claim.
 
+`groups` repeats `roles` as an array under the claim name that apps such as Cloudflare
+Access read for group-based policies. It holds role keys, not display names. Built-in role
+keys cannot change; renaming a custom role's key breaks policies that match the old key.
+
 Managing applications needs the `idp:applications:write` permission, so it can be given to any role. Master Admin holds it only through explicit deployment configuration. To use a Microsoft 365 administrators group distinct from Soci, set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to that group's object ID: only its direct members, checked through the same Graph credentials, keep it. Graph answers are cached for at most 60 seconds from lookup start per user; a failed check denies access instead of caching. `IDP_ADMIN_USER_IDS` remains a break-glass allowlist of local user IDs that always pass. Being a socio never confers administration by itself.
 
-Dynamic registration and client-credentials grants are disabled. Administrators manage clients at `/applications`: create web or native apps as confidential (secret shown once) or public (PKCE only) clients, edit redirect URIs and allowed scopes, rotate secrets, pause sign-ins by disabling an app, skip the consent screen for first-party apps, and delete apps. All administrators share one client pool (the plugin's `clientReference` is a fixed value), so clients are not tied to whoever created them. Redirect URIs follow the provider's rules: web apps need `https` on a public host, native apps may use `http://localhost`, `http://127.0.0.1`, `http://[::1]`, or a reverse-domain custom scheme. Custom routes under `/api/oidc/` back the pages; creation, deletion, and secret rotation go through the Better Auth client endpoints, which enforce the same administrator check.
+Dynamic registration is disabled. Client-credentials grants are available when both OAuth resource identifiers are configured. Administrators manage every client at `/applications`. New applications go through a step-by-step wizard (Basics, Usage, Authentication, Access, then a review) with a summary that fills in as each step is completed; existing ones are edited on a settings page with a save bar. The app either signs people in, acts as itself (client credentials), or both, and that choice decides the credentials it may use: a client secret (shown once), a private key (a public Ed25519 or P-256 JWKS for `private_key_jwt`), or, for apps that only sign people in, none (public, PKCE only). Redirect URIs, the scopes people are asked for, and the PoliNetwork API scopes granted for signed-in people and for the app itself are chosen separately. Resource links follow the granted API scopes automatically. Everything except the client ID can be changed after creation, including the credential type: switching to a secret issues a new one, shown once, and switching away from a secret or key revokes it. Administrators can also rotate secrets, pause sign-ins by disabling an app, skip the consent screen for first-party apps, and delete apps. All administrators share one client pool (the plugin's `clientReference` is a fixed value), so clients are not tied to whoever created them. Redirect URIs follow the provider's rules, chosen per application as "Public https URLs only" (`application_type: web`) or "Also localhost and app schemes" (`native`: `http://localhost`, `http://127.0.0.1`, `http://[::1]`, or a reverse-domain custom scheme). Server functions in `src/auth/oidc.functions.ts` back the pages, including secret rotation and deletion. API access (backend and `idp:access:read` scopes, the client-credentials grant, and resource links) requires Master Admin, and so does any change to a client that has it. Every change to an existing client checks that rule and writes in one transaction that holds the RBAC write lock, so a writer's rotation or deletion either finishes before a concurrent promotion or is refused after it. The provider's own client mutation endpoints (`/oauth2/create-client`, `/oauth2/update-client`, `/oauth2/delete-client`, `/oauth2/client/rotate-secret`) are disabled over HTTP and refused to server-side callers, because they check and write in separate statements outside that lock; resources are linked only by saving an application.
+
+### Phase 1 backend access snapshot
+
+Set `OAUTH_BACKEND_RESOURCE_URI` and `OAUTH_INTERNAL_RESOURCE_URI` to distinct HTTPS audience identifiers, then set `OAUTH_BACKEND_CLIENT_ID` to the registered backend snapshot-pull client's ID. A client-credentials token for the internal resource needs `idp:access:read`; the authenticated client ID selects the reviewed `backend` projection. `GET /api/internal/access-snapshot` returns a versioned list of subjects with backend permissions, their individual expiry times, and linked Telegram IDs. An exact `If-None-Match` match returns `304`; a new Graph observation changes the ETag even if membership is unchanged. Unknown clients and missing audience or scope are rejected.
+
+Entra direct-membership observations are stored by group. A pull lists a group through Graph only if no replica has observed it in the last 15 seconds, and concurrent pulls on one replica share that listing. A failed Graph request preserves the last observation, marks that source degraded, and lets its permissions expire one hour after the last success. Student rights expire at the verification timestamp. Manual assignments do not expire. Telegram IDs are included only while the linked account exists, regardless of the Telegram ID token's expiry. Duplicate Telegram IDs are excluded from the projection.
+
+Database triggers enqueue changes to the snapshot's inputs in `access_outbox`. Rewrites that leave the projected columns unchanged, such as sign-ins, are ignored, and at most one undelivered row is kept per projection, so the table stays small while no receiver is configured. Once the backend receiver exists, set `OAUTH_BACKEND_EVENTS_URL` to its `/internal/events` endpoint. The production server then claims the queued rows, sends one IdP-signed security-event token for them and retries with backoff until the receiver replies `202`; the backend must still poll the snapshot because push delivery is best-effort. Leave the URL unset until the receiver is deployed. JWT signing keys rotate every seven days and public keys overlap for thirty days. Audit rows record Telegram links, client changes and student verification without storing client secrets.
+
+Master Admin registers the four Phase 1 clients on `/applications/new`, each with a private key (its public Ed25519 or P-256 JWKS) and the grants and scopes reviewed in [RFC §9](docs/idp-telegram-integration-rfc-v3.md): Telegram Bot and Website call APIs as themselves with their `backend:tg:*` and `backend:public:read` scopes, Backend snapshot pull with `idp:access:read`, and Admin Dashboard signs people in with `openid profile email offline_access` and calls `backend:admin` for them, with sign-out ending the PoliNetwork session. The resources those scopes belong to are linked on save. The application page edits the JWKS with overlap during rotation: add the new public key, deploy the matching private key to the owning service, then remove the old public key after the overlap. Other application writers cannot edit or delete clients with API access. Record the generated client IDs in deployment configuration; the backend snapshot-pull ID must match `OAUTH_BACKEND_CLIENT_ID`. Private keys belong in the owning service's Key Vault secret and must never be pasted into this IdP.
 
 During a sign-in the login page names the requesting application. The consent page at `/consent` shows the app, who is signed in (with a switch-account option), each requested scope in plain language, any requested profile claims, and where the browser will be sent; it supports allow and deny and explains expired or disabled requests.
 

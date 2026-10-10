@@ -14,7 +14,7 @@ import {
   validateRoleDraft,
 } from "@/auth/rbac";
 import { Field, KeyChip } from "@/components/rbac/fields";
-import { useIdpAccessContext } from "@/components/idp-access";
+import { useAccess } from "@/components/access";
 import { canGrantPermission, canGrantRole } from "@/components/rbac/delegation";
 import { PickList } from "@/components/rbac/pick-list";
 import { useDraftErrors } from "@/components/rbac/use-draft-errors";
@@ -58,7 +58,7 @@ export function RoleForm({
   onSubmit: (draft: RoleDraft) => void;
   onCancel?: () => void;
 }) {
-  const access = useIdpAccessContext();
+  const access = useAccess();
   const [draft, setDraft] = useState(initial);
   const [touched, setTouched] = useState(false);
   const ids = { key: useId(), name: useId(), description: useId() };

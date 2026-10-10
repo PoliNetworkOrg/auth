@@ -15,6 +15,10 @@ export const env = createEnv({
 
     BETTER_AUTH_URL: z.url().default("https://auth.polinetwork.org"),
     BETTER_AUTH_SECRET: z.string().min(32),
+    OAUTH_BACKEND_RESOURCE_URI: z.url().optional(),
+    OAUTH_INTERNAL_RESOURCE_URI: z.url().optional(),
+    OAUTH_BACKEND_CLIENT_ID: z.string().min(1).optional(),
+    OAUTH_BACKEND_EVENTS_URL: z.url().optional(),
 
     PN_ENTRA_CLIENT_ID: z.string().min(1).optional(),
     PN_ENTRA_CLIENT_SECRET: z.string().min(1).optional(),

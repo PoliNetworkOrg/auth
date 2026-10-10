@@ -1,5 +1,11 @@
+import { useRouter } from "@tanstack/react-router";
 import { useState } from "react";
-import { Check, GraduationCap, Unlink } from "lucide-react";
+import { Check, GraduationCap, LoaderCircle, Unlink } from "lucide-react";
+import {
+  confirmStudentVerificationFn,
+  requestStudentVerificationFn,
+} from "@/auth/account.functions";
+import { errorMessage } from "@/lib/action-error";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Button } from "./ui/button";
@@ -9,54 +15,50 @@ type LinkedAccount = { id: string; accountId: string };
 type Props = {
   configured: boolean;
   verified: boolean;
-  signedIn: boolean;
   linkedAccount?: LinkedAccount;
   canUnlink: boolean;
-  onChanged: () => void;
+  /** True while the parent is unlinking this account, so its button can show progress. */
+  unlinking?: boolean;
   onUnlink: (accountId: string) => Promise<void>;
 };
 
 export function StudentVerificationForm({
   configured,
   verified,
-  signedIn,
   linkedAccount,
   canUnlink,
-  onChanged,
+  unlinking = false,
   onUnlink,
 }: Props) {
+  const router = useRouter();
   const [email, setEmail] = useState(linkedAccount?.accountId ?? "");
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"request" | "confirm" | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   async function submit(action: "request" | "confirm") {
-    setBusy(true);
+    setBusy(action);
     setError("");
     setMessage("");
     try {
-      const response = await fetch("/api/student-verification", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, email, code }),
-      });
-      const result: { error?: string } = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Student verification failed.");
       if (action === "request") {
+        await requestStudentVerificationFn({ data: { email } });
         setCodeSent(true);
         setMessage("We sent a six-digit code to your university email.");
       } else {
+        await confirmStudentVerificationFn({ data: { email, code } });
+        // Shows the linked email and the student status before the spinner stops.
+        await router.invalidate({ sync: true });
         setCode("");
         setCodeSent(false);
         setMessage("Your student status is verified.");
-        onChanged();
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Student verification failed.");
+      setError(errorMessage(cause, "Student verification failed."));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -73,11 +75,7 @@ export function StudentVerificationForm({
           </p>
         </div>
       </div>
-      {!signedIn ? (
-        <p className="mt-4 text-sm text-muted-foreground">
-          Sign in with Google or PoliNetwork before connecting your student email.
-        </p>
-      ) : linkedAccount && verified ? (
+      {linkedAccount && verified ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 p-4">
           <div className="min-w-0">
             <p className="flex items-center gap-1.5 text-xs font-medium text-primary">
@@ -89,10 +87,10 @@ export function StudentVerificationForm({
           <Button
             variant="destructive"
             size="sm"
-            disabled={busy || !canUnlink}
+            disabled={busy !== null || !canUnlink}
             onClick={() => void onUnlink(linkedAccount.id)}
           >
-            <Unlink />
+            {unlinking ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Unlink />}
             Unlink
           </Button>
         </div>
@@ -108,7 +106,7 @@ export function StudentVerificationForm({
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             placeholder="name@mail.polimi.it"
-            disabled={busy}
+            disabled={busy !== null}
             className="bg-card"
           />
           {codeSent && (
@@ -124,7 +122,7 @@ export function StudentVerificationForm({
                 value={code}
                 onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
                 placeholder="123456"
-                disabled={busy}
+                disabled={busy !== null}
                 className="bg-card tracking-widest"
               />
             </>
@@ -144,22 +142,31 @@ export function StudentVerificationForm({
           )}
           <div className="flex flex-wrap gap-2">
             <Button
-              disabled={busy || !configured || !email || (codeSent && code.length !== 6)}
+              disabled={busy !== null || !configured || !email || (codeSent && code.length !== 6)}
               onClick={() => void submit(codeSent ? "confirm" : "request")}
             >
+              {busy === (codeSent ? "confirm" : "request") && (
+                <LoaderCircle className="animate-spin" aria-hidden="true" />
+              )}
               {!configured ? "Not configured" : codeSent ? "Verify code" : "Send code"}
             </Button>
             {codeSent && (
-              <Button disabled={busy} onClick={() => void submit("request")} variant="ghost">
+              <Button
+                disabled={busy !== null}
+                onClick={() => void submit("request")}
+                variant="ghost"
+              >
+                {busy === "request" && <LoaderCircle className="animate-spin" aria-hidden="true" />}
                 Send another code
               </Button>
             )}
             {linkedAccount && (
               <Button
                 variant="destructive"
-                disabled={busy || !canUnlink}
+                disabled={busy !== null || !canUnlink}
                 onClick={() => void onUnlink(linkedAccount.id)}
               >
+                {unlinking && <LoaderCircle className="animate-spin" aria-hidden="true" />}
                 Unlink
               </Button>
             )}

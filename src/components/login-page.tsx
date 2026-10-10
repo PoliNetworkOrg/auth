@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useLocation } from "@tanstack/react-router";
+import { useLocation, useRouter } from "@tanstack/react-router";
 import { cn } from "cn";
 import { Building2, Fingerprint, Link2, LoaderCircle } from "lucide-react";
 import { authClient } from "@/auth/client";
+import { useProviders } from "@/components/access";
 import { DevLoginPanel } from "@/components/dev-login";
 import { GoogleIcon } from "@/components/google-icon";
 import { AppLogo } from "@/components/oidc/app-logo";
@@ -17,7 +18,7 @@ const providers = [
 
 export function LoginLayout({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
-    <div className="flex min-h-svh flex-col bg-muted">
+    <div data-login-layout className="flex min-h-svh flex-col bg-muted">
       <header className="flex justify-end p-5 sm:p-6">
         <ThemeSwitch />
       </header>
@@ -26,11 +27,11 @@ export function LoginLayout({ children, wide = false }: { children: ReactNode; w
           <a
             href="/"
             className="flex items-center gap-3 self-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="PoliNetwork Identity home"
+            aria-label="PoliNetwork Auth home"
           >
             <img src="/polinetwork-logo.svg" width={36} height={36} alt="" className="size-9" />
             <span className="font-bold tracking-tight">
-              PoliNetwork <span className="font-normal text-muted-foreground">Identity</span>
+              PoliNetwork <span className="font-normal text-muted-foreground">Auth</span>
             </span>
           </a>
           {children}
@@ -62,9 +63,8 @@ export function AppHandshake({ app }: { app: RequestingApp | null }) {
 }
 
 export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
-  const [available, setAvailable] = useState<string[] | null>(null);
-  const [providerError, setProviderError] = useState(false);
-  const [revision, setRevision] = useState(0);
+  const router = useRouter();
+  const available = useProviders().signIn;
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [passkeySupported, setPasskeySupported] = useState(false);
@@ -102,21 +102,6 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
     };
   }, [oauthClientId]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    async function loadProviders() {
-      setProviderError(false);
-      const response = await fetch("/api/providers", { signal: controller.signal });
-      if (!response.ok) throw new Error("Unable to load sign-in methods.");
-      const result: { signIn: string[] } = await response.json();
-      setAvailable(result.signIn);
-    }
-    void loadProviders().catch(() => {
-      if (!controller.signal.aborted) setProviderError(true);
-    });
-    return () => controller.abort();
-  }, [revision]);
-
   async function signIn(method: string) {
     setBusy(method);
     setError("");
@@ -131,6 +116,9 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
             ? "Passkey sign-in was not completed. Try again or continue with your account below."
             : (result.error.message ?? "Sign-in failed. Please try again."),
         );
+      } else if (method === "passkey") {
+        // No redirect follows a passkey, so load the page again as the signed-in person.
+        await router.invalidate();
       }
     } catch {
       setError("Unable to reach the sign-in service. Please try again.");
@@ -199,7 +187,7 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
           </div>
           <div className="space-y-3">
             {providers
-              .filter((provider) => available?.includes(provider.id))
+              .filter((provider) => available.includes(provider.id))
               .map((provider) => (
                 <Button
                   key={provider.id}
@@ -219,28 +207,11 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
                   Continue with {provider.name}
                 </Button>
               ))}
-            {providerError ? (
-              <div className="space-y-2 text-center">
-                <p role="alert" className="text-sm">
-                  Unable to load account sign-in methods.
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setRevision((value) => value + 1)}
-                >
-                  Try again
-                </Button>
-              </div>
-            ) : available === null ? (
-              <p role="status" className="text-center text-sm text-muted-foreground">
-                Loading sign-in methods…
-              </p>
-            ) : available.length === 0 ? (
+            {available.length === 0 && (
               <p className="text-center text-sm text-muted-foreground">
                 Account sign-in is currently unavailable.
               </p>
-            ) : null}
+            )}
           </div>
           {error && (
             <p

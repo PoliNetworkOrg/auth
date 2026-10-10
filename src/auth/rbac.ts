@@ -123,7 +123,15 @@ export const MANAGED_PERMISSIONS = [
   {
     key: "idp:roles:write",
     name: "Manage roles",
-    description: "Create, change, and delete roles, and give them to people.",
+    description:
+      "Create, change, and delete roles. Giving them to people is a separate permission.",
+    implies: ["idp:roles:read", "idp:people:read"],
+  },
+  {
+    key: "idp:roles:assign",
+    name: "Assign roles",
+    description:
+      "Give roles to people and take them away. Changing what a role grants is a separate permission.",
     implies: ["idp:roles:read", "idp:people:read"],
   },
   {
@@ -162,6 +170,7 @@ export function managedPermission(key: string): ManagedPermission | undefined {
 const INTRINSIC_IMPLICATIONS = new Map<string, readonly ManagedPermissionKey[]>([
   ["idp:permissions:write", ["idp:permissions:read"]],
   ["idp:roles:write", ["idp:roles:read"]],
+  ["idp:roles:assign", ["idp:roles:read"]],
   // Deleting someone without seeing who they are makes no sense either.
   ["idp:users:delete", ["idp:users:read"]],
 ]);

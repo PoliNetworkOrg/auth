@@ -3,6 +3,7 @@ import { and, desc, eq, or } from "drizzle-orm";
 import { z } from "zod";
 import { account } from "../db/auth-schema";
 import { identityEvidence, studentVerificationChallenge } from "../db/evidence";
+import { rbacAuditEvent } from "../db/rbac";
 import { db } from "../db/index";
 import { authorizationMutationLock } from "../db/security-lock";
 import { env } from "../env";
@@ -185,6 +186,15 @@ export async function confirmStudentVerification(
           updatedAt: now,
         });
       }
+      const [previousEvidence] = await transaction
+        .select({ validUntil: identityEvidence.validUntil })
+        .from(identityEvidence)
+        .where(
+          and(
+            eq(identityEvidence.issuer, POLIMI_EMAIL_ISSUER),
+            eq(identityEvidence.subject, email),
+          ),
+        );
       const proof = {
         issuer: POLIMI_EMAIL_ISSUER,
         subject: email,
@@ -200,6 +210,14 @@ export async function confirmStudentVerification(
           target: [identityEvidence.issuer, identityEvidence.subject],
           set: proof,
         });
+      await transaction.insert(rbacAuditEvent).values({
+        id: randomUUID(),
+        actorId: userId,
+        operation: "student.verify",
+        targetId: userId,
+        before: { validUntil: previousEvidence?.validUntil.toISOString() ?? null },
+        after: { validUntil: validUntil.toISOString() },
+      });
       await transaction
         .update(studentVerificationChallenge)
         .set({ codeHash: "", expiresAt: now })

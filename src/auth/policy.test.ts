@@ -6,6 +6,7 @@ import {
   isLinkOnlyProvider,
   isLoginProvider,
   oidcIdentityClaims,
+  standardIdTokenClaims,
 } from "./policy";
 const now = new Date("2026-01-01T00:00:00Z");
 const future = new Date("2026-01-01T01:00:00Z");
@@ -67,6 +68,7 @@ describe("identity states", () => {
       polinetwork_roles: "socio student",
       polinetwork_permissions: "membership:read student:verified",
       polinetwork_telegram_id: "123456789",
+      groups: ["socio", "student"],
     });
     expect(
       oidcIdentityClaims("identity", {
@@ -81,6 +83,7 @@ describe("identity states", () => {
       polinetwork_roles: "",
       polinetwork_permissions: "",
       polinetwork_telegram_id: "",
+      groups: [],
     });
   });
   it("accepts only the exact Polimi student email domain", () => {
@@ -94,5 +97,33 @@ describe("identity states", () => {
     expect(isLoginProvider("telegram")).toBe(false);
     expect(isLoginProvider("polimi-email")).toBe(false);
     expect(isLinkOnlyProvider("telegram")).toBe(true);
+  });
+});
+
+describe("standard ID token claims", () => {
+  const user = {
+    name: "Ada Lovelace",
+    email: "ada@polinetwork.org",
+    emailVerified: true,
+    image: "https://example.org/ada.png",
+  };
+  it("adds profile and email claims only for the granted scopes", () => {
+    expect(standardIdTokenClaims(user, ["openid", "profile", "email"])).toEqual({
+      name: "Ada Lovelace",
+      picture: "https://example.org/ada.png",
+      email: "ada@polinetwork.org",
+      email_verified: true,
+    });
+    expect(standardIdTokenClaims(user, ["openid", "email"])).toEqual({
+      email: "ada@polinetwork.org",
+      email_verified: true,
+    });
+    expect(standardIdTokenClaims(user, ["openid"])).toEqual({});
+  });
+  it("omits missing values instead of emitting empty claims", () => {
+    expect(standardIdTokenClaims({ email: "ada@polinetwork.org" }, ["profile", "email"])).toEqual({
+      email: "ada@polinetwork.org",
+      email_verified: false,
+    });
   });
 });

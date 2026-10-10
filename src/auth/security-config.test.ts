@@ -39,6 +39,49 @@ describe("security configuration startup validation", () => {
       validateSecurityConfiguration({ IDP_ADMIN_USER_IDS: "root, another-user" }),
     ).not.toThrow();
   });
+  it("requires two distinct HTTPS OAuth resource identifiers together", () => {
+    const base = { IDP_ADMIN_USER_IDS: "root" };
+    const backend = "https://backend.example.invalid";
+    const internal = "https://auth.example.invalid/api/internal";
+    expect(() =>
+      validateSecurityConfiguration({ ...base, OAUTH_BACKEND_RESOURCE_URI: backend }),
+    ).toThrow();
+    expect(() =>
+      validateSecurityConfiguration({
+        ...base,
+        OAUTH_BACKEND_RESOURCE_URI: backend,
+        OAUTH_INTERNAL_RESOURCE_URI: backend,
+      }),
+    ).toThrow();
+    expect(() =>
+      validateSecurityConfiguration({
+        ...base,
+        OAUTH_BACKEND_RESOURCE_URI: "http://backend.example.invalid",
+        OAUTH_INTERNAL_RESOURCE_URI: internal,
+      }),
+    ).toThrow();
+    expect(() =>
+      validateSecurityConfiguration({
+        ...base,
+        OAUTH_BACKEND_RESOURCE_URI: backend,
+        OAUTH_INTERNAL_RESOURCE_URI: `${internal}#fragment`,
+      }),
+    ).toThrow();
+    expect(() =>
+      validateSecurityConfiguration({
+        ...base,
+        OAUTH_BACKEND_RESOURCE_URI: backend,
+        OAUTH_INTERNAL_RESOURCE_URI: `${internal}#`,
+      }),
+    ).toThrow();
+    expect(() =>
+      validateSecurityConfiguration({
+        ...base,
+        OAUTH_BACKEND_RESOURCE_URI: backend,
+        OAUTH_INTERNAL_RESOURCE_URI: internal,
+      }),
+    ).not.toThrow();
+  });
   it.each([
     { BETTER_AUTH_SECRET: "" },
     { PN_ENTRA_MEMBER_GROUP_ID: "bad" },

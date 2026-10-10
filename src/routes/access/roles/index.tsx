@@ -6,15 +6,18 @@ import {
   staticRole,
   staticRoleOrder,
 } from "@/auth/rbac";
-import { useIdpAccessContext } from "@/components/idp-access";
+import { getCatalog } from "@/auth/rbac.functions";
+import { requireAccess, useAccess } from "@/components/access";
 import { KeyChip } from "@/components/rbac/fields";
-import { RequirePermission } from "@/components/rbac/require-permission";
-import { useCatalog } from "@/components/rbac/use-catalog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export const Route = createFileRoute("/access/roles/")({ component: GuardedRolesIndex });
+export const Route = createFileRoute("/access/roles/")({
+  beforeLoad: ({ context }) => requireAccess(context.viewer, "idp:roles:read"),
+  loader: () => getCatalog(),
+  component: RolesIndex,
+});
 
 /** `effective` is null for a role that holds every permission there is. */
 function RoleRow({ role, effective }: { role: RoleSummary; effective: number | null }) {
@@ -71,8 +74,8 @@ function RoleRow({ role, effective }: { role: RoleSummary; effective: number | n
 }
 
 function RolesIndex() {
-  const { can } = useIdpAccessContext();
-  const { catalog, loading, error, reload } = useCatalog();
+  const { can } = useAccess();
+  const catalog = Route.useLoaderData();
   const managed = catalog.roles
     .filter((role) => role.managed)
     .sort((a, b) => staticRoleOrder(a.key) - staticRoleOrder(b.key));
@@ -101,25 +104,7 @@ function RolesIndex() {
         )}
       </div>
 
-      {error && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
-        >
-          <span>{error}</span>
-          <Button variant="outline" size="sm" onClick={reload}>
-            Try again
-          </Button>
-        </div>
-      )}
-
-      {loading && !error ? (
-        <ul aria-busy="true" aria-label="Loading roles" className="space-y-3">
-          {[0, 1, 2].map((index) => (
-            <li key={index} className="h-20 animate-pulse rounded-2xl border bg-card" />
-          ))}
-        </ul>
-      ) : (
+      {
         <div className="space-y-8">
           <Card>
             <CardHeader>
@@ -175,15 +160,7 @@ function RolesIndex() {
             )}
           </div>
         </div>
-      )}
+      }
     </div>
-  );
-}
-
-function GuardedRolesIndex() {
-  return (
-    <RequirePermission permission="idp:roles:read">
-      <RolesIndex />
-    </RequirePermission>
   );
 }

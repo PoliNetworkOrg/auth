@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { LoaderCircle, Trash2 } from "lucide-react";
-import { errorMessage } from "@/components/rbac/api";
-import { deleteUser } from "@/components/users/api";
+import { deleteUserFn } from "@/auth/users.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -14,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { errorMessage } from "@/lib/action-error";
 
 /**
  * Permanently deletes someone, behind a dialog that asks for their name. The server repeats
@@ -28,7 +28,8 @@ export function DeleteUser({
   userId: string;
   userName: string;
   isSelf: boolean;
-  onDeleted: () => void;
+  /** Leaves the page; the button stays busy until it resolves. */
+  onDeleted: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState("");
@@ -40,12 +41,13 @@ export function DeleteUser({
     setBusy(true);
     setError("");
     try {
-      await deleteUser(userId, confirm);
-      onDeleted();
+      await deleteUserFn({ data: { userId, confirm } });
     } catch (cause) {
       setError(errorMessage(cause, "Unable to delete this person."));
       setBusy(false);
+      return;
     }
+    await onDeleted();
   }
 
   return (

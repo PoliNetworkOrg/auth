@@ -1,21 +1,20 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { cn } from "cn";
 import { LogOut, UserRound } from "lucide-react";
 import { Popover } from "radix-ui";
 import { authClient } from "@/auth/client";
-import { type IdpAccess, useIdpAccess } from "@/components/idp-access";
+import { useAccess, useViewer } from "@/components/access";
 import { firstAccessTab } from "@/components/rbac/access-tabs";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/user-avatar";
 
-type Section = "account" | "users" | "applications" | "access";
+export type Section = "account" | "users" | "applications" | "access";
 
-export function AppHeader({ active, access }: { active: Section; access?: IdpAccess }) {
-  const { data: session } = authClient.useSession();
-  const ownAccess = useIdpAccess(!!session && !access);
-  const { can } = access ?? ownAccess;
+export function AppHeader({ active }: { active?: Section }) {
+  const viewer = useViewer();
+  const { can } = useAccess();
   const links: {
     to:
       | "/"
@@ -41,7 +40,7 @@ export function AppHeader({ active, access }: { active: Section; access?: IdpAcc
   const accessTab = firstAccessTab(can);
   if (accessTab) links.push({ to: accessTab.to, label: "eRBACo", section: "access" });
   const nav = (className: string) =>
-    session && links.length > 1 ? (
+    viewer && links.length > 1 ? (
       <nav aria-label="Primary" className={className}>
         {links.map((link) => (
           <Link
@@ -67,18 +66,18 @@ export function AppHeader({ active, access }: { active: Section; access?: IdpAcc
           <Link
             to="/"
             className="flex items-center gap-3 rounded-md text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="PoliNetwork Identity home"
+            aria-label="PoliNetwork Auth home"
           >
             <img src="/polinetwork-logo.svg" width={40} height={40} alt="" className="size-10" />
             <span className="font-bold tracking-tight">
-              PoliNetwork <span className="ml-1 font-normal text-muted-foreground">Identity</span>
+              PoliNetwork <span className="ml-1 font-normal text-muted-foreground">Auth</span>
             </span>
           </Link>
           {nav("hidden items-center gap-1 sm:flex")}
         </div>
         <div className="flex items-center gap-3">
           <ThemeSwitch />
-          {session && <AccountMenu user={session.user} />}
+          {viewer && <AccountMenu user={viewer.user} />}
         </div>
       </div>
       {nav("flex gap-1 overflow-x-auto px-5 pb-3 sm:hidden")}
@@ -88,6 +87,7 @@ export function AppHeader({ active, access }: { active: Section; access?: IdpAcc
 
 function AccountMenu({ user }: { user: { name: string; email: string; image?: string | null } }) {
   const navigate = useNavigate();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
@@ -137,7 +137,9 @@ function AccountMenu({ user }: { user: { name: string; email: string; image?: st
                   return;
                 }
                 setOpen(false);
-                void navigate({ to: "/" });
+                await navigate({ to: "/" });
+                // The root context still holds the old session until it loads again.
+                await router.invalidate();
               }}
             >
               <LogOut />

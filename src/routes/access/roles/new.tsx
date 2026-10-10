@@ -2,21 +2,23 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { type RbacDraftErrors, type RoleDraft, emptyRoleDraft } from "@/auth/rbac";
-import { RbacApiError, errorMessage, saveRole } from "@/components/rbac/api";
+import { getCatalog, saveRoleFn } from "@/auth/rbac.functions";
+import { requireAccess } from "@/components/access";
 import { RoleForm } from "@/components/rbac/role-form";
-import { RequirePermission } from "@/components/rbac/require-permission";
-import { useCatalog } from "@/components/rbac/use-catalog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { errorFields, errorMessage } from "@/lib/action-error";
 
 export const Route = createFileRoute("/access/roles/new")({
   head: () => ({ meta: [{ title: "New role · PoliNetwork Auth" }] }),
-  component: GuardedNewRole,
+  beforeLoad: ({ context }) => requireAccess(context.viewer, "idp:roles:write"),
+  loader: () => getCatalog(),
+  component: NewRole,
 });
 
 function NewRole() {
   const navigate = useNavigate();
-  const { catalog, loading, error: loadError, reload } = useCatalog();
+  const catalog = Route.useLoaderData();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fields, setFields] = useState<RbacDraftErrors>();
@@ -26,10 +28,10 @@ function NewRole() {
     setError("");
     setFields(undefined);
     try {
-      const role = await saveRole(draft);
+      const role = await saveRoleFn({ data: { draft } });
       await navigate({ to: "/access/roles/$roleId", params: { roleId: role.id } });
     } catch (cause) {
-      if (cause instanceof RbacApiError) setFields(cause.fields);
+      setFields(errorFields(cause));
       setError(errorMessage(cause, "Unable to create the role."));
     } finally {
       setBusy(false);
@@ -60,42 +62,18 @@ function NewRole() {
       )}
       <Card>
         <CardContent className="pt-6">
-          {loading ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">Loading permissions…</p>
-          ) : loadError ? (
-            <div className="space-y-4 py-8 text-center">
-              <p role="alert" className="text-sm">
-                {loadError}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Unable to load the permissions this role could grant. Try again before creating one.
-              </p>
-              <Button variant="outline" onClick={reload}>
-                Try again
-              </Button>
-            </div>
-          ) : (
-            <RoleForm
-              mode="create"
-              initial={emptyRoleDraft()}
-              catalog={catalog}
-              busy={busy}
-              serverErrors={fields}
-              submitLabel="Create role"
-              onSubmit={(draft) => void create(draft)}
-              onCancel={() => void navigate({ to: "/access/roles" })}
-            />
-          )}
+          <RoleForm
+            mode="create"
+            initial={emptyRoleDraft()}
+            catalog={catalog}
+            busy={busy}
+            serverErrors={fields}
+            submitLabel="Create role"
+            onSubmit={(draft) => void create(draft)}
+            onCancel={() => void navigate({ to: "/access/roles" })}
+          />
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function GuardedNewRole() {
-  return (
-    <RequirePermission permission="idp:roles:write">
-      <NewRole />
-    </RequirePermission>
   );
 }

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "identity_evidence_telegram_id_uidx" ON "identity_evidence" USING btree ("telegram_id") WHERE "identity_evidence"."telegram_id" IS NOT NULL;

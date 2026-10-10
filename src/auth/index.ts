@@ -1,7 +1,7 @@
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { getAuthenticatorName, passkey } from "@better-auth/passkey";
 import { eq } from "drizzle-orm";
-import { betterAuth } from "better-auth";
+import { betterAuth, type User } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
@@ -11,11 +11,18 @@ import { db } from "../db";
 import * as schema from "../db/schema";
 import { env } from "../env";
 import { AUTH_COOKIE_PREFIX } from "./cookies";
+import { appEmail } from "./contact-email";
+import { startAccessDispatcher } from "./access-dispatcher";
 import { getOidcClaims } from "./identity";
+import { ensureIdTokenKey, jwtOptions } from "./jwt-options";
+import { startKeyPruning } from "./key-pruning";
 import { logAuthorizationDenial } from "./denial-log";
 import { hasIdpPermission } from "./idp-access";
-import { OIDC_CLIENT_REFERENCE } from "./oidc-clients";
-import { isLinkOnlyProvider } from "./policy";
+import { canAdministerIdp } from "./oidc-admin";
+import { validateClientJwks } from "./client-jwks";
+import { rawClientMutationPaths, refusedClientMutationPaths } from "./client-endpoints";
+import { apiScopes, isApiScope, OIDC_CLIENT_REFERENCE, parsePublicJwks } from "./oidc-clients";
+import { isLinkOnlyProvider, standardIdTokenClaims } from "./policy";
 import { providers } from "./providers";
 import {
   passkeyLabel,
@@ -24,13 +31,47 @@ import {
   registrationOptionsSchema,
 } from "./passkeys";
 
+const backendScopes = [
+  "openid",
+  "profile",
+  "email",
+  "offline_access",
+  ...apiScopes.filter((scope) => scope.resource === "backend").map((scope) => scope.id),
+];
+const serviceOAuthEnabled = Boolean(
+  env.OAUTH_BACKEND_RESOURCE_URI && env.OAUTH_INTERNAL_RESOURCE_URI,
+);
+const serviceResources =
+  env.OAUTH_BACKEND_RESOURCE_URI && env.OAUTH_INTERNAL_RESOURCE_URI
+    ? [
+        {
+          identifier: env.OAUTH_BACKEND_RESOURCE_URI,
+          accessTokenTtl: 3600,
+          refreshTokenTtl: 604800,
+          allowedScopes: backendScopes,
+          signingAlgorithm: "EdDSA" as const,
+        },
+        {
+          identifier: env.OAUTH_INTERNAL_RESOURCE_URI,
+          accessTokenTtl: 300,
+          allowedScopes: ["idp:access:read"],
+          signingAlgorithm: "EdDSA" as const,
+        },
+      ]
+    : [];
+
+/** The user as apps see them, with the address from `appEmail` when the `email` scope asks. */
+async function withAppEmail(user: User, scopes: string[]) {
+  return scopes.includes("email") ? { ...user, ...(await appEmail(db, user)) } : user;
+}
+
 export const auth = betterAuth({
   appName: "PoliNetwork Auth",
   baseURL: env.BETTER_AUTH_URL,
   secret: env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, { provider: "pg", schema }),
   trustedOrigins: [new URL(env.BETTER_AUTH_URL).origin],
-  disabledPaths: ["/token", "/unlink-account"],
+  disabledPaths: ["/token", "/unlink-account", ...rawClientMutationPaths],
   socialProviders:
     env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
       ? {
@@ -42,11 +83,53 @@ export const auth = betterAuth({
       : {},
   hooks: {
     before: createAuthMiddleware(async (context) => {
+      if (context.path === "/oauth2/token") await ensureIdTokenKey(context);
       if (context.path === "/sign-in/social" && isLinkOnlyProvider(context.body?.provider)) {
         throw new APIError("BAD_REQUEST", {
           code: "TELEGRAM_LINK_ONLY",
           message: "Telegram can only be connected to an existing account.",
         });
+      }
+      if (refusedClientMutationPaths.includes(context.path))
+        throw new APIError("FORBIDDEN", {
+          code: "CLIENT_MUTATION_UNSUPPORTED",
+          message: "Change applications from the application pages.",
+        });
+      if (context.path !== "/admin/oauth2/create-client") return;
+      const body = context.body as Record<string, unknown> | undefined;
+      // The provider trims grant names before storing them, so this must too.
+      const protectedClient =
+        (Array.isArray(body?.grant_types) &&
+          body.grant_types.some(
+            (grant) => typeof grant === "string" && grant.trim() === "client_credentials",
+          )) ||
+        (Array.isArray(body?.client_credentials_scopes) &&
+          body.client_credentials_scopes.length > 0) ||
+        (typeof body?.scope === "string" && body.scope.split(" ").some(isApiScope));
+      // Any writer may register a private key, so creation applies the same key rules as the
+      // application form, not only the provider's looser ones.
+      if (body?.jwks_uri !== undefined)
+        throw new APIError("BAD_REQUEST", {
+          code: "JWKS_URI_UNSUPPORTED",
+          message: "Register the public JWKS itself, not a jwks_uri.",
+        });
+      if (body?.jwks !== undefined) {
+        try {
+          await validateClientJwks(parsePublicJwks(JSON.stringify(body.jwks)), db);
+        } catch (error) {
+          throw new APIError("BAD_REQUEST", {
+            code: "INVALID_JWKS",
+            message: error instanceof Error ? error.message : "The public JWKS is invalid.",
+          });
+        }
+      }
+      if (protectedClient) {
+        const session = await auth.api.getSession({ headers: context.headers ?? new Headers() });
+        if (!session || !(await canAdministerIdp(session.user.id, db, true)))
+          throw new APIError("UNAUTHORIZED", {
+            code: "MASTER_ADMIN_REQUIRED",
+            message: "Only Master Admin may manage applications with API access.",
+          });
       }
     }),
     after: createAuthMiddleware(async (context) => {
@@ -96,34 +179,65 @@ export const auth = betterAuth({
       },
     }),
     genericOAuth({ config: providers }),
-    jwt(),
+    jwt(jwtOptions),
     oauthProvider({
       loginPage: "/",
       consentPage: "/consent",
-      scopes: ["openid", "profile", "email", "polinetwork:identity", "offline_access"],
-      grantTypes: ["authorization_code", "refresh_token"],
+      scopes: serviceOAuthEnabled
+        ? ["polinetwork:identity", ...backendScopes, "idp:access:read"]
+        : ["openid", "profile", "email", "polinetwork:identity", "offline_access"],
+      grantTypes: serviceOAuthEnabled
+        ? ["authorization_code", "refresh_token", "client_credentials"]
+        : ["authorization_code", "refresh_token"],
+      resources: serviceResources,
+      resourceSeedMode: "overwrite",
+      enforcePerClientResources: true,
       allowDynamicClientRegistration: false,
       // Lets the login page name the requesting app before the user signs in.
       allowPublicClientPrelogin: true,
       // Administrators share one client pool instead of owning clients individually.
       clientReference: () => OIDC_CLIENT_REFERENCE,
       clientPrivileges: async ({ user, action }) => {
-        const allowed = user ? await hasIdpPermission(user.id, "idp:applications:write") : false;
+        const requiresMasterAdmin = action === "configure-client-credentials-scopes";
+        const allowed = user
+          ? requiresMasterAdmin
+            ? await canAdministerIdp(user.id, db, true)
+            : await hasIdpPermission(user.id, "idp:applications:write")
+          : false;
         if (!allowed)
           logAuthorizationDenial(user?.id ?? null, `oauth-client:${action}`, [
-            "idp:applications:write",
+            requiresMasterAdmin ? "master-admin" : "idp:applications:write",
           ]);
         return allowed;
       },
-      // Resource-policy administration is not a supported product surface. The plugin's
-      // server-only SDK defaults to permitting any session unless this hook is set.
-      resourcePrivileges: () => false,
+      // Resource policy is seeded from config. Master Admin may inspect it, but no API caller
+      // may edit it, and clients are linked only by saving them, under the RBAC write lock.
+      resourcePrivileges: ({ action, user }) =>
+        serviceOAuthEnabled && user && ["read", "list"].includes(action)
+          ? canAdministerIdp(user.id, db, true)
+          : false,
       accessTokenExpiresIn: 300,
+      m2mAccessTokenExpiresIn: 3600,
+      refreshTokenReuseInterval: 10,
       idTokenExpiresIn: 300,
-      customIdTokenClaims: ({ user, scopes }) => getOidcClaims(user.id, scopes),
-      customUserInfoClaims: ({ user, scopes }) => getOidcClaims(user.id, scopes),
-      customAccessTokenClaims: ({ user, scopes }) => (user ? getOidcClaims(user.id, scopes) : {}),
+      customIdTokenClaims: async ({ user, scopes }) => ({
+        ...standardIdTokenClaims(await withAppEmail(user, scopes), scopes),
+        ...(await getOidcClaims(user.id, scopes)),
+      }),
+      customUserInfoClaims: async ({ user, scopes }) => ({
+        ...standardIdTokenClaims(await withAppEmail(user, scopes), scopes),
+        ...(await getOidcClaims(user.id, scopes)),
+      }),
+      customAccessTokenClaims: async ({ user, scopes }) => ({
+        pn_subject_type: user ? "user" : "client",
+        ...(user ? await getOidcClaims(user.id, scopes) : {}),
+      }),
     }),
     tanstackStartCookies(),
   ],
 });
+
+if (import.meta.env.PROD) {
+  startAccessDispatcher(auth);
+  startKeyPruning();
+}

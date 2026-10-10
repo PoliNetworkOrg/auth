@@ -1,3 +1,4 @@
+import type { FieldErrors } from "@/lib/action-error";
 import { contactEmails } from "./contact-email";
 import { mayDelegateMutation } from "./rbac-delegation";
 import { logAuthorizationDenial } from "./denial-log";
@@ -44,7 +45,7 @@ export class RbacError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    readonly fields?: Record<string, string>,
+    readonly fields?: FieldErrors,
   ) {
     super(message);
   }
@@ -57,7 +58,7 @@ type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 // Read one query at a time: `db` may be an open transaction, and a transaction is a single
 // PostgreSQL session that cannot run overlapping queries.
-async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
+export async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
   const roles = await db.select().from(role).orderBy(role.key);
   const permissions = await db.select().from(permission).orderBy(permission.key);
   const rolePermissions = await db
@@ -180,7 +181,10 @@ export async function loadCatalog(actorId: string): Promise<RbacCatalog> {
  */
 export async function withAuthorizedRbacWrite<T>(
   actorId: string,
-  required: Extract<ManagedPermissionKey, `${string}:write` | `${string}:delete`>,
+  required: Extract<
+    ManagedPermissionKey,
+    `${string}:write` | `${string}:assign` | `${string}:delete`
+  >,
   change: (transaction: Transaction, catalog: RbacCatalog, access: ResolvedAccess) => Promise<T>,
 ): Promise<T> {
   await refreshIdentityMembership(actorId);
@@ -231,6 +235,15 @@ async function auditSnapshot(
   };
 }
 
+/** Editing role definitions and handing roles out are delegated separately. */
+function requiredForOperation(
+  operation: string,
+): "idp:permissions:write" | "idp:roles:write" | "idp:roles:assign" {
+  if (operation.startsWith("permission.")) return "idp:permissions:write";
+  if (operation === "role.assign" || operation === "role.unassign") return "idp:roles:assign";
+  return "idp:roles:write";
+}
+
 async function withRbacWriteLock<T>(
   actorId: string,
   operation: string,
@@ -239,7 +252,7 @@ async function withRbacWriteLock<T>(
 ): Promise<T> {
   return withAuthorizedRbacWrite(
     actorId,
-    operation.startsWith("permission.") ? "idp:permissions:write" : "idp:roles:write",
+    requiredForOperation(operation),
     async (transaction, catalog, access) => {
       const before = await auditSnapshot(transaction, catalog, operation, targetId);
       const result = await change(transaction, catalog, access);
@@ -289,8 +302,7 @@ function idsForRoleKeys(catalog: RbacCatalog, keys: string[]) {
 }
 
 function checked(errors: Record<string, string | undefined>) {
-  if (hasDraftErrors(errors))
-    throw new RbacError(400, "Check the highlighted fields.", errors as Record<string, string>);
+  if (hasDraftErrors(errors)) throw new RbacError(400, "Check the highlighted fields.", errors);
 }
 
 export async function savePermission(

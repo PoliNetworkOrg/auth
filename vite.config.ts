@@ -38,7 +38,13 @@ const config = defineConfig({
       ? []
       : [
           devtools(),
-          nitro({ rollupConfig: { external: [/^@sentry\//] } }),
+          nitro({
+            // Nitro otherwise splits the SSR router and Better Auth core into
+            // mutually importing chunks. Node evaluates StateError before
+            // BetterAuthError is initialized, and every auth route returns 500.
+            inlineDynamicImports: true,
+            rollupConfig: { external: [/^@sentry\//] },
+          }),
           tailwindcss(),
           tanstackStart(),
           viteReact(),

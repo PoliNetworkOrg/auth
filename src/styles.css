@@ -96,6 +96,11 @@
   body {
     @apply m-0 bg-background font-sans text-foreground antialiased;
   }
+  /* Login screens sit on the muted surface. Paint the canvas to match, or the background color
+     shows below them behind Safari's toolbar and when the page overscrolls. */
+  body:has([data-login-layout]) {
+    @apply bg-muted;
+  }
   button:not(:disabled) {
     cursor: pointer;
   }
