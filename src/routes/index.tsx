@@ -86,7 +86,7 @@ function AccountPage({ viewer, details }: { viewer: Viewer; details: AccountDeta
 
         <AccountCards details={details} providers={providers} actions={actions} />
 
-        <div className="grid gap-6">
+        <div className="grid gap-10">
           <PasskeysPanel passkeys={details.passkeys} actions={actions} />
           <SessionsPanel sessions={details.sessions} actions={actions} />
           <GroupsPanel groups={details.groups} />
