@@ -19,6 +19,7 @@ import { Route as ApiIdentityRouteImport } from './routes/api/identity'
 import { Route as ApplicationsIndexRouteImport } from './routes/applications/index'
 import { Route as ApplicationsClientIdRouteImport } from './routes/applications/$clientId'
 import { Route as ApplicationsNewRouteImport } from './routes/applications/new'
+import { Route as ApplicationsProtoRouteImport } from './routes/applications/proto'
 import { Route as UsersIndexRouteImport } from './routes/users/index'
 import { Route as UsersUserIdRouteImport } from './routes/users/$userId'
 import { Route as AccessPermissionsIndexRouteImport } from './routes/access/permissions/index'
@@ -78,6 +79,11 @@ const ApplicationsClientIdRoute = ApplicationsClientIdRouteImport.update({
 const ApplicationsNewRoute = ApplicationsNewRouteImport.update({
   id: '/new',
   path: '/new',
+  getParentRoute: () => ApplicationsRouteRoute,
+} as any)
+const ApplicationsProtoRoute = ApplicationsProtoRouteImport.update({
+  id: '/proto',
+  path: '/proto',
   getParentRoute: () => ApplicationsRouteRoute,
 } as any)
 const UsersIndexRoute = UsersIndexRouteImport.update({
@@ -142,6 +148,7 @@ export interface FileRoutesByFullPath {
   '/api/identity': typeof ApiIdentityRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
+  '/applications/proto': typeof ApplicationsProtoRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/access/': typeof AccessIndexRoute
   '/applications/': typeof ApplicationsIndexRoute
@@ -161,6 +168,7 @@ export interface FileRoutesByTo {
   '/api/identity': typeof ApiIdentityRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
+  '/applications/proto': typeof ApplicationsProtoRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/access': typeof AccessIndexRoute
   '/applications': typeof ApplicationsIndexRoute
@@ -184,6 +192,7 @@ export interface FileRoutesById {
   '/api/identity': typeof ApiIdentityRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
+  '/applications/proto': typeof ApplicationsProtoRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/access/': typeof AccessIndexRoute
   '/applications/': typeof ApplicationsIndexRoute
@@ -208,6 +217,7 @@ export interface FileRouteTypes {
     | '/api/identity'
     | '/applications/$clientId'
     | '/applications/new'
+    | '/applications/proto'
     | '/users/$userId'
     | '/access/'
     | '/applications/'
@@ -227,6 +237,7 @@ export interface FileRouteTypes {
     | '/api/identity'
     | '/applications/$clientId'
     | '/applications/new'
+    | '/applications/proto'
     | '/users/$userId'
     | '/access'
     | '/applications'
@@ -249,6 +260,7 @@ export interface FileRouteTypes {
     | '/api/identity'
     | '/applications/$clientId'
     | '/applications/new'
+    | '/applications/proto'
     | '/users/$userId'
     | '/access/'
     | '/applications/'
@@ -344,6 +356,13 @@ declare module '@tanstack/react-router' {
       path: '/new'
       fullPath: '/applications/new'
       preLoaderRoute: typeof ApplicationsNewRouteImport
+      parentRoute: typeof ApplicationsRouteRoute
+    }
+    '/applications/proto': {
+      id: '/applications/proto'
+      path: '/proto'
+      fullPath: '/applications/proto'
+      preLoaderRoute: typeof ApplicationsProtoRouteImport
       parentRoute: typeof ApplicationsRouteRoute
     }
     '/users/': {
@@ -446,12 +465,14 @@ const AccessRouteRouteWithChildren = AccessRouteRoute._addFileChildren(
 interface ApplicationsRouteRouteChildren {
   ApplicationsClientIdRoute: typeof ApplicationsClientIdRoute
   ApplicationsNewRoute: typeof ApplicationsNewRoute
+  ApplicationsProtoRoute: typeof ApplicationsProtoRoute
   ApplicationsIndexRoute: typeof ApplicationsIndexRoute
 }
 
 const ApplicationsRouteRouteChildren: ApplicationsRouteRouteChildren = {
   ApplicationsClientIdRoute: ApplicationsClientIdRoute,
   ApplicationsNewRoute: ApplicationsNewRoute,
+  ApplicationsProtoRoute: ApplicationsProtoRoute,
   ApplicationsIndexRoute: ApplicationsIndexRoute,
 }
 
