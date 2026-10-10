@@ -22,7 +22,8 @@ export const identityEvidence = pgTable(
     states: text().array().notNull().default([]),
     validUntil: timestamp("valid_until", { withTimezone: true }).notNull(),
     telegramId: text("telegram_id"),
-    // The address the account signs in with, saved at each sign-in. For display and search only.
+    // The address the account signs in with, saved at each sign-in. Shown and searched, and a
+    // PoliNetwork address is also what apps receive as `email` (see `appEmail`).
     email: text(),
   },
   (table) => [
