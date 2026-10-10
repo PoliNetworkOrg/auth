@@ -86,6 +86,9 @@ export function AppHeader({ active }: { active?: Section }) {
   );
 }
 
+/** Rows inside the account menu. The popover's radius minus its padding keeps the corners concentric. */
+const menuItem = "h-9 justify-start gap-2.5 rounded-[10px] px-2.5 has-[>svg]:px-2.5";
+
 function AccountMenu({ user }: { user: { name: string; email: string; image?: string | null } }) {
   const navigate = useNavigate();
   const router = useRouter();
@@ -102,9 +105,9 @@ function AccountMenu({ user }: { user: { name: string; email: string; image?: st
         <Popover.Content
           align="end"
           sideOffset={8}
-          className="z-50 w-64 rounded-2xl border bg-card p-4 text-card-foreground shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+          className="z-50 w-64 rounded-2xl border bg-card p-1.5 text-card-foreground shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 px-2.5 pt-2.5 pb-3">
             <div className="size-11 shrink-0 overflow-hidden rounded-full border bg-muted text-sm font-semibold text-muted-foreground">
               <UserAvatar name={user.name} image={user.image} />
             </div>
@@ -113,17 +116,17 @@ function AccountMenu({ user }: { user: { name: string; email: string; image?: st
               <p className="truncate text-xs text-muted-foreground">{user.email}</p>
             </div>
           </div>
-          <div className="mt-4 grid gap-1 border-t pt-3">
-            <Button asChild variant="ghost" size="sm" className="justify-start">
+          <div className="-mx-1.5 border-t" />
+          <div className="grid gap-0.5 pt-1.5">
+            <Button asChild variant="ghost" className={menuItem}>
               <Link to="/" onClick={() => setOpen(false)}>
                 <UserRound />
                 Your account
               </Link>
             </Button>
             <Button
-              variant="ghost"
-              size="sm"
-              className="justify-start text-muted-foreground"
+              variant="destructive-soft"
+              className={cn(menuItem, "border-0")}
               onClick={async () => {
                 const result = await authClient.signOut();
                 if (result.error) {
