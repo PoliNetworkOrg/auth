@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
 import { type PermissionDraft, type RbacDraftErrors, permissionDraftFrom } from "@/auth/rbac";
 import { deletePermissionFn, getCatalog, savePermissionFn } from "@/auth/rbac.functions";
 import { requireAccess, useAccess } from "@/components/access";
@@ -26,8 +27,6 @@ function PermissionDetail() {
   const { can } = access;
   const catalog = Route.useLoaderData();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
   const [fields, setFields] = useState<RbacDraftErrors>();
 
   const permission = catalog.permissions.find((entry) => entry.id === permissionId);
@@ -42,16 +41,16 @@ function PermissionDetail() {
 
   async function save(draft: PermissionDraft) {
     setBusy(true);
-    setError("");
-    setSaved(false);
     setFields(undefined);
     try {
       await savePermissionFn({ data: { permissionId, draft } });
       await router.invalidate({ sync: true });
-      setSaved(true);
+      toast.success(
+        "Saved. New sign-ins use this immediately; tokens already issued expire within minutes.",
+      );
     } catch (cause) {
       setFields(errorFields(cause));
-      setError(errorMessage(cause, "Unable to save the permission."));
+      toast.error(errorMessage(cause, "Unable to save the permission."));
     } finally {
       setBusy(false);
     }
@@ -59,12 +58,11 @@ function PermissionDetail() {
 
   async function remove() {
     setBusy(true);
-    setError("");
     try {
       await deletePermissionFn({ data: { permissionId } });
       await navigate({ to: "/access/permissions" });
     } catch (cause) {
-      setError(errorMessage(cause, "Unable to delete the permission."));
+      toast.error(errorMessage(cause, "Unable to delete the permission."));
       setBusy(false);
     }
   }
@@ -107,20 +105,6 @@ function PermissionDetail() {
           )}
         </p>
       </div>
-
-      {error && (
-        <p
-          role="alert"
-          className="rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
-        >
-          {error}
-        </p>
-      )}
-      {saved && !error && (
-        <p role="status" className="rounded-xl border bg-card p-4 text-sm">
-          Saved. New sign-ins use this immediately; tokens already issued expire within minutes.
-        </p>
-      )}
 
       <Card>
         <CardContent className="pt-6">

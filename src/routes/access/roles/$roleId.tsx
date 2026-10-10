@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-r
 import { useState } from "react";
 import { z } from "zod";
 import { ArrowLeft, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 import {
   type RbacDraftErrors,
   type RoleDraft,
@@ -43,8 +44,6 @@ function RoleDetail() {
   const { catalog, members } = Route.useLoaderData();
   const { after } = Route.useSearch();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
   const [fields, setFields] = useState<RbacDraftErrors>();
 
   const role = catalog.roles.find((entry) => entry.id === roleId);
@@ -62,16 +61,16 @@ function RoleDetail() {
 
   async function save(draft: RoleDraft) {
     setBusy(true);
-    setError("");
-    setSaved(false);
     setFields(undefined);
     try {
       await saveRoleFn({ data: { roleId, draft } });
       await router.invalidate({ sync: true });
-      setSaved(true);
+      toast.success(
+        "Saved. New sign-ins use these permissions immediately; tokens already issued expire within minutes.",
+      );
     } catch (cause) {
       setFields(errorFields(cause));
-      setError(errorMessage(cause, "Unable to save the role."));
+      toast.error(errorMessage(cause, "Unable to save the role."));
     } finally {
       setBusy(false);
     }
@@ -79,12 +78,11 @@ function RoleDetail() {
 
   async function remove() {
     setBusy(true);
-    setError("");
     try {
       await deleteRoleFn({ data: { roleId } });
       await navigate({ to: "/access/roles" });
     } catch (cause) {
-      setError(errorMessage(cause, "Unable to delete the role."));
+      toast.error(errorMessage(cause, "Unable to delete the role."));
       setBusy(false);
     }
   }
@@ -138,21 +136,6 @@ function RoleDetail() {
             {canWrite && " Choose what it grants below."}
           </p>
         </div>
-      )}
-
-      {error && (
-        <p
-          role="alert"
-          className="rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
-        >
-          {error}
-        </p>
-      )}
-      {saved && !error && (
-        <p role="status" className="rounded-xl border bg-card p-4 text-sm">
-          Saved. New sign-ins use these permissions immediately; tokens already issued expire within
-          minutes.
-        </p>
       )}
 
       <Card>

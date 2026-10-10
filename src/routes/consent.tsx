@@ -12,6 +12,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { z } from "zod";
+import { toast } from "sonner";
 import { getConsentApp } from "@/auth/account.functions";
 import { authClient } from "@/auth/client";
 import { describeScope } from "@/auth/oidc-clients";
@@ -126,7 +127,6 @@ function Consent() {
   // Parse the signed request from the router so the server renders the same state.
   const { searchStr } = useLocation();
   const request = useMemo(() => parseConsentRequest(searchStr), [searchStr]);
-  const [error, setError] = useState("");
   const [busy, setBusy] = useState<"allow" | "deny" | "switch" | null>(null);
 
   // Consent needs a session: hand signed-out visitors to the login page with the same request.
@@ -138,13 +138,12 @@ function Consent() {
 
   async function decide(accept: boolean) {
     setBusy(accept ? "allow" : "deny");
-    setError("");
     try {
       const result = await authClient.oauth2.consent({ accept });
-      if (result.error) setError(result.error.message ?? "Unable to process your choice.");
+      if (result.error) toast.error(result.error.message ?? "Unable to process your choice.");
       else if (result.data?.url) window.location.assign(result.data.url);
     } catch {
-      setError("Unable to reach PoliNetwork. Please try again.");
+      toast.error("Unable to reach PoliNetwork. Please try again.");
     } finally {
       setBusy(null);
     }
@@ -298,15 +297,6 @@ function Consent() {
               </p>
             )}
           </section>
-
-          {error && (
-            <p
-              role="alert"
-              className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm leading-6"
-            >
-              {error}
-            </p>
-          )}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <Button

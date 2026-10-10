@@ -1,5 +1,6 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
+import { toast } from "sonner";
 import { getAccount, unlinkAccountFn } from "@/auth/account.functions";
 import { authClient } from "@/auth/client";
 import { isLoginProvider } from "@/auth/policy";
@@ -65,7 +66,6 @@ function AccountPage({ viewer, account }: { viewer: Viewer; account: Account }) 
   const router = useRouter();
   const providers = useProviders();
   const { accounts, identity, passkeys } = account;
-  const [error, setError] = useState("");
   /** The provider being linked, the account being unlinked, or "sign-out", so only that button spins. */
   const [busy, setBusy] = useState<string | null>(null);
   const loginAccountCount = accounts.filter((account) =>
@@ -74,39 +74,36 @@ function AccountPage({ viewer, account }: { viewer: Viewer; account: Account }) 
 
   async function connect(provider: string) {
     setBusy(provider);
-    setError("");
     try {
       const result = await authClient.linkSocial({ provider, callbackURL: "/" });
-      if (result.error) setError(result.error.message ?? "Sign-in failed.");
+      if (result.error) toast.error(result.error.message ?? "Sign-in failed.");
     } catch {
-      setError("Unable to contact the identity service.");
+      toast.error("Unable to contact the identity service.");
     } finally {
       setBusy(null);
     }
   }
   async function unlink(accountId: string) {
     setBusy(accountId);
-    setError("");
     try {
       await unlinkAccountFn({ data: { accountId } });
       // Brings the accounts, membership and student status up to date.
       await router.invalidate({ sync: true });
     } catch (cause) {
-      setError(errorMessage(cause, "Unable to unlink account."));
+      toast.error(errorMessage(cause, "Unable to unlink account."));
     } finally {
       setBusy(null);
     }
   }
   async function signOut() {
     setBusy("sign-out");
-    setError("");
     try {
       const result = await authClient.signOut();
-      if (result.error) setError(result.error.message ?? "Unable to sign out.");
+      if (result.error) toast.error(result.error.message ?? "Unable to sign out.");
       // The root context still holds the old session until it loads again.
       else await router.invalidate({ sync: true });
     } catch {
-      setError("Unable to sign out.");
+      toast.error("Unable to sign out.");
     } finally {
       setBusy(null);
     }
@@ -128,14 +125,6 @@ function AccountPage({ viewer, account }: { viewer: Viewer; account: Account }) 
           </div>
           <Badge className="bg-card text-muted-foreground">Preview</Badge>
         </div>
-        {error && (
-          <p
-            role="alert"
-            className="mb-6 rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
-          >
-            {error}
-          </p>
-        )}
         <div className="grid items-start gap-8 lg:grid-cols-[320px_1fr]">
           <aside className="space-y-5">
             <section className="identity-pass rounded-2xl p-7" aria-label="Your identity">

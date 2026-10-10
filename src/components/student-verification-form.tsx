@@ -1,6 +1,7 @@
 import { useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { Check, GraduationCap, LoaderCircle, Unlink } from "lucide-react";
+import { toast } from "sonner";
 import {
   confirmStudentVerificationFn,
   requestStudentVerificationFn,
@@ -35,28 +36,24 @@ export function StudentVerificationForm({
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [busy, setBusy] = useState<"request" | "confirm" | null>(null);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
 
   async function submit(action: "request" | "confirm") {
     setBusy(action);
-    setError("");
-    setMessage("");
     try {
       if (action === "request") {
         await requestStudentVerificationFn({ data: { email } });
         setCodeSent(true);
-        setMessage("We sent a six-digit code to your university email.");
+        toast.success("We sent a six-digit code to your university email.");
       } else {
         await confirmStudentVerificationFn({ data: { email, code } });
         // Shows the linked email and the student status before the spinner stops.
         await router.invalidate({ sync: true });
         setCode("");
         setCodeSent(false);
-        setMessage("Your student status is verified.");
+        toast.success("Your student status is verified.");
       }
     } catch (cause) {
-      setError(errorMessage(cause, "Student verification failed."));
+      toast.error(errorMessage(cause, "Student verification failed."));
     } finally {
       setBusy(null);
     }
@@ -126,19 +123,6 @@ export function StudentVerificationForm({
                 className="bg-card tracking-widest"
               />
             </>
-          )}
-          {message && (
-            <p role="status" className="text-sm text-primary">
-              {message}
-            </p>
-          )}
-          {error && (
-            <p
-              role="alert"
-              className="text-sm text-destructive-foreground bg-destructive rounded-lg p-3"
-            >
-              {error}
-            </p>
           )}
           <div className="flex flex-wrap gap-2">
             <Button
