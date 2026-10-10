@@ -74,7 +74,8 @@ Verified locally with dummy data and a disposable PostgreSQL 17 container:
 
 Still to verify in production, outside this repository:
 
-- Set `AUTH_CLIENT_IP_HEADER` before deploying, or startup fails.
+- Deploy the matching CD setting for `AUTH_CLIENT_IP_HEADER` before the new Auth
+  image, or startup fails (see the infrastructure follow-up below).
 - Confirm which header reaches the Auth process on the live route, and that clients cannot
   reach the origin or set that header without passing Cloudflare (Tunnel-only exposure or a
   firewall). This audit did not observe the live route or edge rules.
@@ -84,6 +85,51 @@ Still to verify in production, outside this repository:
 - Per-address limits still pool users behind one NAT, such as a campus network: 3 sign-in
   attempts per 10 seconds and 30 authorizations per minute per public IPv4 address.
 - The admin BFF's handling of `429` on refresh (see below) is unchanged.
+
+## Infrastructure follow-up (2026-10-11)
+
+Reviewed fetched `PoliNetworkOrg/polinetwork-cd` `main` at `628fab9` and
+`PoliNetworkOrg/terraform` `stable` at `6b2128a`. The older local branches were
+not used as evidence of the current deployment configuration.
+
+The CD sources declare Cloudflare Tunnel → Traefik → Auth. The remote-managed
+`k3s01` tunnel runs two cloudflared replicas; its hostname routes are configured
+outside Git in Cloudflare Zero Trust. Traefik is a `ClusterIP` service, and the
+Auth Ingress routes the `web` entrypoint without a header middleware.
+`infrastructure/traefik/traefik-service.yaml` supplies no forwarded-header trust
+configuration. With Traefik's defaults, an untrusted upstream's
+`X-Forwarded-For` is removed and the downstream proxy header identifies the
+upstream connection rather than the visitor. This provides a concrete likely
+explanation for shared Auth quotas under the original default header, in
+addition to the reproduced unresolved-chain fallback. It is an inference from
+the declared configuration and upstream behavior, not a captured live request.
+
+`CF-Connecting-IP` carries Cloudflare's visitor address and is not one of the
+headers removed by Traefik's forwarded-header middleware. No repository header
+rewrite was found on the Auth route. The CD Auth Deployment lacked the new
+required `AUTH_CLIENT_IP_HEADER`; the local `fix/auth-client-ip-header` worktree
+now sets it to `cf-connecting-ip`. Vaultwarden already uses the same header.
+
+Terraform's active `environments/k3s/network.tf` attaches an NSG containing
+`DenyAllInbound` to the node subnet. The node's public IP is for outbound
+traffic; the host firewall also defaults to dropping inbound traffic. These
+sources declare protection against public direct-origin bypass, so no Terraform
+change is needed for this header contract. Auth has no dedicated NetworkPolicy:
+cluster-internal callers are within the trusted boundary and can reach its
+service directly. This is not an assertion that all internal traffic traverses
+Cloudflare.
+
+The CD admin, backend, web and bot-ts Deployments all configure a cluster-internal
+IdP URL. Their token traffic consequently shares the fallback bucket when it
+carries no accepted address, confirming the shared-server capacity concern.
+
+Remaining runtime checks are the reconciled manifests/image, headers reaching
+Auth, and the remote tunnel/Cloudflare header-transform settings. No live Azure
+or Cloudflare configuration was inspected, and nothing was pushed or deployed.
+
+References: [Traefik forwarded-header defaults](https://doc.traefik.io/traefik/reference/install-configuration/entrypoints/#forwarded-headers),
+[Traefik forwarded-header implementation](https://github.com/traefik/traefik/blob/master/pkg/middlewares/forwardedheaders/forwarded_header.go),
+and [Cloudflare request headers](https://developers.cloudflare.com/fundamentals/reference/http-headers/).
 
 ## Reproduced findings
 
@@ -233,11 +279,12 @@ details. This is a source-grounded resilience concern outside the Auth fix, not
 proof that the original 429 came from admin. No admin fix is required to remedy
 the three confirmed Auth defects.
 
-Deployment manifests checked out locally still describe older admin/runtime
-settings and do not prove the live cutover state. Edge bot/DDoS rules and deployed
-image dependencies are outside source visibility. Application database limits
-remain one layer of protection; this audit makes no claim to verify Cloudflare
-or network-level protection.
+The initial audit used older deployment checkouts. The infrastructure follow-up
+above supersedes that source limitation with fetched deployment and Terraform
+refs, while still not proving live reconciliation. Edge bot/DDoS rules and
+deployed image dependencies remain outside source visibility. Application
+database limits remain one layer of protection; this audit makes no claim to
+verify live Cloudflare or network-level protection.
 
 ## Evidence and handoff
 
