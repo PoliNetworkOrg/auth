@@ -268,6 +268,10 @@ function AccessStep({
           <h3 id="access-people" className="text-base font-semibold">
             People who sign in
           </h3>
+          <RedirectRule
+            value={draft.applicationType}
+            onChange={(value) => update("applicationType", value)}
+          />
           <ListField
             label="Redirect URIs"
             required
@@ -284,10 +288,6 @@ function AccessStep({
             addLabel="Add redirect URI"
             onChange={(items) => update("redirectUris", items)}
           />
-          <RedirectRule
-            value={draft.applicationType}
-            onChange={(value) => update("applicationType", value)}
-          />
           <IdentityScopeList api={api} legend="What it may ask people for" />
           <FieldError>{errors.scopes}</FieldError>
           {apiAccess && (
@@ -299,6 +299,13 @@ function AccessStep({
               error={draft.serviceAccess ? undefined : errors.apiScopes}
             />
           )}
+        </section>
+      )}
+      {draft.signIn && (
+        <section aria-labelledby="access-logout" className="space-y-6">
+          <h3 id="access-logout" className="text-base font-semibold">
+            Logout
+          </h3>
           <ListField
             label="Post-logout redirect URIs"
             items={draft.postLogoutRedirectUris}

@@ -1,5 +1,5 @@
 // Fields shared by the new-application wizard and the application settings page.
-import { useId, type ReactNode } from "react";
+import { useId, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "cn";
 import { Plus, Trash2 } from "lucide-react";
 import {
@@ -14,7 +14,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import type { ClientDraftApi } from "./use-client-draft";
 
 export function RequiredMark() {
@@ -184,6 +183,92 @@ export function ListField({
   );
 }
 
+const jsonToken =
+  /("(?:\\.|[^"\\])*")(?=\s*:)|("(?:\\.|[^"\\])*"?)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\btrue\b|\bfalse\b|\bnull\b)|([{}[\],:])/g;
+
+/** JSON coloured by token. Anything it doesn't recognise renders plain, so it never drops text. */
+function JsonTokens({ source }: { source: string }) {
+  const parts: ReactNode[] = [];
+  let end = 0;
+  for (const match of source.matchAll(jsonToken)) {
+    if (match.index > end) parts.push(source.slice(end, match.index));
+    const [text, key, string, literal] = match;
+    const tone = key
+      ? "text-primary"
+      : string
+        ? "text-emerald-700 dark:text-emerald-300"
+        : literal
+          ? "text-amber-700 dark:text-amber-300"
+          : "text-muted-foreground";
+    parts.push(
+      <span key={match.index} className={tone}>
+        {text}
+      </span>,
+    );
+    end = match.index + text.length;
+  }
+  parts.push(source.slice(end));
+  return parts;
+}
+
+const indentUnit = "  ";
+
+/** Replaces part of a textarea's text the way typing would, so undo still works. */
+function replaceText(textarea: HTMLTextAreaElement, from: number, to: number, text: string) {
+  textarea.setSelectionRange(from, to);
+  if (document.execCommand("insertText", false, text)) return;
+  textarea.setRangeText(text, from, to, "end");
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/**
+ * Editor keys for JSON in a textarea: Enter keeps the line's indentation (one level more
+ * after an opening bracket), Tab and Shift+Tab indent and outdent the selected lines.
+ */
+function handleJsonKey(event: KeyboardEvent<HTMLTextAreaElement>) {
+  if (event.nativeEvent.isComposing) return;
+  const textarea = event.currentTarget;
+  const { value, selectionStart: start, selectionEnd: end } = textarea;
+  const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+
+  if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
+    event.preventDefault();
+    const indent = /^ */.exec(value.slice(lineStart))![0];
+    const before = value.slice(0, start).trimEnd().at(-1);
+    const after = value.slice(end).trimStart()[0];
+    const opens = before === "{" || before === "[";
+    if (!opens) return replaceText(textarea, start, end, `\n${indent}`);
+    const inner = `\n${indent}${indentUnit}`;
+    // Between a pair of brackets, the closing one moves to its own line below the caret.
+    const closes = (before === "{" && after === "}") || (before === "[" && after === "]");
+    const closeAt = closes ? value.indexOf(after, end) : end;
+    replaceText(textarea, start, closeAt, closes ? `${inner}\n${indent}` : inner);
+    textarea.setSelectionRange(start + inner.length, start + inner.length);
+    return;
+  }
+
+  if (event.key === "Tab" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    event.preventDefault();
+    const multiline = value.slice(start, end).includes("\n");
+    if (!event.shiftKey && !multiline) return replaceText(textarea, start, end, indentUnit);
+    const blockEnd = value.indexOf("\n", end - (end > start ? 1 : 0));
+    const to = blockEnd === -1 ? value.length : blockEnd;
+    const lines = value.slice(lineStart, to).split("\n");
+    const changed = lines.map((line) =>
+      event.shiftKey ? line.replace(/^ {1,2}/, "") : indentUnit + line,
+    );
+    const text = changed.join("\n");
+    if (text === value.slice(lineStart, to)) return;
+    replaceText(textarea, lineStart, to, text);
+    const shift = changed[0]!.length - lines[0]!.length;
+    if (multiline) textarea.setSelectionRange(lineStart, lineStart + text.length);
+    else {
+      const caret = Math.max(lineStart, start + shift);
+      textarea.setSelectionRange(caret, caret);
+    }
+  }
+}
+
 export function JwksField({
   value,
   onChange,
@@ -194,32 +279,53 @@ export function JwksField({
   error?: string;
 }) {
   const id = useId();
+  // Tab indents inside the field. Escape hands the next Tab back to the page, so keyboard
+  // users can still leave.
+  const tabLeaves = useRef(false);
   return (
     <div className="space-y-2">
       <FieldLabel htmlFor={id} required>
         Public JWKS
       </FieldLabel>
-      <Textarea
-        id={id}
-        rows={8}
-        spellCheck={false}
-        autoComplete="off"
-        className="max-h-80 font-mono text-xs md:text-xs"
-        placeholder={'{"keys":[{"kty":"OKP","crv":"Ed25519","x":"…","kid":"…"}]}'}
-        value={value}
-        aria-required
-        aria-invalid={!!error}
-        aria-describedby={error ? `${id}-error` : `${id}-hint`}
-        onChange={(event) => onChange(event.target.value)}
-      />
-      {error ? (
-        <FieldError id={`${id}-error`}>{error}</FieldError>
-      ) : (
-        <p id={`${id}-hint`} className="text-xs leading-5 text-muted-foreground">
-          Ed25519 or P-256 public keys, up to five. To rotate, add the new key, deploy its private
-          key, then remove the old one.
-        </p>
-      )}
+      {/* The textarea sits transparent over a highlighted copy of its text, so editing,
+          undo and selection stay native. Both share one grid cell and grow together; the
+          wrapper scrolls them as one. */}
+      <div className="grid max-h-80 overflow-auto rounded-md border border-input bg-transparent shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 has-aria-invalid:border-destructive has-aria-invalid:ring-destructive/20 dark:bg-input/30 dark:has-aria-invalid:ring-destructive/40">
+        <pre
+          aria-hidden="true"
+          className="pointer-events-none col-start-1 row-start-1 m-0 px-3 py-2 font-mono text-xs leading-5 wrap-anywhere whitespace-pre-wrap"
+        >
+          <JsonTokens source={value} />
+          {/* Keeps a trailing newline's empty line as tall as the textarea's. */}{" "}
+        </pre>
+        <textarea
+          id={id}
+          rows={8}
+          spellCheck={false}
+          autoComplete="off"
+          className="col-start-1 row-start-1 field-sizing-content resize-none overflow-hidden bg-transparent px-3 py-2 font-mono text-xs leading-5 wrap-anywhere whitespace-pre-wrap text-transparent caret-foreground outline-none placeholder:text-muted-foreground"
+          placeholder={'{"keys":[{"kty":"OKP","crv":"Ed25519","x":"…","kid":"…"}]}'}
+          value={value}
+          aria-required
+          aria-invalid={!!error}
+          aria-describedby={error ? `${id}-hint ${id}-error` : `${id}-hint`}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              tabLeaves.current = true;
+              return;
+            }
+            const leaving = tabLeaves.current && event.key === "Tab";
+            if (event.key !== "Shift") tabLeaves.current = false;
+            if (!leaving) handleJsonKey(event);
+          }}
+        />
+      </div>
+      <p id={`${id}-hint`} className="text-xs leading-5 text-muted-foreground">
+        Ed25519 or P-256 public keys, up to five. To rotate, add the new key, deploy its private
+        key, then remove the old one. Tab indents; press Esc, then Tab, to move on.
+      </p>
+      {error && <FieldError id={`${id}-error`}>{error}</FieldError>}
     </div>
   );
 }
@@ -551,24 +657,30 @@ export function ApiAccessTable({
       )}
       <table className="w-full text-sm">
         <caption className="sr-only">PoliNetwork API scopes</caption>
+        <thead>
+          <tr>
+            <td />
+            {columns.map((column) => (
+              <th
+                key={column.list}
+                scope="col"
+                className="w-24 pb-1 text-center text-xs font-medium text-muted-foreground"
+              >
+                {column.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
         {oidcResources.map((resource) => (
           <tbody key={resource.id} className="border-b last:border-b-0">
             <tr>
               <th
-                scope="colgroup"
-                className="pt-4 pb-2 text-left text-xs font-medium text-muted-foreground first:pt-0"
+                scope="rowgroup"
+                colSpan={columns.length + 1}
+                className="pt-4 pb-2 text-left text-xs font-medium text-muted-foreground"
               >
                 {resource.label}
               </th>
-              {columns.map((column) => (
-                <th
-                  key={column.list}
-                  scope="col"
-                  className="w-24 pt-4 pb-2 text-center text-xs font-medium text-muted-foreground"
-                >
-                  {column.label}
-                </th>
-              ))}
             </tr>
             {apiScopes
               .filter((scope) => scope.resource === resource.id)

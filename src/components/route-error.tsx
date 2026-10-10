@@ -6,27 +6,19 @@ import { LoginPage } from "@/components/login-page";
 import { Button } from "@/components/ui/button";
 import { ActionError, errorMessage } from "@/lib/action-error";
 
-/** The page frame shared by the signed-in sections: header, content, and footer note. */
+/** The page frame shared by the signed-in sections: header and content. */
 export function SectionShell({
   active,
-  note = "Changes apply to new sign-ins immediately. Already-issued tokens expire within minutes.",
   children,
 }: {
   /** The section to highlight in the header; none for pages outside the sections. */
   active?: Section;
-  note?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="min-h-screen">
       <AppHeader active={active} />
-      <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
-        {children}
-        <footer className="mt-12 flex flex-wrap items-start justify-between gap-4 border-t pt-6 text-xs leading-5 text-muted-foreground">
-          <p>PoliNetwork APS</p>
-          <p className="sm:text-right">{note}</p>
-        </footer>
-      </main>
+      <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">{children}</main>
     </div>
   );
 }
@@ -123,15 +115,13 @@ export function SectionError({
   error,
   active,
   noAccess,
-  note,
 }: Pick<ErrorComponentProps, "error"> & {
   active: Section;
   noAccess?: ReactNode;
-  note?: ReactNode;
 }) {
   if (statusOf(error) === 401) return <RouteError error={error} />;
   return (
-    <SectionShell active={active} note={note}>
+    <SectionShell active={active}>
       <RouteError error={error} noAccess={noAccess} />
     </SectionShell>
   );
@@ -140,7 +130,7 @@ export function SectionError({
 /** For an address no route matches. */
 export function NotFoundPage() {
   return (
-    <SectionShell note={null}>
+    <SectionShell>
       <div className="mx-auto max-w-lg space-y-4 py-10 text-center">
         <h1 className="text-2xl font-bold tracking-tight">This page doesn't exist</h1>
         <p className="text-sm leading-6 text-muted-foreground">

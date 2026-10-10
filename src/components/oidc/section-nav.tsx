@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { cn } from "cn";
 
 type NavSection = { id: string; title: string };
@@ -11,6 +11,9 @@ type NavSection = { id: string; title: string };
 export function SectionNav({ container }: { container: RefObject<HTMLElement | null> }) {
   const [sections, setSections] = useState<NavSection[]>([]);
   const [active, setActive] = useState<string>();
+  // A clicked link stays highlighted until the reader scrolls on their own: the last
+  // sections can't reach the reading line, so the scroll it starts would pick another.
+  const pinned = useRef<string>(undefined);
 
   useEffect(() => {
     const root = container.current;
@@ -38,6 +41,7 @@ export function SectionNav({ container }: { container: RefObject<HTMLElement | n
     // viewport, or the last one once the page can't scroll further.
     const update = () => {
       frame = 0;
+      if (pinned.current) return;
       const line = window.innerHeight / 3;
       const atBottom =
         window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
@@ -51,13 +55,21 @@ export function SectionNav({ container }: { container: RefObject<HTMLElement | n
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(update);
     };
+    const unpin = () => {
+      if (!pinned.current) return;
+      pinned.current = undefined;
+      schedule();
+    };
+    const userScroll = ["wheel", "touchmove", "keydown"] as const;
     update();
     window.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule);
+    for (const type of userScroll) window.addEventListener(type, unpin, { passive: true });
     return () => {
       cancelAnimationFrame(frame);
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
+      for (const type of userScroll) window.removeEventListener(type, unpin);
     };
   }, [sections]);
 
@@ -70,7 +82,10 @@ export function SectionNav({ container }: { container: RefObject<HTMLElement | n
             <a
               href={`#${section.id}`}
               aria-current={current === section.id ? "location" : undefined}
-              onClick={() => setActive(section.id)}
+              onClick={() => {
+                pinned.current = section.id;
+                setActive(section.id);
+              }}
               className={cn(
                 "block rounded-md px-3 py-2 text-sm transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
                 current === section.id
