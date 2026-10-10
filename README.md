@@ -16,6 +16,8 @@ The personas are Ada Admin (Master Admin, through `IDP_ADMIN_USER_IDS=dev-admin`
 
 The dev sign-in exists only in `vp dev`. Production builds do not contain it, and `vp run build` fails if they ever do. It also stays off unless `.env.local` sets `DEV_LOGIN=1`, which startup refuses unless `BETTER_AUTH_URL` is localhost. Startup likewise refuses the public example secret from `.env.local.example` anywhere but localhost.
 
+`dev:setup` and `dev:seed` refuse to start, before Compose, migrations or the seed touch anything, unless `NODE_ENV` is not `production`, `DB_HOST` is `localhost`, `127.0.0.1`, `::1` or the Compose `db` service, and `BETTER_AUTH_URL` is localhost. Reseeding reconciles the fixtures: accounts follow a changed issuer (for example once `PN_ENTRA_TENANT_ID` is set) together with their evidence, and an identity or Telegram ID that belongs to someone else is refused rather than taken over. The PostgreSQL tests for this run when `DEV_SEED_TEST_DATABASE_URL` points at a migrated dev database, such as `postgresql://postgres:postgres@localhost:55432/polinetwork_auth`.
+
 To use your own database or real providers instead:
 
 1. Run `vp install`.
