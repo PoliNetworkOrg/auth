@@ -1,14 +1,12 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { ArrowLeft, Clock, KeyRound, Mail, RefreshCw } from "lucide-react";
-import { authClient } from "@/auth/client";
+import { emptyCatalog } from "@/auth/rbac";
+import { getCatalog } from "@/auth/rbac.functions";
+import { getUser } from "@/auth/users.functions";
 import type { UserDetail, UserTrait } from "@/auth/users";
+import { accessOf, useAccess, useViewer } from "@/components/access";
 import { CopyButton } from "@/components/copy-button";
-import { useIdpAccessContext } from "@/components/idp-access";
-import { errorMessage } from "@/components/rbac/api";
 import { KeyChip } from "@/components/rbac/fields";
-import { useCatalog } from "@/components/rbac/use-catalog";
-import { fetchUser } from "@/components/users/api";
 import { DeleteUser } from "@/components/users/delete-user";
 import { StatusBadges, TRAIT_ICONS } from "@/components/users/traits";
 import { UserRoles } from "@/components/users/user-roles";
@@ -16,7 +14,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserAvatar } from "@/components/user-avatar";
 
-export const Route = createFileRoute("/users/$userId")({ component: UserDetailPage });
+export const Route = createFileRoute("/users/$userId")({
+  loader: async ({ context, params }) => {
+    const access = accessOf(context.viewer);
+    // Role and permission names come from the catalog, for whoever may read it.
+    const [person, catalog] = await Promise.all([
+      getUser({ data: { userId: params.userId } }),
+      access.can("idp:roles:read") || access.can("idp:permissions:read")
+        ? getCatalog()
+        : emptyCatalog,
+    ]);
+    return { person, catalog };
+  },
+  component: UserDetailPage,
+});
 
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" }) : "Unknown";
@@ -88,47 +99,11 @@ function LinkedAccounts({ person }: { person: UserDetail }) {
 }
 
 function UserDetailPage() {
-  const { userId } = Route.useParams();
-  const { can } = useIdpAccessContext();
-  const { data: session } = authClient.useSession();
+  const { person, catalog } = Route.useLoaderData();
+  const { can } = useAccess();
+  const viewer = useViewer();
+  const router = useRouter();
   const navigate = useNavigate();
-  const canReadCatalog = can("idp:roles:read") || can("idp:permissions:read");
-  const { catalog, reload: reloadCatalog } = useCatalog(canReadCatalog);
-  const [person, setPerson] = useState<UserDetail | null>(null);
-  const [error, setError] = useState("");
-  const [revision, setRevision] = useState(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setError("");
-    fetchUser(userId, controller.signal)
-      .then(setPerson)
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted)
-          setError(errorMessage(cause, "Unable to load this person."));
-      });
-    return () => controller.abort();
-  }, [userId, revision]);
-
-  if (error && !person) {
-    return (
-      <div className="mx-auto max-w-lg space-y-4 py-10 text-center">
-        <p role="alert">{error}</p>
-        <div className="flex flex-wrap justify-center gap-3">
-          <Button onClick={() => setRevision((value) => value + 1)}>Try again</Button>
-          <Button variant="ghost" asChild>
-            <Link to="/users">
-              <ArrowLeft aria-hidden="true" />
-              All users
-            </Link>
-          </Button>
-        </div>
-      </div>
-    );
-  }
-  if (!person || person.id !== userId) {
-    return <p className="py-10 text-center text-sm text-muted-foreground">Loading this person…</p>;
-  }
 
   const held = (trait: UserTrait) => person.states.includes(trait);
   const permissionName = (key: string) =>
@@ -158,15 +133,6 @@ function UserDetailPage() {
           </div>
         </div>
       </div>
-
-      {error && (
-        <p
-          role="alert"
-          className="rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
-        >
-          {error}
-        </p>
-      )}
 
       <div className="grid items-start gap-8 lg:grid-cols-[1fr_340px]">
         <div className="space-y-6">
@@ -206,10 +172,6 @@ function UserDetailPage() {
                   assigned={person.assignedRoles}
                   held={person.roles}
                   catalog={catalog}
-                  onChanged={() => {
-                    setRevision((value) => value + 1);
-                    reloadCatalog();
-                  }}
                 />
               </CardContent>
             </Card>
@@ -243,8 +205,12 @@ function UserDetailPage() {
             <DeleteUser
               userId={person.id}
               userName={person.name}
-              isSelf={session?.user.id === person.id}
-              onDeleted={() => void navigate({ to: "/users" })}
+              isSelf={viewer?.user.id === person.id}
+              onDeleted={() => {
+                // The list may be cached with this person still in it.
+                router.clearCache({ filter: (match) => match.routeId === "/users/" });
+                return navigate({ to: "/users" });
+              }}
             />
           )}
         </div>

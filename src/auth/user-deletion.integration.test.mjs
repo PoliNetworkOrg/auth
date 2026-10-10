@@ -36,8 +36,8 @@ vi.mock("./membership", () => ({
   checkPnGroupStates: mocks.states,
   listEntraGroupMembers: mocks.list,
 }));
-// Only session authentication and Better Auth's session revocation are substituted; routes,
-// authorization, SQL and transactions are real.
+// Only session authentication and Better Auth's session revocation are substituted; server
+// functions, authorization, SQL and transactions are real.
 vi.mock("./index", () => ({
   auth: {
     $context: Promise.resolve({ internalAdapter: { deleteSessions: mocks.deleteSessions } }),
@@ -49,11 +49,20 @@ vi.mock("./index", () => ({
     },
   },
 }));
+// Server functions run through the harness: CSRF check, middleware, validator and handler.
+vi.mock("@tanstack/react-start", async (importOriginal) =>
+  (await import("./server-fn-harness")).mockReactStart(await importOriginal()),
+);
+vi.mock(
+  "@tanstack/react-start/server",
+  async () => (await import("./server-fn-harness")).startServerMock,
+);
 
 import { db } from "../db/index";
 import { assignRole, saveRole } from "./rbac-store";
 import { deleteUser } from "./user-deletion";
-import { Route as userRoute } from "../routes/api/users/$userId";
+import { callServerFn } from "./server-fn-harness";
+import { deleteUserFn } from "./users.functions";
 
 const root = "deletion-root";
 const ordinary = "deletion-ordinary";
@@ -66,18 +75,11 @@ const draftRole = (key, permissions = []) => ({
   parents: [],
 });
 
-function post(actor, userId, body, origin = "http://localhost:35439") {
-  return userRoute.options.server.handlers.POST({
-    request: new Request(`http://localhost:35439/api/users/${userId}`, {
-      method: "POST",
-      headers: {
-        ...(actor ? { "x-test-user": actor } : {}),
-        Origin: origin,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    }),
-    params: { userId },
+/** Deletes `userId` through `deleteUserFn`, as `actor` (signed out when null). */
+function remove(actor, userId, confirm, origin = "http://localhost:35439") {
+  return callServerFn(deleteUserFn, {
+    headers: { ...(actor ? { "x-test-user": actor } : {}), Origin: origin },
+    data: { userId, confirm },
   });
 }
 
@@ -141,12 +143,12 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("account deletion with Post
     await db.$client.end();
   });
 
-  it("refuses anyone without the permission, at HTTP and in the repository", async () => {
+  it("refuses anyone without the permission, in server functions and the repository", async () => {
     const target = await person();
-    const body = { action: "delete", confirm: target.name };
-    expect((await post(null, target.id, body)).status).toBe(401);
-    expect((await post(ordinary, target.id, body)).status).toBe(403);
-    expect((await post(root, target.id, body, "https://evil.example")).status).toBe(403);
+    expect((await remove(null, target.id, target.name)).status).toBe(401);
+    expect((await remove(ordinary, target.id, target.name)).status).toBe(403);
+    // A cross-site request is refused before it reaches the function, even for Master Admin.
+    expect((await remove(root, target.id, target.name, "https://evil.example")).status).toBe(403);
     await expect(deleteUser(ordinary, target.id, target.name)).rejects.toMatchObject({
       status: 403,
     });
@@ -170,7 +172,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("account deletion with Post
   it("never lets anyone delete their own account", async () => {
     await expect(deleteUser(root, root, root)).rejects.toMatchObject({ status: 400 });
     await expect(deleteUser(deleter, deleter, deleter)).rejects.toMatchObject({ status: 400 });
-    expect((await post(deleter, deleter, { action: "delete", confirm: deleter })).status).toBe(400);
+    expect((await remove(deleter, deleter, deleter)).status).toBe(400);
     expect(await exists(deleter)).toBe(true);
   });
 
@@ -257,9 +259,9 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("account deletion with Post
       [clientId, target.id],
     );
 
-    const response = await post(deleter, target.id, { action: "delete", confirm: target.name });
+    const response = await remove(deleter, target.id, target.name);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ deleted: true });
+    expect(response.result).toBeUndefined();
 
     const count = async (sql) => Number((await pool.query(sql, [target.id])).rows[0].count);
     expect(await exists(target.id)).toBe(false);

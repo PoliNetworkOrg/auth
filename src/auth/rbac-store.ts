@@ -1,3 +1,4 @@
+import type { FieldErrors } from "@/lib/action-error";
 import { contactEmails } from "./contact-email";
 import { mayDelegateMutation } from "./rbac-delegation";
 import { logAuthorizationDenial } from "./denial-log";
@@ -44,7 +45,7 @@ export class RbacError extends Error {
   constructor(
     readonly status: number,
     message: string,
-    readonly fields?: Record<string, string>,
+    readonly fields?: FieldErrors,
   ) {
     super(message);
   }
@@ -301,8 +302,7 @@ function idsForRoleKeys(catalog: RbacCatalog, keys: string[]) {
 }
 
 function checked(errors: Record<string, string | undefined>) {
-  if (hasDraftErrors(errors))
-    throw new RbacError(400, "Check the highlighted fields.", errors as Record<string, string>);
+  if (hasDraftErrors(errors)) throw new RbacError(400, "Check the highlighted fields.", errors);
 }
 
 export async function savePermission(

@@ -1,32 +1,30 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { type PermissionDraft, type RbacDraftErrors, permissionDraftFrom } from "@/auth/rbac";
-import { useIdpAccessContext } from "@/components/idp-access";
-import {
-  RbacApiError,
-  deletePermission,
-  errorMessage,
-  savePermission,
-} from "@/components/rbac/api";
+import { deletePermissionFn, getCatalog, savePermissionFn } from "@/auth/rbac.functions";
+import { requireAccess, useAccess } from "@/components/access";
+import { ConfirmDelete } from "@/components/confirm-delete";
 import { KeyChip } from "@/components/rbac/fields";
 import { PermissionForm } from "@/components/rbac/permission-form";
 import { canGrantPermission } from "@/components/rbac/delegation";
-import { RequirePermission } from "@/components/rbac/require-permission";
-import { useCatalog } from "@/components/rbac/use-catalog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { errorFields, errorMessage } from "@/lib/action-error";
 
 export const Route = createFileRoute("/access/permissions/$permissionId")({
-  component: GuardedPermissionDetail,
+  beforeLoad: ({ context }) => requireAccess(context.viewer, "idp:permissions:read"),
+  loader: () => getCatalog(),
+  component: PermissionDetail,
 });
 
 function PermissionDetail() {
   const { permissionId } = Route.useParams();
   const navigate = useNavigate();
-  const access = useIdpAccessContext();
+  const router = useRouter();
+  const access = useAccess();
   const { can } = access;
-  const { catalog, loading, error: loadError, reload } = useCatalog();
+  const catalog = Route.useLoaderData();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -48,11 +46,11 @@ function PermissionDetail() {
     setSaved(false);
     setFields(undefined);
     try {
-      await savePermission(draft, permissionId);
+      await savePermissionFn({ data: { permissionId, draft } });
+      await router.invalidate({ sync: true });
       setSaved(true);
-      reload();
     } catch (cause) {
-      if (cause instanceof RbacApiError) setFields(cause.fields);
+      setFields(errorFields(cause));
       setError(errorMessage(cause, "Unable to save the permission."));
     } finally {
       setBusy(false);
@@ -60,17 +58,10 @@ function PermissionDetail() {
   }
 
   async function remove() {
-    if (!permission) return;
-    if (
-      !window.confirm(
-        `Delete ${permission.name}? Applications checking for ${permission.key} will stop seeing it.`,
-      )
-    )
-      return;
     setBusy(true);
     setError("");
     try {
-      await deletePermission(permissionId);
+      await deletePermissionFn({ data: { permissionId } });
       await navigate({ to: "/access/permissions" });
     } catch (cause) {
       setError(errorMessage(cause, "Unable to delete the permission."));
@@ -78,17 +69,11 @@ function PermissionDetail() {
     }
   }
 
-  if (loading) {
-    return (
-      <p className="py-10 text-center text-sm text-muted-foreground">Loading the permission…</p>
-    );
-  }
-  if (loadError || !permission) {
+  if (!permission) {
     return (
       <div className="mx-auto max-w-lg space-y-4 py-10 text-center">
-        <p role="alert">{loadError || "This permission no longer exists."}</p>
+        <p role="alert">This permission no longer exists.</p>
         <div className="flex flex-wrap justify-center gap-3">
-          {loadError && <Button onClick={reload}>Try again</Button>}
           <Button variant="ghost" asChild>
             <Link to="/access/permissions">
               <ArrowLeft aria-hidden="true" />
@@ -207,21 +192,16 @@ function PermissionDetail() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button variant="destructive" disabled={busy} onClick={() => void remove()}>
-              <Trash2 aria-hidden="true" />
-              Delete permission
-            </Button>
+            <ConfirmDelete
+              label="Delete permission"
+              title={`Delete ${permission.name}?`}
+              description={`Applications checking for ${permission.key} will stop seeing it.`}
+              busy={busy}
+              onConfirm={remove}
+            />
           </CardContent>
         </Card>
       )}
     </div>
-  );
-}
-
-function GuardedPermissionDetail() {
-  return (
-    <RequirePermission permission="idp:permissions:read">
-      <PermissionDetail />
-    </RequirePermission>
   );
 }

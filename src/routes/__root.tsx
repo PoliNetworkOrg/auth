@@ -3,9 +3,13 @@ import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 
 import appCss from "../styles.css?url";
+import { getRootContext } from "@/auth/session.functions";
 import { themeScript } from "@/components/theme-switch";
 
 export const Route = createRootRoute({
+  // Runs on every navigation and every `router.invalidate()`, so a change to someone's roles
+  // shows in the header and the guards without reloading the page.
+  beforeLoad: () => getRootContext(),
   head: () => ({
     meta: [
       {

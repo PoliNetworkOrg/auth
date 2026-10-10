@@ -12,16 +12,29 @@ import {
   UserRound,
 } from "lucide-react";
 import { z } from "zod";
+import { getConsentApp } from "@/auth/account.functions";
 import { authClient } from "@/auth/client";
 import { describeScope } from "@/auth/oidc-clients";
+import { useViewer } from "@/components/access";
 import { AppHandshake, LoginLayout } from "@/components/login-page";
-import { SessionFallback, useSessionGate } from "@/components/session-gate";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { UserAvatar } from "@/components/user-avatar";
 
 export const Route = createFileRoute("/consent")({
   head: () => ({ meta: [{ title: "Authorize application · PoliNetwork Auth" }] }),
+  // Passes the signed OAuth query through unchanged, so its signature keeps verifying; only
+  // `client_id` is read here.
+  validateSearch: (search: Record<string, unknown>): Record<string, unknown> => search,
+  loaderDeps: ({ search }) => ({
+    clientId:
+      typeof search.client_id === "string" || typeof search.client_id === "number"
+        ? String(search.client_id)
+        : "",
+  }),
+  // The application's public details need a session, like the consent itself.
+  loader: ({ context, deps }) =>
+    context.viewer && deps.clientId ? getConsentApp({ data: { clientId: deps.clientId } }) : null,
   component: Consent,
 });
 
@@ -71,14 +84,6 @@ function parseConsentRequest(search: string): ConsentRequest {
   };
 }
 
-type RequestingApp = {
-  name: string;
-  logo: string | null;
-  uri: string | null;
-  policyUri: string | null;
-  tosUri: string | null;
-};
-
 const scopeIcons: Record<string, typeof Shield> = {
   openid: KeyRound,
   profile: UserRound,
@@ -114,53 +119,22 @@ function Notice({
 }
 
 function Consent() {
-  const gate = useSessionGate();
-  const session = gate.session;
+  const viewer = useViewer();
+  const requestingApp = Route.useLoaderData();
+  const app = requestingApp?.app ?? null;
+  const appStatus = requestingApp?.status ?? "error";
   // Parse the signed request from the router so the server renders the same state.
   const { searchStr } = useLocation();
   const request = useMemo(() => parseConsentRequest(searchStr), [searchStr]);
-  const [app, setApp] = useState<RequestingApp | null>(null);
-  const [appStatus, setAppStatus] = useState<"loading" | "ready" | "unavailable" | "error">(
-    "loading",
-  );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<"allow" | "deny" | "switch" | null>(null);
 
   // Consent needs a session: hand signed-out visitors to the login page with the same request.
   // The raw browser query is forwarded untouched so its signature keeps verifying.
   useEffect(() => {
-    if (gate.status === "ready" && !session && request.signed && request.clientId)
+    if (!viewer && request.signed && request.clientId)
       window.location.replace(`/${window.location.search}`);
-  }, [gate.status, session, request]);
-
-  useEffect(() => {
-    if (!session || !request.clientId) return;
-    let active = true;
-    setAppStatus("loading");
-    void authClient.oauth2
-      .publicClient({ query: { client_id: request.clientId } })
-      .then((result) => {
-        if (!active) return;
-        if (result.error) {
-          setAppStatus(result.error.status === 404 ? "unavailable" : "error");
-          return;
-        }
-        setApp({
-          name: result.data.client_name ?? "This application",
-          logo: result.data.logo_uri ?? null,
-          uri: result.data.client_uri ?? null,
-          policyUri: result.data.policy_uri ?? null,
-          tosUri: result.data.tos_uri ?? null,
-        });
-        setAppStatus("ready");
-      })
-      .catch(() => {
-        if (active) setAppStatus("error");
-      });
-    return () => {
-      active = false;
-    };
-  }, [session, request]);
+  }, [viewer, request]);
 
   async function decide(accept: boolean) {
     setBusy(accept ? "allow" : "deny");
@@ -185,8 +159,7 @@ function Consent() {
     }
   }
 
-  if (gate.status === "error") return <SessionFallback gate={gate} wide />;
-  if (gate.status === "loading" || (!session && request.signed && request.clientId)) {
+  if (!viewer && request.signed && request.clientId) {
     return (
       <LoginLayout wide>
         <p role="status" className="text-center text-sm text-muted-foreground">
@@ -267,13 +240,13 @@ function Consent() {
             )}
           </div>
 
-          {session && (
+          {viewer && (
             <div className="flex items-center gap-3 rounded-xl border bg-muted/40 p-3">
               <div className="size-9 shrink-0 overflow-hidden rounded-full border bg-background text-xs font-semibold text-muted-foreground">
-                <UserAvatar name={session.user.name} image={session.user.image} />
+                <UserAvatar name={viewer.user.name} image={viewer.user.image} />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{session.user.name}</p>
+                <p className="truncate text-sm font-medium">{viewer.user.name}</p>
                 <p className="text-xs text-muted-foreground">Signed in to PoliNetwork</p>
               </div>
               <Button
@@ -340,7 +313,7 @@ function Consent() {
               type="button"
               variant="outline"
               className="h-11 bg-card"
-              disabled={busy !== null || appStatus === "loading"}
+              disabled={busy !== null}
               onClick={() => void decide(false)}
             >
               {busy === "deny" && <LoaderCircle className="animate-spin" aria-hidden="true" />}
@@ -349,7 +322,7 @@ function Consent() {
             <Button
               type="button"
               className="h-11"
-              disabled={busy !== null || appStatus === "loading"}
+              disabled={busy !== null}
               onClick={() => void decide(true)}
             >
               {busy === "allow" && <LoaderCircle className="animate-spin" aria-hidden="true" />}

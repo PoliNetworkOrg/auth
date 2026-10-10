@@ -1,4 +1,10 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  useNavigate,
+  useRouter,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   ChevronLeft,
@@ -13,19 +19,18 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "cn";
+import { emptyCatalog } from "@/auth/rbac";
+import { getCatalog } from "@/auth/rbac.functions";
+import { getUsers } from "@/auth/users.functions";
 import {
   type UserListPage,
   type UserSearch,
   type UserTrait,
   USER_TRAITS,
   hasUserFilters,
-  userSearchParams,
   userSearchSchema,
 } from "@/auth/users";
-import { useIdpAccessContext } from "@/components/idp-access";
-import { errorMessage } from "@/components/rbac/api";
-import { useCatalog } from "@/components/rbac/use-catalog";
-import { fetchUsers } from "@/components/users/api";
+import { accessOf, useAccess } from "@/components/access";
 import { SignInIcons, StatusBadges, TRAIT_ICONS } from "@/components/users/traits";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,6 +47,19 @@ import { UserAvatar } from "@/components/user-avatar";
 
 export const Route = createFileRoute("/users/")({
   validateSearch: userSearchSchema,
+  // Every filter, the sort, and the page decide what the server returns.
+  loaderDeps: ({ search }) => search,
+  loader: async ({ context, deps }) => {
+    // Role names and the role filter need the catalog, which only role readers may see.
+    const [page, catalog] = await Promise.all([
+      getUsers({ data: deps }),
+      accessOf(context.viewer).can("idp:roles:read") ? getCatalog() : emptyCatalog,
+    ]);
+    return { page, catalog };
+  },
+  // A new search keeps the current results on screen, dimmed, rather than swapping the
+  // page (and the search box being typed in) for a loading placeholder.
+  pendingMs: Infinity,
   component: UsersIndex,
 });
 
@@ -172,16 +190,16 @@ function MembershipNotice({ page }: { page: UserListPage }) {
 function UsersIndex() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const { can } = useIdpAccessContext();
-  const canReadRoles = can("idp:roles:read");
-  const { catalog } = useCatalog(canReadRoles);
+  const router = useRouter();
+  const { page: data, catalog } = Route.useLoaderData();
+  // Reloading this same page: a new search, filter, or page of results.
+  const loading = useRouterState({
+    select: (state) =>
+      state.isLoading && state.location.pathname === state.resolvedLocation?.pathname,
+  });
+  const canReadRoles = useAccess().can("idp:roles:read");
   const [query, setQuery] = useState(search.q ?? "");
-  const [data, setData] = useState<UserListPage | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [revision, setRevision] = useState(0);
   const [announcement, setAnnouncement] = useState("");
-  const key = userSearchParams(search).toString();
 
   const update = (changes: Partial<UserSearch>) =>
     void navigate({
@@ -190,8 +208,17 @@ function UsersIndex() {
       replace: true,
     });
 
-  // Follow the URL when it changes from outside the box, such as the back button.
-  useEffect(() => setQuery(search.q ?? ""), [search.q]);
+  // Follow URL changes, including back/forward, when navigation starts. Waiting for the
+  // loader to finish would let an older search overwrite what has been typed since.
+  useEffect(
+    () =>
+      router.subscribe("onBeforeNavigate", ({ fromLocation, toLocation }) => {
+        const previous = userSearchSchema.parse(fromLocation?.search ?? {}).q;
+        const next = userSearchSchema.parse(toLocation.search).q;
+        if (previous !== next) setQuery(next ?? "");
+      }),
+    [router],
+  );
 
   useEffect(() => {
     const term = query.trim() || undefined;
@@ -200,29 +227,12 @@ function UsersIndex() {
     return () => clearTimeout(timer);
   }, [query]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    fetchUsers(search, controller.signal)
-      .then((page) => {
-        setData(page);
-        setLoading(false);
-      })
-      .catch((cause: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(errorMessage(cause, "Unable to load users."));
-        setLoading(false);
-      });
-    return () => controller.abort();
-  }, [key, revision]);
-
   const customRoles = catalog.roles.filter((role) => !role.managed);
   const roleName = (key: string) => catalog.roles.find((role) => role.key === key)?.name ?? key;
   const filtered = hasUserFilters(search);
-  const first = data ? (data.page - 1) * data.pageSize + 1 : 0;
-  const last = data ? first + data.users.length - 1 : 0;
-  const hasNext = data ? data.page * data.pageSize < data.total : false;
+  const first = (data.page - 1) * data.pageSize + 1;
+  const last = first + data.users.length - 1;
+  const hasNext = data.page * data.pageSize < data.total;
   const held = (traits: Record<UserTrait, boolean>) => (trait: UserTrait) => traits[trait];
 
   return (
@@ -235,13 +245,11 @@ function UsersIndex() {
             those accounts prove.
           </p>
         </div>
-        {data && (
-          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Users className="size-4" aria-hidden="true" />
-            {data.total} {data.total === 1 ? "person" : "people"}
-            {filtered ? " match" : ""}
-          </p>
-        )}
+        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          <Users className="size-4" aria-hidden="true" />
+          {data.total} {data.total === 1 ? "person" : "people"}
+          {filtered ? " match" : ""}
+        </p>
       </div>
 
       <Card className="p-5 pb-4">
@@ -339,27 +347,9 @@ function UsersIndex() {
         </p>
       </Card>
 
-      {data && <MembershipNotice page={data} />}
+      <MembershipNotice page={data} />
 
-      {error && (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
-        >
-          <span>{error}</span>
-          <Button variant="outline" size="sm" onClick={() => setRevision((value) => value + 1)}>
-            Try again
-          </Button>
-        </div>
-      )}
-
-      {!data && loading ? (
-        <ul aria-busy="true" aria-label="Loading users" className="space-y-3">
-          {[0, 1, 2, 3].map((index) => (
-            <li key={index} className="h-16 animate-pulse rounded-2xl border bg-card" />
-          ))}
-        </ul>
-      ) : data && data.total === 0 ? (
+      {data.total === 0 ? (
         <Card className="flex flex-col items-center gap-4 px-6 py-14 text-center">
           <div className="flex size-14 items-center justify-center rounded-2xl border bg-background text-primary">
             <Users className="size-6" aria-hidden="true" />
@@ -375,7 +365,7 @@ function UsersIndex() {
             </p>
           </div>
         </Card>
-      ) : data ? (
+      ) : (
         <Card className={cn("overflow-hidden", loading && "opacity-60")} aria-busy={loading}>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -468,9 +458,9 @@ function UsersIndex() {
             </table>
           </div>
         </Card>
-      ) : null}
+      )}
 
-      {data && data.total > data.pageSize && (
+      {data.total > data.pageSize && (
         <nav aria-label="Pages" className="flex items-center justify-between gap-3">
           <Button variant="outline" disabled={data.page === 1} asChild={data.page > 1}>
             {data.page > 1 ? (

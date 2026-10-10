@@ -34,6 +34,8 @@ type ClientFormProps = {
   /** Shows the registered settings without offering controls that will be rejected. */
   readOnly?: boolean;
   busy: boolean;
+  /** Change after a save to reload `initial` in place, without remounting the form. */
+  resetKey?: number;
   serverErrors?: OidcClientDraftErrors;
   submitLabel: string;
   onSubmit: (draft: OidcClientDraft) => void;
@@ -210,6 +212,7 @@ export function ClientForm({
   onConfidentialChange,
   readOnly = false,
   busy,
+  resetKey,
   serverErrors,
   submitLabel,
   onSubmit,
@@ -218,6 +221,13 @@ export function ClientForm({
   const id = useId();
   const [draft, setDraft] = useState<OidcClientDraft>(initial);
   const [attempted, setAttempted] = useState(false);
+  // Picks up the saved values while keeping focus and the open Advanced section.
+  const [loadedResetKey, setLoadedResetKey] = useState(resetKey);
+  if (resetKey !== loadedResetKey) {
+    setLoadedResetKey(resetKey);
+    setDraft(initial);
+    setAttempted(false);
+  }
   const localErrors = attempted ? validateClientDraft(draft) : {};
   const errors: OidcClientDraftErrors = { ...serverErrors, ...localErrors };
   const showSummary = attempted && hasDraftErrors(errors);

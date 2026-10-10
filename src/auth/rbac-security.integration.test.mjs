@@ -44,6 +44,14 @@ vi.mock("./email", () => ({
   studentVerificationEmailConfigured: true,
   sendStudentVerificationEmail: mocks.sendEmail,
 }));
+// Server functions run through the harness: CSRF check, middleware, validator and handler.
+vi.mock("@tanstack/react-start", async (importOriginal) =>
+  (await import("./server-fn-harness")).mockReactStart(await importOriginal()),
+);
+vi.mock(
+  "@tanstack/react-start/server",
+  async () => (await import("./server-fn-harness")).startServerMock,
+);
 
 import { db } from "../db/index";
 import { confirmStudentVerification, requestStudentVerification } from "./student-verification";
@@ -61,10 +69,16 @@ import {
   saveRole,
   unassignRole,
 } from "./rbac-store";
-import { Route as roleSave } from "../routes/api/rbac/role-save";
-import { Route as permissionSave } from "../routes/api/rbac/permission-save";
-import { Route as members } from "../routes/api/rbac/role-members";
-import { Route as clientUpdate } from "../routes/api/oidc/client-update";
+import {
+  changeRoleMemberFn,
+  deletePermissionFn,
+  deleteRoleFn,
+  getRoleMembers,
+  savePermissionFn,
+  saveRoleFn,
+} from "./rbac.functions";
+import { updateOidcClientFn } from "./oidc.functions";
+import { callServerFn } from "./server-fn-harness";
 
 const root = "security-root";
 const ordinary = "security-ordinary";
@@ -79,14 +93,9 @@ const draftRole = (key, permissions = [], parents = []) => ({
 const draftPermission = (key, implies = []) => ({ key, name: key, description: "", implies });
 const unique = (name) => `security-${name}-${randomUUID().slice(0, 8)}`;
 
-function post(route, actor, body, origin = "http://localhost:35439") {
-  return route.options.server.handlers.POST({
-    request: new Request(`http://localhost:35439${route.id ?? "/api/test"}`, {
-      method: "POST",
-      headers: { "x-test-user": actor, Origin: origin, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-  });
+/** Calls a server function as `actor`, from this app's origin unless `origin` says otherwise. */
+function call(fn, actor, data, origin = "http://localhost:35439") {
+  return callServerFn(fn, { headers: { "x-test-user": actor, Origin: origin }, data });
 }
 
 describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with PostgreSQL", () => {
@@ -122,23 +131,27 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     const actor = await delegate(["idp:roles:write", "idp:roles:assign"]);
     const high = await saveRole(root, draftRole(unique("high"), ["idp:applications:write"]));
     const key = unique("escalation");
+    // An actor named in the request is ignored; the session decides who acts.
     expect(
       (
-        await post(roleSave, actor.id, {
-          action: "create",
+        await call(saveRoleFn, actor.id, {
           actorId: root,
           draft: draftRole(key, ["idp:applications:write"]),
         })
       ).status,
     ).toBe(403);
     expect(
-      (await post(members, actor.id, { action: "assign", roleId: high.id, userId: actor.id }))
-        .status,
+      (
+        await call(changeRoleMemberFn, actor.id, {
+          action: "assign",
+          roleId: high.id,
+          userId: actor.id,
+        })
+      ).status,
     ).toBe(403);
     expect(
       (
-        await post(roleSave, actor.id, {
-          action: "update",
+        await call(saveRoleFn, actor.id, {
           roleId: actor.role.id,
           draft: draftRole(actor.role.key, ["idp:roles:write", "idp:applications:write"]),
         })
@@ -152,18 +165,18 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     const actor = await delegate(["idp:roles:write", "idp:roles:assign"]);
     const high = await saveRole(root, draftRole(unique("high"), ["idp:applications:write"]));
     expect(
+      (await call(saveRoleFn, actor.id, { draft: draftRole(unique("inherited"), [], [high.key]) }))
+        .status,
+    ).toBe(403);
+    expect((await call(deleteRoleFn, actor.id, { roleId: high.id })).status).toBe(403);
+    expect(
       (
-        await post(roleSave, actor.id, {
-          action: "create",
-          draft: draftRole(unique("inherited"), [], [high.key]),
+        await call(changeRoleMemberFn, actor.id, {
+          action: "unassign",
+          roleId: high.id,
+          userId: root,
         })
       ).status,
-    ).toBe(403);
-    expect((await post(roleSave, actor.id, { action: "delete", roleId: high.id })).status).toBe(
-      403,
-    );
-    expect(
-      (await post(members, actor.id, { action: "unassign", roleId: high.id, userId: root })).status,
     ).toBe(403);
   });
 
@@ -172,23 +185,18 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     const low = await saveRole(root, draftRole(unique("low"), [own.key]));
     const editor = await delegate(["idp:roles:write", own.key]);
     const assigner = await delegate(["idp:roles:assign", own.key]);
-    expect(
-      (await post(members, editor.id, { action: "assign", roleId: low.id, userId: ordinary }))
-        .status,
-    ).toBe(403);
+    const member = (actor, action) =>
+      call(changeRoleMemberFn, actor, { action, roleId: low.id, userId: ordinary });
+    expect((await member(editor.id, "assign")).status).toBe(403);
     await assignRole(root, low.id, ordinary);
-    expect(
-      (await post(members, editor.id, { action: "unassign", roleId: low.id, userId: ordinary }))
-        .status,
-    ).toBe(403);
+    expect((await member(editor.id, "unassign")).status).toBe(403);
     await expect(unassignRole(editor.id, low.id, ordinary)).rejects.toMatchObject({
       status: 403,
     });
     expect((await getIdentity(ordinary)).permissions).toContain(own.key);
     expect(
       (
-        await post(roleSave, editor.id, {
-          action: "update",
+        await call(saveRoleFn, editor.id, {
           roleId: low.id,
           draft: { ...draftRole(low.key, [own.key]), description: "edited" },
         })
@@ -197,30 +205,17 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
 
     expect(
       (
-        await post(roleSave, assigner.id, {
-          action: "create",
+        await call(saveRoleFn, assigner.id, {
           draft: draftRole(unique("assigner-made"), [own.key]),
         })
       ).status,
     ).toBe(403);
     expect(
-      (
-        await post(roleSave, assigner.id, {
-          action: "update",
-          roleId: low.id,
-          draft: draftRole(low.key),
-        })
-      ).status,
+      (await call(saveRoleFn, assigner.id, { roleId: low.id, draft: draftRole(low.key) })).status,
     ).toBe(403);
-    expect(
-      (await post(members, assigner.id, { action: "unassign", roleId: low.id, userId: ordinary }))
-        .status,
-    ).toBe(200);
+    expect((await member(assigner.id, "unassign")).status).toBe(200);
     expect((await getIdentity(ordinary)).permissions).not.toContain(own.key);
-    expect(
-      (await post(members, assigner.id, { action: "assign", roleId: low.id, userId: ordinary }))
-        .status,
-    ).toBe(200);
+    expect((await member(assigner.id, "assign")).status).toBe(200);
     expect((await getIdentity(ordinary)).permissions).toContain(own.key);
     await unassignRole(root, low.id, ordinary);
   });
@@ -235,13 +230,18 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
       [managed.id, ordinary],
     ]) {
       expect(
-        (await post(members, assigner.id, { action: "assign", roleId, userId })).status,
+        (await call(changeRoleMemberFn, assigner.id, { action: "assign", roleId, userId })).status,
       ).not.toBe(200);
     }
     await assignRole(root, high.id, ordinary);
     expect(
-      (await post(members, assigner.id, { action: "unassign", roleId: high.id, userId: ordinary }))
-        .status,
+      (
+        await call(changeRoleMemberFn, assigner.id, {
+          action: "unassign",
+          roleId: high.id,
+          userId: ordinary,
+        })
+      ).status,
     ).toBe(403);
     expect((await getIdentity(assigner.id)).permissions).not.toContain("idp:applications:write");
     expect((await getIdentity(ordinary)).permissions).toContain("idp:applications:write");
@@ -255,20 +255,19 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
       (entry) => entry.key === "idp:permissions:write",
     );
     for (const target of [managed, own]) {
+      // Keep the implications the target already has, so only the added grant can be refused.
       expect(
         (
-          await post(permissionSave, actor.id, {
-            action: "update",
+          await call(savePermissionFn, actor.id, {
             permissionId: target.id,
-            draft: draftPermission(target.key, ["idp:applications:write"]),
+            draft: draftPermission(target.key, [...target.implies, "idp:applications:write"]),
           })
         ).status,
       ).toBe(403);
     }
     expect(
       (
-        await post(permissionSave, actor.id, {
-          action: "update",
+        await call(savePermissionFn, actor.id, {
           permissionId: own.id,
           draft: draftPermission(unique("renamed-authority")),
         })
@@ -282,8 +281,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     const permission = await savePermission(actor.id, draftPermission(unique("new-capability")));
     expect(
       (
-        await post(roleSave, actor.id, {
-          action: "create",
+        await call(saveRoleFn, actor.id, {
           draft: draftRole(unique("new-capability"), [permission.key]),
         })
       ).status,
@@ -291,8 +289,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     expect((await getIdentity(actor.id)).permissions).not.toContain(permission.key);
     expect(
       (
-        await post(permissionSave, actor.id, {
-          action: "create",
+        await call(savePermissionFn, actor.id, {
           draft: draftPermission(unique("laundered"), ["idp:applications:write"]),
         })
       ).status,
@@ -309,8 +306,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     const managed = (await loadCatalog(root)).roles.find((entry) => entry.key === "socio");
     expect(
       (
-        await post(roleSave, actor.id, {
-          action: "update",
+        await call(saveRoleFn, actor.id, {
           roleId: managed.id,
           draft: draftRole(managed.key, [own.key]),
         })
@@ -321,8 +317,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     try {
       expect(
         (
-          await post(roleSave, actor.id, {
-            action: "update",
+          await call(saveRoleFn, actor.id, {
             roleId: parent.id,
             draft: draftRole(parent.key, [own.key]),
           })
@@ -444,24 +439,24 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     const actor = await delegate(["idp:roles:assign"]);
     const role = await saveRole(root, draftRole(unique("private-members")));
     await assignRole(root, role.id, ordinary);
-    const response = await post(members, actor.id, {
+    const response = await call(changeRoleMemberFn, actor.id, {
       action: "assign",
       roleId: role.id,
       userId: actor.id,
     });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ changed: true });
+    expect(response.result).toBeUndefined();
   });
 
   it("acknowledges self-revocation after the actor loses read access", async () => {
     const actor = await delegate(["idp:roles:assign"]);
-    const response = await post(members, actor.id, {
+    const response = await call(changeRoleMemberFn, actor.id, {
       action: "unassign",
       roleId: actor.role.id,
       userId: actor.id,
     });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ changed: true });
+    expect(response.result).toBeUndefined();
     expect((await getIdentity(actor.id)).permissions).not.toContain("idp:roles:read");
     await expect(listRoleMembers(actor.id, actor.role.id)).rejects.toMatchObject({ status: 403 });
   });
@@ -490,12 +485,8 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     } while (cursor);
     expect(ids).toHaveLength(505);
     expect(new Set(ids).size).toBe(505);
-    const response = await members.options.server.handlers.GET({
-      request: new Request(`http://localhost:35439/api/rbac/role-members?role_id=${role.id}`, {
-        headers: { "x-test-user": root },
-      }),
-    });
-    const page = await response.json();
+    const response = await call(getRoleMembers, root, { roleId: role.id });
+    const page = response.result;
     expect(response.status).toBe(200);
     expect(page.members).toHaveLength(100);
     expect(page.nextCursor).toBe(page.members[99].userId);
@@ -550,7 +541,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     expect(await pending).toMatchObject({ status: 403 });
   });
 
-  it("denies ordinary users at HTTP and direct repository mutation boundaries", async () => {
+  it("denies ordinary users at server function and direct repository mutation boundaries", async () => {
     const role = await saveRole(root, draftRole(unique("target")));
     const permission = await savePermission(root, draftPermission(unique("permission")));
     for (const action of [
@@ -562,28 +553,32 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
       () => unassignRole(ordinary, role.id, root),
     ])
       await expect(action()).rejects.toMatchObject({ status: 403 });
-    expect(
-      (await post(roleSave, ordinary, { action: "create", draft: draftRole(unique("http")) }))
-        .status,
-    ).toBe(403);
-    expect(
-      (await post(permissionSave, ordinary, { action: "delete", permissionId: permission.id }))
-        .status,
-    ).toBe(403);
-    expect(
-      (await post(members, ordinary, { action: "assign", roleId: role.id, userId: ordinary }))
-        .status,
-    ).toBe(403);
+    expect((await call(saveRoleFn, ordinary, { draft: draftRole(unique("http")) })).status).toBe(
+      403,
+    );
+    expect((await call(deletePermissionFn, ordinary, { permissionId: permission.id })).status).toBe(
+      403,
+    );
     expect(
       (
-        await post(
-          roleSave,
-          root,
-          { action: "delete", roleId: role.id },
-          "https://attacker.invalid",
-        )
+        await call(changeRoleMemberFn, ordinary, {
+          action: "assign",
+          roleId: role.id,
+          userId: ordinary,
+        })
       ).status,
     ).toBe(403);
+    // Input limits hold even for Master Admin.
+    const oversized = { ...draftRole(unique("oversized")), parents: Array(51).fill("socio") };
+    expect(await call(saveRoleFn, root, { draft: oversized })).toMatchObject({
+      status: 400,
+      error: { message: "Invalid request." },
+    });
+    // A cross-site request is refused before it reaches the function, even for Master Admin.
+    expect(
+      (await call(deleteRoleFn, root, { roleId: role.id }, "https://attacker.invalid")).status,
+    ).toBe(403);
+    expect((await pool.query(`SELECT id FROM role WHERE id = $1`, [role.id])).rows).toHaveLength(1);
   });
 
   it("denies missing/deleted subjects even if the identifier is allowlisted", async () => {
@@ -797,7 +792,9 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
       `INSERT INTO oauth_client (id, client_id, redirect_uris, reference_id) VALUES ($1, $1, ARRAY['https://example.com/callback'], 'another-pool')`,
       [client],
     );
-    expect((await post(clientUpdate, root, { clientId: client, disabled: true })).status).toBe(404);
+    expect(
+      (await call(updateOidcClientFn, root, { clientId: client, disabled: true })).status,
+    ).toBe(404);
     expect(
       (await pool.query("SELECT disabled FROM oauth_client WHERE client_id = $1", [client])).rows[0]
         .disabled,

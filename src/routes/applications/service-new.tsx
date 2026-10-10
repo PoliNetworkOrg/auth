@@ -1,41 +1,27 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowLeft, CircleCheck } from "lucide-react";
+import { ArrowLeft, CircleCheck, LoaderCircle } from "lucide-react";
 import { SERVICE_CLIENT_TEMPLATES, type ServiceClientKind } from "@/auth/service-client-templates";
-import { useIdpAccessContext } from "@/components/idp-access";
+import { linkOidcResourceFn, registerServiceClientFn } from "@/auth/oidc.functions";
+import { requireAccess, useAccess } from "@/components/access";
+import { publicJwks } from "@/components/oidc/public-jwks";
+import { NoAccess } from "@/components/route-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { errorMessage } from "@/lib/action-error";
 
 export const Route = createFileRoute("/applications/service-new")({
   head: () => ({ meta: [{ title: "Service client · PoliNetwork Auth" }] }),
+  beforeLoad: ({ context }) => requireAccess(context.viewer, "idp:applications:write"),
   component: ServiceClientRegistration,
 });
 
-function publicJwks(input: string): { keys: Record<string, unknown>[] } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(input);
-  } catch {
-    throw new Error("Paste a valid public JWKS JSON object.");
-  }
-  if (!parsed || typeof parsed !== "object" || !("keys" in parsed))
-    throw new Error("The JWKS needs a keys array.");
-  const keys = (parsed as { keys: unknown }).keys;
-  if (!Array.isArray(keys) || keys.length === 0 || keys.length > 5)
-    throw new Error("The JWKS needs between one and five public keys.");
-  for (const key of keys) {
-    if (!key || typeof key !== "object") throw new Error("Each key must be an object.");
-    if (["d", "p", "q", "dp", "dq", "qi", "oth", "k"].some((field) => field in key))
-      throw new Error("Paste public keys only. Keep private keys in the service's Key Vault.");
-  }
-  return { keys: keys as Record<string, unknown>[] };
-}
-
 function ServiceClientRegistration() {
-  const { isMasterAdmin, status } = useIdpAccessContext();
+  const { isMasterAdmin } = useAccess();
+  const router = useRouter();
   const [kind, setKind] = useState<ServiceClientKind>("telegram-bot");
   const [jwksText, setJwksText] = useState("");
   const [redirectUri, setRedirectUri] = useState("");
@@ -51,17 +37,13 @@ function ServiceClientRegistration() {
       const jwks = publicJwks(jwksText);
       if (template.interactive && !redirectUri.trim())
         throw new Error("Enter the dashboard's exact redirect URI.");
-      const response = await fetch("/api/oidc/service-client", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind, jwks, redirectUri: redirectUri.trim() || undefined }),
+      const result = await registerServiceClientFn({
+        data: { kind, jwks, redirectUri: redirectUri.trim() || undefined },
       });
-      const result: { clientId?: string; linked?: boolean; error?: string } = await response.json();
-      if (!response.ok || !result.clientId)
-        throw new Error(result.error ?? "Unable to register the service client.");
-      setCreated({ clientId: result.clientId, linked: result.linked === true });
+      await router.invalidate({ sync: true });
+      setCreated(result);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to register the service client.");
+      setError(errorMessage(cause, "Unable to register the service client."));
     } finally {
       setBusy(false);
     }
@@ -72,25 +54,29 @@ function ServiceClientRegistration() {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/oidc/resource-link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId: created.clientId, resource: template.resource }),
+      await linkOidcResourceFn({
+        data: { clientId: created.clientId, resource: template.resource },
       });
-      if (!response.ok)
-        throw new Error("Resource link failed. Try again after checking OAuth configuration.");
+      await router.invalidate({ sync: true });
       setCreated({ ...created, linked: true });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Resource link failed.");
+      setError(
+        errorMessage(cause, "Resource link failed. Try again after checking OAuth configuration."),
+      );
     } finally {
       setBusy(false);
     }
   }
 
-  if (status !== "ready")
-    return <p className="py-10 text-sm text-muted-foreground">Checking access…</p>;
   if (!isMasterAdmin)
-    return <p className="py-10 text-sm text-muted-foreground">Master Admin access is required.</p>;
+    return (
+      <NoAccess
+        title="Master Admin access is required"
+        back={{ to: "/applications", label: "Back to applications" }}
+      >
+        Only Master Admin may register service clients.
+      </NoAccess>
+    );
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -129,6 +115,7 @@ function ServiceClientRegistration() {
             </code>
             {!created.linked && (
               <Button disabled={busy} onClick={() => void retryLink()}>
+                {busy && <LoaderCircle className="animate-spin" aria-hidden="true" />}
                 Retry resource link
               </Button>
             )}

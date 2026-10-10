@@ -1,10 +1,10 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { LoaderCircle, ShieldCheck, Sparkles, UserMinus, UserPlus } from "lucide-react";
 import type { RbacCatalog } from "@/auth/rbac";
 import type { UserRoleAssignment } from "@/auth/users";
-import { useIdpAccessContext } from "@/components/idp-access";
-import { changeRoleMember, errorMessage } from "@/components/rbac/api";
+import { changeRoleMemberFn } from "@/auth/rbac.functions";
+import { useAccess } from "@/components/access";
 import { canGrantRole } from "@/components/rbac/delegation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { errorMessage } from "@/lib/action-error";
 
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" }) : null;
@@ -22,7 +23,7 @@ function formatDate(value: string | null) {
 
 /**
  * The roles given to one person by hand, with the controls to give or take them away. It
- * uses the same endpoint as a role's member list, so the server applies the same bounded
+ * uses the same server function as a role's member list, so the server applies the same bounded
  * delegation: nobody can hand out, or take away, access they do not hold themselves.
  */
 export function UserRoles({
@@ -31,7 +32,6 @@ export function UserRoles({
   assigned,
   held,
   catalog,
-  onChanged,
 }: {
   userId: string;
   userName: string;
@@ -39,9 +39,9 @@ export function UserRoles({
   /** Every role they hold, including built-in and inherited ones. */
   held: string[];
   catalog: RbacCatalog;
-  onChanged: () => void;
 }) {
-  const access = useIdpAccessContext();
+  const router = useRouter();
+  const access = useAccess();
   const canWrite = access.can("idp:roles:assign");
   const [choice, setChoice] = useState("");
   const [busy, setBusy] = useState("");
@@ -61,11 +61,11 @@ export function UserRoles({
     setBusy(key);
     setError("");
     try {
-      await changeRoleMember(action, target.id, userId);
+      await changeRoleMemberFn({ data: { action, roleId: target.id, userId } });
+      // Reloads the person, and the viewer's own access, which they may have just changed.
+      // The button stays busy until the page shows the change.
+      await router.invalidate({ sync: true });
       if (action === "assign") setChoice("");
-      onChanged();
-      // They may have changed their own access.
-      access.retry();
     } catch (cause) {
       setError(errorMessage(cause, "Unable to change this person's roles."));
     } finally {

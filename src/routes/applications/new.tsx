@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, CircleCheck } from "lucide-react";
 import { authClient } from "@/auth/client";
@@ -8,22 +8,24 @@ import {
   normalizeClientDraft,
   type OidcClientDraft,
 } from "@/auth/oidc-clients";
-import { errorMessage } from "@/components/oidc/api";
 import { ClientForm } from "@/components/oidc/client-form";
 import { CredentialsReveal } from "@/components/oidc/secret-reveal";
-import { RequirePermission } from "@/components/rbac/require-permission";
+import { requireAccess } from "@/components/access";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { errorMessage } from "@/lib/action-error";
 
 export const Route = createFileRoute("/applications/new")({
   head: () => ({ meta: [{ title: "New application · PoliNetwork Auth" }] }),
-  component: GuardedNewApplication,
+  beforeLoad: ({ context }) => requireAccess(context.viewer, "idp:applications:write"),
+  component: NewApplication,
 });
 
 type Created = { clientId: string; clientSecret: string | null; name: string };
 
 function NewApplication() {
   const navigate = useNavigate();
+  const router = useRouter();
   const [confidential, setConfidential] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -55,6 +57,8 @@ function NewApplication() {
         setError(result.error.message ?? "Unable to create the application.");
         return;
       }
+      // Drops any cached copy of the list, which doesn't have the new application yet.
+      await router.invalidate({ sync: true });
       setCreated({
         clientId: result.data.client_id,
         clientSecret: result.data.client_secret ?? null,
@@ -148,17 +152,5 @@ function NewApplication() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function GuardedNewApplication() {
-  return (
-    <RequirePermission
-      permission="idp:applications:write"
-      backTo="/applications"
-      backLabel="Back to applications"
-    >
-      <NewApplication />
-    </RequirePermission>
   );
 }
