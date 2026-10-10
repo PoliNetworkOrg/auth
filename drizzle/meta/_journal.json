@@ -120,6 +120,13 @@
       "when": 1791568627518,
       "tag": "0016_migration_permission_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791623746934,
+      "tag": "0017_jwks_legacy_alg",
+      "breakpoints": true
     }
   ]
 }
