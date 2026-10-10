@@ -3,6 +3,7 @@ import { useState } from "react";
 import { cn } from "cn";
 import { LogOut, UserRound } from "lucide-react";
 import { Popover } from "radix-ui";
+import { toast } from "sonner";
 import { authClient } from "@/auth/client";
 import { useAccess, useViewer } from "@/components/access";
 import { firstAccessTab } from "@/components/rbac/access-tabs";
@@ -89,15 +90,8 @@ function AccountMenu({ user }: { user: { name: string; email: string; image?: st
   const navigate = useNavigate();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   return (
-    <Popover.Root
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) setError(null);
-      }}
-    >
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
         aria-label="Open account menu"
         className="size-9 overflow-hidden rounded-full border bg-muted text-xs font-semibold text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -133,7 +127,7 @@ function AccountMenu({ user }: { user: { name: string; email: string; image?: st
               onClick={async () => {
                 const result = await authClient.signOut();
                 if (result.error) {
-                  setError(result.error.message ?? "Unable to sign out.");
+                  toast.error(result.error.message ?? "Unable to sign out.");
                   return;
                 }
                 setOpen(false);
@@ -146,11 +140,6 @@ function AccountMenu({ user }: { user: { name: string; email: string; image?: st
               Sign out
             </Button>
           </div>
-          {error && (
-            <p role="alert" className="mt-2 text-xs text-destructive">
-              {error}
-            </p>
-          )}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

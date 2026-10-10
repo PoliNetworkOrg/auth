@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, CircleCheck, TriangleAlert } from "lucide-react";
+import { toast } from "sonner";
 import {
   emptyClientDraft,
   normalizeClientDraft,
@@ -36,14 +37,12 @@ function NewApplication() {
   const { isMasterAdmin } = useAccess();
   const [initial] = useState(emptyClientDraft);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<OidcClientDraftErrors | undefined>();
   const [created, setCreated] = useState<Created | null>(null);
 
   async function create(input: OidcClientDraft) {
     const draft = normalizeClientDraft(input);
     setBusy(true);
-    setError("");
     setFieldErrors(undefined);
     try {
       const result = await createOidcClientFn({ data: { draft } });
@@ -57,7 +56,7 @@ function NewApplication() {
       window.scrollTo({ top: 0 });
     } catch (cause) {
       setFieldErrors(errorFields<OidcClientDraftErrors>(cause));
-      setError(errorMessage(cause, "Unable to create the application."));
+      toast.error(errorMessage(cause, "Unable to create the application."));
     } finally {
       setBusy(false);
     }
@@ -132,14 +131,6 @@ function NewApplication() {
           APIs. Credentials appear once you save.
         </p>
       </div>
-      {error && (
-        <p
-          role="alert"
-          className="rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
-        >
-          {error}
-        </p>
-      )}
       <NewApplicationWizard
         initial={initial}
         apiAccess={apiAccess}

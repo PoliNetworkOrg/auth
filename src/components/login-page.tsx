@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useRouter } from "@tanstack/react-router";
 import { cn } from "cn";
 import { Building2, Fingerprint, Link2, LoaderCircle } from "lucide-react";
+import { toast } from "sonner";
 import { authClient } from "@/auth/client";
 import { useProviders } from "@/components/access";
 import { DevLoginPanel } from "@/components/dev-login";
@@ -66,7 +67,6 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
   const router = useRouter();
   const available = useProviders().signIn;
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState("");
   const [passkeySupported, setPasskeySupported] = useState(false);
   const [requestingApp, setRequestingApp] = useState<RequestingApp | null>(null);
   // Read the signed OAuth query from the router so the server renders the same heading.
@@ -104,14 +104,13 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
 
   async function signIn(method: string) {
     setBusy(method);
-    setError("");
     try {
       const result =
         method === "passkey"
           ? await authClient.signIn.passkey()
           : await authClient.signIn.social({ provider: method, callbackURL });
       if (result.error) {
-        setError(
+        toast.error(
           method === "passkey"
             ? "Passkey sign-in was not completed. Try again or continue with your account below."
             : (result.error.message ?? "Sign-in failed. Please try again."),
@@ -121,7 +120,7 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
         await router.invalidate();
       }
     } catch {
-      setError("Unable to reach the sign-in service. Please try again.");
+      toast.error("Unable to reach the sign-in service. Please try again.");
     } finally {
       setBusy(null);
     }
@@ -213,14 +212,6 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
               </p>
             )}
           </div>
-          {error && (
-            <p
-              role="alert"
-              className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm leading-6"
-            >
-              {error}
-            </p>
-          )}
           <p className="text-center text-xs leading-5 text-muted-foreground">
             {oauthFlow
               ? "After signing in you'll review what the application can access before anything is shared."

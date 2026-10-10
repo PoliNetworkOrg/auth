@@ -1,6 +1,7 @@
 import { Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { LoaderCircle, ShieldCheck, Sparkles, UserMinus, UserPlus } from "lucide-react";
+import { toast } from "sonner";
 import type { RbacCatalog } from "@/auth/rbac";
 import type { UserRoleAssignment } from "@/auth/users";
 import { changeRoleMemberFn } from "@/auth/rbac.functions";
@@ -45,7 +46,6 @@ export function UserRoles({
   const canWrite = access.can("idp:roles:assign");
   const [choice, setChoice] = useState("");
   const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
 
   const roleByKey = (key: string) => catalog.roles.find((role) => role.key === key);
   const mayGrant = (key: string) => canGrantRole(access, catalog, key);
@@ -59,7 +59,6 @@ export function UserRoles({
     const target = roleByKey(key);
     if (!target) return;
     setBusy(key);
-    setError("");
     try {
       await changeRoleMemberFn({ data: { action, roleId: target.id, userId } });
       // Reloads the person, and the viewer's own access, which they may have just changed.
@@ -67,7 +66,7 @@ export function UserRoles({
       await router.invalidate({ sync: true });
       if (action === "assign") setChoice("");
     } catch (cause) {
-      setError(errorMessage(cause, "Unable to change this person's roles."));
+      toast.error(errorMessage(cause, "Unable to change this person's roles."));
     } finally {
       setBusy("");
     }
@@ -75,15 +74,6 @@ export function UserRoles({
 
   return (
     <div className="space-y-5">
-      {error && (
-        <p
-          role="alert"
-          className="rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
-        >
-          {error}
-        </p>
-      )}
-
       {assigned.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nobody has given {userName} a role by hand.</p>
       ) : (
