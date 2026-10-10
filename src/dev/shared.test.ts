@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { devLoginHref, localRedirect } from "./shared";
+import { devLoginHref, localRedirect, signedOAuthQuery } from "./shared";
 
 describe("dev sign-in redirect", () => {
   it.each(["/", "/users", "/users?socio=yes#top", "/api/auth/oauth2/authorize?client_id=x"])(
@@ -57,4 +57,32 @@ describe("dev sign-in redirect", () => {
     expect(url.searchParams.get("as")).toBe("staff");
     expect(localRedirect(url.searchParams.get("redirect"))).toBe("/users?socio=yes&page=2");
   });
+
+  it("carries the signed OAuth query along", () => {
+    const query = "client_id=app&prompt=login&sig=abc&ba_param=client_id&ba_param=prompt";
+    const url = new URL(devLoginHref("staff", "/", query), "http://localhost");
+    expect(url.searchParams.get("oauth_query")).toBe(query);
+    expect(
+      new URL(devLoginHref("staff", "/"), "http://localhost").searchParams.has("oauth_query"),
+    ).toBe(false);
+  });
+});
+
+describe("signed OAuth query of the login page", () => {
+  it("keeps exactly the signed parameters", () => {
+    expect(
+      signedOAuthQuery(
+        "?client_id=app&prompt=login&utm=x&sig=abc&ba_param=client_id&ba_param=prompt&ba_param=ba_param",
+      ),
+    ).toBe(
+      "client_id=app&prompt=login&sig=abc&ba_param=client_id&ba_param=prompt&ba_param=ba_param",
+    );
+  });
+
+  it.each(["", "?redirect=/users", "?client_id=app&sig=abc", "?client_id=app&ba_param=client_id"])(
+    "finds none in %j",
+    (search) => {
+      expect(signedOAuthQuery(search)).toBeUndefined();
+    },
+  );
 });

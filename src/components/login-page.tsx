@@ -228,13 +228,7 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
           </p>
         </CardContent>
       </Card>
-      {import.meta.env.DEV && (
-        <DevLoginPanel
-          redirect={
-            oauthFlow ? `/api/auth/oauth2/authorize?${searchStr.replace(/^\?/, "")}` : callbackURL
-          }
-        />
-      )}
+      {import.meta.env.DEV && <DevLoginPanel redirect={callbackURL} />}
     </LoginLayout>
   );
 }

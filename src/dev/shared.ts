@@ -56,6 +56,25 @@ export function localRedirect(value: string | null | undefined) {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-export function devLoginHref(key: string, redirect: string) {
-  return `${DEV_LOGIN_PATH}?${new URLSearchParams({ as: key, redirect })}`;
+/**
+ * The signed OAuth query of a login page an application sent the person to, or nothing. Keeps
+ * only the parameters the signature covers, as Better Auth's own client does, so anything
+ * appended to the URL afterwards does not break the signature check.
+ */
+export function signedOAuthQuery(search: string) {
+  const params = new URLSearchParams(search);
+  const signed = new Set(params.getAll("ba_param"));
+  if (!params.has("sig") || !signed.size) return undefined;
+  const kept = new URLSearchParams();
+  for (const [key, value] of params)
+    if (key === "sig" || key === "ba_param" || signed.has(key)) kept.append(key, value);
+  return kept.toString();
+}
+
+export function devLoginHref(key: string, redirect: string, oauthQuery?: string) {
+  return `${DEV_LOGIN_PATH}?${new URLSearchParams({
+    as: key,
+    redirect,
+    ...(oauthQuery ? { oauth_query: oauthQuery } : {}),
+  })}`;
 }

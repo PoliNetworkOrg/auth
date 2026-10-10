@@ -6,18 +6,24 @@ import {
   DEV_LOGIN_KIND,
   DEV_LOGIN_PATH,
   devLoginHref,
+  signedOAuthQuery,
   type DevLoginListing,
   type DevPersonaSummary,
 } from "@/dev/shared";
 
 /**
  * One-click sign-in as a test persona. Rendered only behind `import.meta.env.DEV`, and only
- * once the server confirms `DEV_LOGIN=1`, so it never appears in production.
+ * once the server confirms `DEV_LOGIN=1`, so it never appears in production. When an
+ * application sent the person here, the page's signed OAuth query goes along, so the sign-in
+ * continues that authorization instead of landing on `redirect`.
  */
 export function DevLoginPanel({ redirect }: { redirect: string }) {
   const [personas, setPersonas] = useState<DevPersonaSummary[]>([]);
+  const [oauthQuery, setOauthQuery] = useState<string>();
 
   useEffect(() => {
+    // Read from the address bar as Better Auth's client does, so the signature still matches.
+    setOauthQuery(signedOAuthQuery(window.location.search));
     const controller = new AbortController();
     fetch(DEV_LOGIN_PATH, { signal: controller.signal })
       .then((response) => (response.ok ? (response.json() as Promise<DevLoginListing>) : null))
@@ -49,7 +55,7 @@ export function DevLoginPanel({ redirect }: { redirect: string }) {
         {personas.map((persona) => (
           <li key={persona.key}>
             <a
-              href={devLoginHref(persona.key, redirect)}
+              href={devLoginHref(persona.key, redirect, oauthQuery)}
               className={cn(
                 buttonVariants({ variant: "outline" }),
                 "h-auto w-full flex-col items-start gap-0.5 bg-card px-3 py-2 text-left whitespace-normal",
