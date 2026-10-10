@@ -4,16 +4,19 @@
  * every fake person has a fixed ID and is updated in place.
  */
 import { faker } from "@faker-js/faker";
-import { env } from "../env";
-import { DEV_PERSONAS, saveDevUser, type DevAccount } from "./personas";
+import { assertDevDatabase } from "./database-guard";
+import type { DevAccount } from "./personas";
 
-const FAKE_PEOPLE = 60;
-
-const local = ["localhost", "127.0.0.1", "[::1]"];
-if (!local.includes(new URL(env.BETTER_AUTH_URL).hostname)) {
-  console.error("Refusing to seed: BETTER_AUTH_URL is not a local development origin.");
+// Checked before anything below connects: the database modules are imported only afterwards.
+try {
+  assertDevDatabase(process.env, "seed");
+} catch (error) {
+  console.error(error instanceof Error ? error.message : error);
   process.exit(1);
 }
+const { DEV_PERSONAS, saveDevUser } = await import("./personas");
+
+const FAKE_PEOPLE = 60;
 
 // A fixed seed keeps the same people across runs, so links to them keep working.
 faker.seed(20_260_930);
