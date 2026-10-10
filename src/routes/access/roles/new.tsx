@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
 import { type RbacDraftErrors, type RoleDraft, emptyRoleDraft } from "@/auth/rbac";
 import { getCatalog, saveRoleFn } from "@/auth/rbac.functions";
 import { requireAccess } from "@/components/access";
@@ -20,19 +21,17 @@ function NewRole() {
   const navigate = useNavigate();
   const catalog = Route.useLoaderData();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const [fields, setFields] = useState<RbacDraftErrors>();
 
   async function create(draft: RoleDraft) {
     setBusy(true);
-    setError("");
     setFields(undefined);
     try {
       const role = await saveRoleFn({ data: { draft } });
       await navigate({ to: "/access/roles/$roleId", params: { roleId: role.id } });
     } catch (cause) {
       setFields(errorFields(cause));
-      setError(errorMessage(cause, "Unable to create the role."));
+      toast.error(errorMessage(cause, "Unable to create the role."));
     } finally {
       setBusy(false);
     }
@@ -52,14 +51,6 @@ function NewRole() {
           Bundle permissions under one name, then give it to people from the role's page.
         </p>
       </div>
-      {error && (
-        <p
-          role="alert"
-          className="rounded-xl border border-destructive bg-destructive/5 p-4 text-sm"
-        >
-          {error}
-        </p>
-      )}
       <Card>
         <CardContent className="pt-6">
           <RoleForm

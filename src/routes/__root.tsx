@@ -5,6 +5,7 @@ import { TanStackDevtools } from "@tanstack/react-devtools";
 import appCss from "../styles.css?url";
 import { getRootContext } from "@/auth/session.functions";
 import { themeScript } from "@/components/theme-switch";
+import { Toaster } from "@/components/ui/sonner";
 
 export const Route = createRootRoute({
   // Runs on every navigation and every `router.invalidate()`, so a change to someone's roles
@@ -42,6 +43,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         {children}
+        <Toaster position="top-center" />
         <TanStackDevtools
           config={{
             position: "bottom-right",

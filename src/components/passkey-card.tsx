@@ -1,6 +1,7 @@
 import { useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { Fingerprint, LoaderCircle, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { authClient } from "@/auth/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,27 +13,23 @@ export function PasskeyCard({ passkeys }: { passkeys: Passkey[] }) {
   const router = useRouter();
   /** "add" or the id of the passkey being removed, so only that button spins. */
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
 
   async function addPasskey() {
-    setError("");
-    setMessage("");
     if (!window.isSecureContext || !window.PublicKeyCredential) {
-      setError("Passkeys aren't available in this browser. Try another browser or device.");
+      toast.error("Passkeys aren't available in this browser. Try another browser or device.");
       return;
     }
     setBusy("add");
     try {
       const result = await authClient.passkey.addPasskey();
       if (result.error)
-        setError(result.error.message ?? "Unable to add a passkey. Please try again.");
+        toast.error(result.error.message ?? "Unable to add a passkey. Please try again.");
       else {
         await router.invalidate({ sync: true });
-        setMessage("Passkey added. You can use it the next time you sign in.");
+        toast.success("Passkey added. You can use it the next time you sign in.");
       }
     } catch {
-      setError("Unable to add a passkey. Please try again.");
+      toast.error("Unable to add a passkey. Please try again.");
     } finally {
       setBusy(null);
     }
@@ -40,17 +37,15 @@ export function PasskeyCard({ passkeys }: { passkeys: Passkey[] }) {
 
   async function removePasskey(id: string) {
     setBusy(id);
-    setError("");
-    setMessage("");
     try {
       const result = await authClient.passkey.deletePasskey({ id });
-      if (result.error) setError(result.error.message ?? "Unable to remove this passkey.");
+      if (result.error) toast.error(result.error.message ?? "Unable to remove this passkey.");
       else {
         await router.invalidate({ sync: true });
-        setMessage("Passkey removed.");
+        toast.success("Passkey removed.");
       }
     } catch {
-      setError("Unable to remove this passkey. Please try again.");
+      toast.error("Unable to remove this passkey. Please try again.");
     } finally {
       setBusy(null);
     }
@@ -105,16 +100,6 @@ export function PasskeyCard({ passkeys }: { passkeys: Passkey[] }) {
           )}
           Add a passkey
         </Button>
-        {error && (
-          <p role="alert" className="text-sm">
-            {error}
-          </p>
-        )}
-        {message && (
-          <p role="status" className="text-sm text-muted-foreground">
-            {message}
-          </p>
-        )}
       </CardContent>
     </Card>
   );
