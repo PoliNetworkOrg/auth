@@ -102,3 +102,34 @@ export async function contactEmails(
     ]),
   );
 }
+
+/**
+ * The address apps receive in the `email` claim. A linked polinetwork.org address comes
+ * first, because some apps (Claude, Cloudflare) only let in those accounts. Apps may
+ * identify people by it: it comes from a verified sign-in to PoliNetwork's own Entra
+ * tenant, where only administrators hand out polinetwork.org addresses. Placeholders are
+ * never sent.
+ */
+export async function appEmail(
+  reader: Reader,
+  user: { id: string; email: string; emailVerified: boolean },
+) {
+  const linked = await reader
+    .select({ email: identityEvidence.email })
+    .from(account)
+    .innerJoin(
+      identityEvidence,
+      and(
+        eq(account.issuer, identityEvidence.issuer),
+        eq(account.accountId, identityEvidence.subject),
+        eq(account.providerId, identityEvidence.providerId),
+      ),
+    )
+    .where(and(eq(account.userId, user.id), eq(account.providerId, "pn-entra")));
+  const organization = linked
+    .map((row) => row.email)
+    .find((email) => email?.toLowerCase().endsWith("@polinetwork.org"));
+  if (organization) return { email: organization, emailVerified: true };
+  if (isPlaceholderEmail(user.email)) return { email: null, emailVerified: false };
+  return { email: user.email, emailVerified: user.emailVerified };
+}

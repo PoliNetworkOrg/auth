@@ -1,7 +1,7 @@
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { getAuthenticatorName, passkey } from "@better-auth/passkey";
 import { eq } from "drizzle-orm";
-import { betterAuth } from "better-auth";
+import { betterAuth, type User } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
@@ -11,6 +11,7 @@ import { db } from "../db";
 import * as schema from "../db/schema";
 import { env } from "../env";
 import { AUTH_COOKIE_PREFIX } from "./cookies";
+import { appEmail } from "./contact-email";
 import { startAccessDispatcher } from "./access-dispatcher";
 import { getOidcClaims } from "./identity";
 import { ensureIdTokenKey, jwtOptions } from "./jwt-options";
@@ -64,6 +65,11 @@ const serviceResources =
         },
       ]
     : [];
+
+/** The user as apps see them, with the address from `appEmail` when the `email` scope asks. */
+async function withAppEmail(user: User, scopes: string[]) {
+  return scopes.includes("email") ? { ...user, ...(await appEmail(db, user)) } : user;
+}
 
 export const auth = betterAuth({
   appName: "PoliNetwork Auth",
@@ -227,10 +233,13 @@ export const auth = betterAuth({
       refreshTokenReuseInterval: 10,
       idTokenExpiresIn: 300,
       customIdTokenClaims: async ({ user, scopes }) => ({
-        ...standardIdTokenClaims(user, scopes),
+        ...standardIdTokenClaims(await withAppEmail(user, scopes), scopes),
         ...(await getOidcClaims(user.id, scopes)),
       }),
-      customUserInfoClaims: ({ user, scopes }) => getOidcClaims(user.id, scopes),
+      customUserInfoClaims: async ({ user, scopes }) => ({
+        ...standardIdTokenClaims(await withAppEmail(user, scopes), scopes),
+        ...(await getOidcClaims(user.id, scopes)),
+      }),
       customAccessTokenClaims: async ({ user, scopes }) => ({
         pn_subject_type: user ? "user" : "client",
         ...(user ? await getOidcClaims(user.id, scopes) : {}),
