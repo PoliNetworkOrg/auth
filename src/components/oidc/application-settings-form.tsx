@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  ApiScopeList,
+  ApiAccessTable,
   credentialChangeNote,
   credentialInfo,
   FieldError,
@@ -58,14 +58,29 @@ function scrollToFirstError(form: HTMLFormElement) {
   if (target.matches("input, textarea")) target.focus({ preventScroll: true });
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  const id = useId();
+/** A titled card the page's section nav links to, by its `id`. */
+export function SettingsSection({
+  id,
+  title,
+  children,
+  className,
+}: {
+  id: string;
+  title: string;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <section aria-labelledby={id} className="space-y-3">
-      <h2 id={id} className="text-base font-semibold tracking-tight">
+    <section
+      id={id}
+      data-nav-section={title}
+      aria-labelledby={`${id}-title`}
+      className="scroll-mt-24 space-y-3"
+    >
+      <h2 id={`${id}-title`} className="text-base font-semibold tracking-tight">
         {title}
       </h2>
-      <Card>{children}</Card>
+      <Card className={className}>{children}</Card>
     </section>
   );
 }
@@ -182,9 +197,9 @@ export function ApplicationSettingsForm({
         : "Obtains tokens with its own credential, with nobody signed in. For bots and backend jobs.";
   const credentialNote = credentialChangeNote(savedCredential, draft.credential);
   const apiLocked = !canGrantApiAccess;
-  // The scope error belongs to whichever ceiling the draft is missing.
-  const apiScopesError = draft.serviceAccess ? undefined : errors.apiScopes;
-  const serviceScopesError = draft.serviceAccess ? errors.apiScopes : undefined;
+  const showApiAccess =
+    (draft.signIn || draft.serviceAccess) &&
+    (apiAccess || draft.serviceAccess || draft.apiScopes.length > 0);
 
   return (
     <form
@@ -211,7 +226,7 @@ export function ApplicationSettingsForm({
       )}
 
       <fieldset disabled={readOnly} className="min-w-0 space-y-8 border-0 p-0">
-        <Section title="General">
+        <SettingsSection id="general" title="General">
           <div className="space-y-5 p-6">
             <TextField
               label="Application name"
@@ -237,9 +252,9 @@ export function ApplicationSettingsForm({
               onChange={(value) => update("uri", value)}
             />
           </div>
-        </Section>
+        </SettingsSection>
 
-        <Section title="Connection">
+        <SettingsSection id="connection" title="Connection">
           <div className="divide-y">
             <div className="px-6 py-5">
               <SwitchRow
@@ -288,41 +303,31 @@ export function ApplicationSettingsForm({
               )}
             </div>
           </div>
-        </Section>
+        </SettingsSection>
 
         {draft.signIn && (
-          <Section title="People who sign in">
+          <SettingsSection id="sign-in" title="Sign-in">
             <div className="space-y-8 p-6">
-              <div className="space-y-5">
-                <ListField
-                  label="Redirect URIs"
-                  required
-                  minItems={1}
-                  items={draft.redirectUris}
-                  error={errors.redirectUris}
-                  itemErrors={errors.redirectUriItems}
-                  placeholder="https://app.polinetwork.org/auth/callback"
-                  addLabel="Add redirect URI"
-                  onChange={(items) => update("redirectUris", items)}
-                />
-                <RedirectRule
-                  value={draft.applicationType}
-                  onChange={(value) => update("applicationType", value)}
-                />
-              </div>
+              <ListField
+                label="Redirect URIs"
+                required
+                minItems={1}
+                items={draft.redirectUris}
+                error={errors.redirectUris}
+                itemErrors={errors.redirectUriItems}
+                placeholder="https://app.polinetwork.org/auth/callback"
+                addLabel="Add redirect URI"
+                onChange={(items) => update("redirectUris", items)}
+              />
+              <RedirectRule
+                compact
+                value={draft.applicationType}
+                onChange={(value) => update("applicationType", value)}
+              />
               <div className="space-y-2">
-                <IdentityScopeList api={api} legend="What it may ask people for" />
+                <IdentityScopeList dense api={api} legend="What it may ask people for" />
                 <FieldError>{errors.scopes}</FieldError>
               </div>
-              {(apiAccess || draft.apiScopes.length > 0) && (
-                <ApiScopeList
-                  api={api}
-                  list="apiScopes"
-                  legend="PoliNetwork APIs it may call for them"
-                  locked={apiLocked}
-                  error={apiScopesError}
-                />
-              )}
               <div className="space-y-3">
                 <ListField
                   label="Post-logout redirect URIs"
@@ -345,25 +350,18 @@ export function ApplicationSettingsForm({
                 </label>
               </div>
             </div>
-          </Section>
+          </SettingsSection>
         )}
 
-        {draft.serviceAccess && (
-          <Section title="The application itself">
+        {showApiAccess && (
+          <SettingsSection id="api-access" title="API access">
             <div className="p-6">
-              <ApiScopeList
-                api={api}
-                list="serviceScopes"
-                legend="PoliNetwork APIs it may call as itself"
-                required
-                locked={apiLocked}
-                error={serviceScopesError}
-              />
+              <ApiAccessTable api={api} locked={apiLocked} error={errors.apiScopes} />
             </div>
-          </Section>
+          </SettingsSection>
         )}
 
-        <Section title="Details">
+        <SettingsSection id="details" title="Details">
           <div className="space-y-5 p-6">
             <ListField
               label="Contact emails"
@@ -389,7 +387,7 @@ export function ApplicationSettingsForm({
               onChange={(value) => update("tosUri", value)}
             />
           </div>
-        </Section>
+        </SettingsSection>
       </fieldset>
 
       {showSaveBar && (

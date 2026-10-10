@@ -279,11 +279,46 @@ const redirectRules: { id: OidcApplicationType; title: string; description: stri
 export function RedirectRule({
   value,
   onChange,
+  compact,
 }: {
   value: OidcApplicationType;
   onChange: (value: OidcApplicationType) => void;
+  /** A two-way switch with only the chosen rule explained, for the settings page. */
+  compact?: boolean;
 }) {
   const name = useId();
+  if (compact) {
+    const chosen = redirectRules.find((rule) => rule.id === value)!;
+    return (
+      <fieldset className="space-y-2">
+        <legend className="text-sm leading-none font-medium">Allowed redirect URIs</legend>
+        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg border bg-muted/50 p-1">
+          {redirectRules.map((rule) => (
+            <label
+              key={rule.id}
+              className={cn(
+                "flex min-h-9 items-center justify-center rounded-md px-2 py-1 text-center text-sm leading-tight font-medium transition-colors has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50",
+                value === rule.id
+                  ? "bg-background text-foreground shadow-sm ring-1 ring-border dark:bg-input/60"
+                  : "cursor-pointer text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <input
+                type="radio"
+                name={name}
+                value={rule.id}
+                checked={value === rule.id}
+                className="sr-only"
+                onChange={() => onChange(rule.id)}
+              />
+              {rule.title}
+            </label>
+          ))}
+        </div>
+        <p className="text-xs leading-5 text-muted-foreground">{chosen.description}</p>
+      </fieldset>
+    );
+  }
   return (
     <fieldset className="space-y-2">
       <legend className="text-sm leading-none font-medium">Allowed redirect URIs</legend>
@@ -318,7 +353,16 @@ export function RedirectRule({
 }
 
 /** What a signed-in person is asked to share with the app. */
-export function IdentityScopeList({ api, legend }: { api: ClientDraftApi; legend: string }) {
+export function IdentityScopeList({
+  api,
+  legend,
+  dense,
+}: {
+  api: ClientDraftApi;
+  legend: string;
+  /** One line per scope, without descriptions, for the settings page. */
+  dense?: boolean;
+}) {
   const id = useId();
   return (
     <fieldset className="space-y-3">
@@ -330,8 +374,10 @@ export function IdentityScopeList({ api, legend }: { api: ClientDraftApi; legend
             <li key={scope.id}>
               <label
                 htmlFor={checkboxId}
+                title={dense ? scope.description : undefined}
                 className={cn(
-                  "flex items-start gap-3 px-4 py-3",
+                  "flex gap-3 px-4",
+                  dense ? "items-center py-2.5" : "items-start py-3",
                   !scope.required && "cursor-pointer",
                 )}
               >
@@ -339,7 +385,7 @@ export function IdentityScopeList({ api, legend }: { api: ClientDraftApi; legend
                   id={checkboxId}
                   checked={scope.required || api.draft.scopes.includes(scope.id)}
                   disabled={scope.required}
-                  className="mt-0.5"
+                  className={dense ? undefined : "mt-0.5"}
                   onCheckedChange={(value) => api.toggleScope("scopes", scope.id, value === true)}
                 />
                 <span className="min-w-0 flex-1">
@@ -349,9 +395,11 @@ export function IdentityScopeList({ api, legend }: { api: ClientDraftApi; legend
                       {scope.id}
                     </code>
                   </span>
-                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                    {scope.description}
-                  </span>
+                  {!dense && (
+                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                      {scope.description}
+                    </span>
+                  )}
                 </span>
               </label>
             </li>
@@ -472,4 +520,95 @@ export function credentialChangeNote(from: OidcClientCredential, to: OidcClientC
   return from === "secret"
     ? "The current secret stops working when you save. The app must use PKCE."
     : "The registered keys stop working when you save. The app must use PKCE.";
+}
+
+/**
+ * Every PoliNetwork API scope in one compact table, with a column per ceiling the app uses:
+ * for the people it signs in, and as itself.
+ */
+export function ApiAccessTable({
+  api,
+  locked,
+  error,
+}: {
+  api: ClientDraftApi;
+  locked: boolean;
+  error?: string;
+}) {
+  const id = useId();
+  const { draft } = api;
+  const columns = [
+    ...(draft.signIn ? [{ list: "apiScopes" as const, label: "For people" }] : []),
+    ...(draft.serviceAccess ? [{ list: "serviceScopes" as const, label: "As itself" }] : []),
+  ];
+  if (!columns.length) return null;
+  return (
+    <div className="space-y-3">
+      {locked && (
+        <p className="text-xs leading-5 text-muted-foreground">
+          Only Master Admin can change API access.
+        </p>
+      )}
+      <table className="w-full text-sm">
+        <caption className="sr-only">PoliNetwork API scopes</caption>
+        {oidcResources.map((resource) => (
+          <tbody key={resource.id} className="border-b last:border-b-0">
+            <tr>
+              <th
+                scope="colgroup"
+                className="pt-4 pb-2 text-left text-xs font-medium text-muted-foreground first:pt-0"
+              >
+                {resource.label}
+              </th>
+              {columns.map((column) => (
+                <th
+                  key={column.list}
+                  scope="col"
+                  className="w-24 pt-4 pb-2 text-center text-xs font-medium text-muted-foreground"
+                >
+                  {column.label}
+                </th>
+              ))}
+            </tr>
+            {apiScopes
+              .filter((scope) => scope.resource === resource.id)
+              .map((scope) => (
+                <tr key={scope.id} title={scope.description} className="border-t">
+                  <th scope="row" className="py-2.5 pr-3 text-left font-normal">
+                    <span className="flex flex-wrap items-center gap-2">
+                      {scope.label}
+                      <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                        {scope.id}
+                      </code>
+                    </span>
+                  </th>
+                  {columns.map((column) => (
+                    <td key={column.list} className="py-1 text-center">
+                      <label
+                        htmlFor={`${id}-${column.list}-${scope.id}`}
+                        className={cn(
+                          "inline-flex size-10 items-center justify-center rounded-md",
+                          !locked && "cursor-pointer hover:bg-accent/50",
+                        )}
+                      >
+                        <Checkbox
+                          id={`${id}-${column.list}-${scope.id}`}
+                          checked={draft[column.list].includes(scope.id)}
+                          disabled={locked}
+                          aria-label={`${scope.label}, ${column.label.toLowerCase()}`}
+                          onCheckedChange={(value) =>
+                            api.toggleScope(column.list, scope.id, value === true)
+                          }
+                        />
+                      </label>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+          </tbody>
+        ))}
+      </table>
+      <FieldError>{error}</FieldError>
+    </div>
+  );
 }
