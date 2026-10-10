@@ -400,7 +400,7 @@ function ApplicationDetail() {
             <SettingsSection
               id="danger-zone"
               title="Danger zone"
-              className="border-destructive/60 bg-linear-to-br from-destructive/20 to-destructive/5"
+              className="border-destructive/60 bg-destructive/10 dark:bg-destructive/20"
             >
               <div className="flex flex-wrap items-center justify-between gap-4 p-6">
                 <p className="text-sm leading-6 text-muted-foreground">
