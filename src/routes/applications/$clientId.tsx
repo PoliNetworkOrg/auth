@@ -180,7 +180,8 @@ function ApplicationDetail() {
       const result = await authClient.oauth2.client.rotateSecret({ client_id: clientId });
       if (result.error) setError(result.error.message ?? "Unable to rotate the secret.");
       else {
-        await router.invalidate({ sync: true });
+        // The response is the only copy of the new secret. A failed loader refresh would
+        // replace this page and discard it before the administrator can save it.
         setRotatedSecret(result.data.client_secret ?? null);
         setNotice("Secret rotated. The previous secret no longer works.");
       }

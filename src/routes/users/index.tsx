@@ -1,4 +1,10 @@
-import { createFileRoute, Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  useNavigate,
+  useRouter,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   ChevronLeft,
@@ -184,6 +190,7 @@ function MembershipNotice({ page }: { page: UserListPage }) {
 function UsersIndex() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
+  const router = useRouter();
   const { page: data, catalog } = Route.useLoaderData();
   // Reloading this same page: a new search, filter, or page of results.
   const loading = useRouterState({
@@ -201,8 +208,17 @@ function UsersIndex() {
       replace: true,
     });
 
-  // Follow the URL when it changes from outside the box, such as the back button.
-  useEffect(() => setQuery(search.q ?? ""), [search.q]);
+  // Follow URL changes, including back/forward, when navigation starts. Waiting for the
+  // loader to finish would let an older search overwrite what has been typed since.
+  useEffect(
+    () =>
+      router.subscribe("onBeforeNavigate", ({ fromLocation, toLocation }) => {
+        const previous = userSearchSchema.parse(fromLocation?.search ?? {}).q;
+        const next = userSearchSchema.parse(toLocation.search).q;
+        if (previous !== next) setQuery(next ?? "");
+      }),
+    [router],
+  );
 
   useEffect(() => {
     const term = query.trim() || undefined;
