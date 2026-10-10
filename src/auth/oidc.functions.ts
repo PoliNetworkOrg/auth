@@ -22,6 +22,7 @@ import {
   deleteOidcClient,
   linkNewOidcClient,
   listOidcClients,
+  recheckNewOidcClientKeys,
   rotateOidcClientSecret,
   updateOidcClient,
 } from "./oidc-registry";
@@ -135,6 +136,8 @@ export const createOidcClientFn = createServerFn({ method: "POST" })
       );
     }
 
+    if (jwks && !(await recheckNewOidcClientKeys(actorId, created.client_id, jwks)))
+      throw new ActionError(409, "This public key already belongs to another client.");
     let linked = true;
     try {
       await linkNewOidcClient(actorId, created.client_id, draft.resources);

@@ -2,7 +2,7 @@ import { and, countDistinct, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import { oauthClient, oauthClientResource, oauthConsent } from "../db/schema";
 import { env } from "../env";
-import { validateClientJwks } from "./client-jwks";
+import { ClientJwksError, validateClientJwks } from "./client-jwks";
 import { issueClientSecret } from "./client-secret";
 import { MASTER_ADMIN_ROLE_KEY } from "./rbac";
 import { RbacError, withAuthorizedRbacRead, withAuthorizedRbacWrite } from "./rbac-store";
@@ -16,6 +16,7 @@ import {
   type OidcClientDraft,
   type OidcClientSummary,
   type OidcResourceKey,
+  type PublicJwks,
 } from "./oidc-clients";
 
 type ClientRow = typeof oauthClient.$inferSelect;
@@ -121,6 +122,9 @@ export async function listOidcClients(
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+const pooledClient = (clientId: string) =>
+  and(eq(oauthClient.clientId, clientId), eq(oauthClient.referenceId, OIDC_CLIENT_REFERENCE));
+
 /**
  * Makes the client's links to the configured resources match `resources`. Links to
  * identifiers this deployment does not configure are left alone.
@@ -184,6 +188,30 @@ export async function linkNewOidcClient(
   );
 }
 
+/**
+ * Rechecks a newly created client's public keys against every other client, under the RBAC
+ * write lock. The provider inserts the client outside that lock, so a key checked before the
+ * insert may have been given to another client in the meantime. Deletes the new client and
+ * returns false when its key now belongs to another one.
+ */
+export async function recheckNewOidcClientKeys(
+  actorId: string,
+  clientId: string,
+  jwks: PublicJwks,
+) {
+  return withAuthorizedRbacWrite(actorId, "idp:applications:write", async (transaction) => {
+    await transaction.execute(sql`select set_config('polinetwork.actor_id', ${actorId}, true)`);
+    try {
+      await validateClientJwks(jwks, transaction, clientId);
+      return true;
+    } catch (error) {
+      if (!(error instanceof ClientJwksError)) throw error;
+      await transaction.delete(oauthClient).where(pooledClient(clientId));
+      return false;
+    }
+  });
+}
+
 export type OidcClientPatch = {
   draft?: OidcClientDraft;
   disabled?: boolean;
@@ -219,9 +247,6 @@ async function changePooledClient<T>(
     },
   );
 }
-
-const pooledClient = (clientId: string) =>
-  and(eq(oauthClient.clientId, clientId), eq(oauthClient.referenceId, OIDC_CLIENT_REFERENCE));
 
 /**
  * Applies validated settings to a pooled client. Returns null when the client is not in the

@@ -7,14 +7,23 @@ import { rawClientMutationPaths, refusedClientMutationPaths } from "./client-end
  * existing client outside the RBAC write lock.
  */
 const reviewedClientWrites = [
-  // Server only. The form registers through it after its own Master Admin check, and a
-  // client that does not exist yet cannot be promoted in the meantime.
+  // Server only. The form registers through it after its own Master Admin check and then
+  // rechecks the new client's key under the lock; a client that does not exist yet cannot
+  // be promoted in the meantime.
   "/admin/oauth2/create-client",
-  // Server only, and `resourcePrivileges` in `index.ts` refuses link and unlink to everyone.
+  // Server only, and `resourcePrivileges` in `index.ts` refuses these writes to everyone:
+  // resource policy is seeded from config, and links are made by saving an application.
+  "/admin/oauth2/resources",
+  "/admin/oauth2/resources/:identifier",
   "/admin/oauth2/resources/:identifier/clients/:client_id",
   // A read that uses POST.
   "/oauth2/public-client-prelogin",
+  // Dynamic registration is off: `allowDynamicClientRegistration: false` in `index.ts`.
+  "/oauth2/register",
 ];
+
+/** Paths that can create, change or link a client. */
+const touchesClients = (path: string) => /client|register|resources/.test(path);
 
 const endpoints = Object.values(
   oauthProvider({ loginPage: "/", consentPage: "/consent" }).endpoints,
@@ -28,7 +37,7 @@ describe("provider client endpoints", () => {
   it("closes every other client write the provider offers", () => {
     const writes = endpoints.filter(
       (endpoint) =>
-        endpoint.path.includes("client") && endpoint.methods.some((method) => method !== "GET"),
+        touchesClients(endpoint.path) && endpoint.methods.some((method) => method !== "GET"),
     );
     expect(writes.length).toBeGreaterThan(0);
     for (const { path } of writes)
@@ -43,7 +52,7 @@ describe("provider client endpoints", () => {
     const browserWrites = endpoints.filter(
       (endpoint) =>
         !endpoint.serverOnly &&
-        endpoint.path.includes("client") &&
+        touchesClients(endpoint.path) &&
         endpoint.methods.some((method) => method !== "GET") &&
         !reviewedClientWrites.includes(endpoint.path),
     );

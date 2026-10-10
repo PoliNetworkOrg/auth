@@ -22,6 +22,10 @@ const baseURL = process.env.IDENTITY_TEST_URL;
 const databaseURL = process.env.IDENTITY_TEST_DATABASE_URL;
 const secret = process.env.IDENTITY_TEST_SECRET;
 const adminUserId = process.env.IDENTITY_TEST_ADMIN_USER_ID;
+// Names the connections of the app code these tests run in this process, which open lazily,
+// so a test can tell its own server function's session apart from any other.
+const IN_PROCESS_APP = "identity-integration-app";
+process.env.PGAPPNAME = IN_PROCESS_APP;
 
 function sessionHeaders(token: string) {
   return {
@@ -50,7 +54,10 @@ function presetDraft(id: string, overrides: Partial<OidcClientDraft>): OidcClien
 }
 
 describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration", () => {
-  const pool = new Pool({ connectionString: databaseURL });
+  const pool = new Pool({
+    connectionString: databaseURL,
+    application_name: "identity-integration-test",
+  });
   let usedInternalApi = false;
   const token = "identity-integration-session";
   const headers = sessionHeaders(token);
@@ -992,38 +999,50 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       ]);
     }
   });
+  /**
+   * Resolves once a server function running in this process is queued for the RBAC write
+   * lock in this database. Tests in a file run one at a time, so that is the call under test.
+   */
+  const inProcessLockWaiter = async () => {
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const { rows } = await pool.query(
+        `SELECT l.pid FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+         WHERE l.locktype = 'advisory' AND NOT l.granted AND l.objsubid = 2
+           AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+           AND l.classid::bigint = hashtext('polinetwork-auth')::bigint & 4294967295
+           AND l.objid::bigint = hashtext('rbac-hierarchy')::bigint & 4294967295
+           AND a.application_name = $1`,
+        [IN_PROCESS_APP],
+      );
+      if (rows.length) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error("The server function never waited for the RBAC write lock.");
+  };
+  /** Holds the RBAC write lock on a connection of its own, as a concurrent writer would. */
+  async function holdRbacLock() {
+    const holder = await pool.connect();
+    await holder.query("BEGIN");
+    await holder.query(
+      `SELECT pg_advisory_xact_lock(hashtext('polinetwork-auth'), hashtext('rbac-hierarchy'))`,
+    );
+    if (adminUserId)
+      await holder.query(`SELECT set_config('polinetwork.actor_id', $1, true)`, [adminUserId]);
+    return holder;
+  }
   it("serializes a writer's rotation or deletion behind a concurrent promotion", async () => {
     const { rotateOidcClientSecretFn } = await import("./oidc.functions");
     const original = createHash("sha256").update("integration-original-secret").digest("base64url");
-    /** Resolves once another session is queued for the RBAC write lock. */
-    const lockWaiter = async () => {
-      for (let attempt = 0; attempt < 200; attempt++) {
-        const { rows } = await pool.query(
-          `SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`,
-        );
-        if (rows.length) return;
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      throw new Error("The writer never waited for the RBAC write lock.");
-    };
     for (const action of ["rotate", "delete"] as const) {
       const clientId = `integration-race-${action}`;
       await insertSecretClient(clientId);
       // Stands in for Master Admin's promotion: it holds the lock that every RBAC and client
       // write takes, grants the client API access, and commits only after the writer has
       // passed every check it can make without the lock.
-      const promotion = await pool.connect();
+      const promotion = await holdRbacLock();
       try {
-        await promotion.query("BEGIN");
-        await promotion.query(
-          `SELECT pg_advisory_xact_lock(hashtext('polinetwork-auth'), hashtext('rbac-hierarchy'))`,
-        );
-        if (adminUserId)
-          await promotion.query(`SELECT set_config('polinetwork.actor_id', $1, true)`, [
-            adminUserId,
-          ]);
         const writer = clientAction("application-writer-session", action, clientId);
-        await lockWaiter();
+        await inProcessLockWaiter();
         await promotion.query(
           `UPDATE oauth_client SET grant_types = ARRAY['authorization_code', 'client_credentials']
            WHERE client_id = $1`,
@@ -1044,14 +1063,10 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     // Without a promotion the queued rotation goes ahead once the lock is free.
     const clientId = "integration-race-unpromoted";
     await insertSecretClient(clientId);
-    const holder = await pool.connect();
+    const holder = await holdRbacLock();
     try {
-      await holder.query("BEGIN");
-      await holder.query(
-        `SELECT pg_advisory_xact_lock(hashtext('polinetwork-auth'), hashtext('rbac-hierarchy'))`,
-      );
       const writer = callAs("application-writer-session", rotateOidcClientSecretFn, { clientId });
-      await lockWaiter();
+      await inProcessLockWaiter();
       expect(await storedSecret(clientId)).toBe(original);
       await holder.query("COMMIT");
       const result = await writer;
@@ -1063,6 +1078,38 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       await holder.query("ROLLBACK").catch(() => {});
       holder.release();
       await pool.query(`DELETE FROM oauth_client WHERE client_id = $1`, [clientId]);
+    }
+  });
+  it("refuses a new client whose key another client took while it was being created", async () => {
+    const { createOidcClientFn } = await import("./oidc.functions");
+    const pair = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
+    const jwks = JSON.stringify({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: "raced" }] });
+    await insertSecretClient("integration-key-holder");
+    // The creation checks the key, then the provider inserts outside the RBAC lock. A locked
+    // save gives the same key to another client before the creation's own recheck runs.
+    const holder = await holdRbacLock();
+    try {
+      const creation = callAs("application-writer-session", createOidcClientFn, {
+        draft: clientDraft({ name: "Raced key app", credential: "private-key", jwks }),
+      });
+      await inProcessLockWaiter();
+      await holder.query(
+        `UPDATE oauth_client SET token_endpoint_auth_method = 'private_key_jwt',
+                                 client_secret = NULL, jwks = $2
+         WHERE client_id = $1`,
+        ["integration-key-holder", JSON.stringify(JSON.parse(jwks))],
+      );
+      await holder.query("COMMIT");
+      expect((await creation).status).toBe(409);
+      expect(
+        (await pool.query(`SELECT id FROM oauth_client WHERE name = 'Raced key app'`)).rows,
+      ).toHaveLength(0);
+    } finally {
+      await holder.query("ROLLBACK").catch(() => {});
+      holder.release();
+      await pool.query(
+        `DELETE FROM oauth_client WHERE client_id = 'integration-key-holder' OR name = 'Raced key app'`,
+      );
     }
   });
   it("does not expose server-only resource administration over HTTP", async () => {
