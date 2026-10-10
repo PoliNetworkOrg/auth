@@ -5,17 +5,8 @@ import {
   useNavigate,
   useRouter,
 } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import {
-  ArrowLeft,
-  Clock,
-  KeyRound,
-  LoaderCircle,
-  RefreshCw,
-  Trash2,
-  TriangleAlert,
-  Users,
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, Clock, LoaderCircle, RefreshCw, Trash2, Users } from "lucide-react";
 import {
   credentialLabels,
   draftFromClient,
@@ -33,11 +24,15 @@ import {
 import { requireAccess, useAccess } from "@/components/access";
 import { CopyButton } from "@/components/copy-button";
 import { AppLogo } from "@/components/oidc/app-logo";
-import { ClientForm } from "@/components/oidc/client-form";
+import {
+  ApplicationSettingsForm,
+  SettingsSection,
+} from "@/components/oidc/application-settings-form";
+import { SwitchRow } from "@/components/oidc/form-fields";
+import { SectionNav } from "@/components/oidc/section-nav";
 import { CredentialField, CredentialsReveal } from "@/components/oidc/secret-reveal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -48,7 +43,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { RouteError } from "@/components/route-error";
 import { ActionError, errorFields, errorMessage } from "@/lib/action-error";
 
@@ -81,36 +75,9 @@ function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" }) : "Unknown";
 }
 
-function ToggleRow({
-  id,
-  title,
-  description,
-  checked,
-  disabled,
-  onCheckedChange,
-}: {
-  id: string;
-  title: string;
-  description: string;
-  checked: boolean;
-  disabled: boolean;
-  onCheckedChange: (checked: boolean) => void;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 py-4 first:pt-0 last:pb-0">
-      <div className="min-w-0">
-        <Label htmlFor={id} className="cursor-pointer">
-          {title}
-        </Label>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
-      </div>
-      <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
-    </div>
-  );
-}
-
 function ApplicationDetail() {
   const { clientId } = Route.useParams();
+  const sectionsRef = useRef<HTMLDivElement>(null);
   const { client, apiAccess } = Route.useLoaderData();
   const navigate = useNavigate();
   const router = useRouter();
@@ -267,6 +234,18 @@ function ApplicationDetail() {
                 {client.uri}
               </a>
             )}
+            <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <Users className="size-3.5" aria-hidden="true" />
+                {client.authorizedUsers} {client.authorizedUsers === 1 ? "person" : "people"}{" "}
+                authorized
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Clock className="size-3.5" aria-hidden="true" />
+                Created {formatDate(client.createdAt)}
+              </span>
+              <span>Updated {formatDate(client.updatedAt)}</span>
+            </p>
           </div>
         </div>
       </div>
@@ -287,81 +266,11 @@ function ApplicationDetail() {
         )}
       </div>
 
-      <div className="grid items-start gap-8 lg:grid-cols-[1fr_340px]">
-        <div className="space-y-8">
-          <Card>
-            <CardHeader>
-              <CardTitle>Settings</CardTitle>
-              <CardDescription>
-                {client.restricted && !isMasterAdmin
-                  ? "This application has API access, so only Master Admin can change it."
-                  : "Changes apply to the next sign-in or token request. Redirect URIs must match your app exactly."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <fieldset disabled={!canManage} className="border-0 p-0">
-                <ClientForm
-                  mode="edit"
-                  initial={draftFromClient(client)}
-                  savedCredential={client.credential}
-                  apiAccess={apiAccess}
-                  canGrantApiAccess={isMasterAdmin}
-                  readOnly={!canManage}
-                  busy={busy === "save"}
-                  resetKey={formResetKey}
-                  serverErrors={fieldErrors}
-                  submitLabel="Save changes"
-                  onSubmit={(draft) => void save(draft)}
-                />
-              </fieldset>
-            </CardContent>
-          </Card>
-
-          {canManage && (
-            <Card className="border-destructive/40">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-destructive">
-                  <TriangleAlert className="size-4" aria-hidden="true" />
-                  Danger zone
-                </CardTitle>
-                <CardDescription>
-                  Deleting removes the client, every consent, and all of its tokens. People who used
-                  it will have to be set up again in a new application.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-wrap items-center justify-between gap-4">
-                <p className="text-sm">
-                  Prefer a pause? Disable the application instead; it can be re-enabled anytime.
-                </p>
-                <Button
-                  variant="destructive"
-                  disabled={busy !== null}
-                  onClick={() => setDeleteOpen(true)}
-                >
-                  <Trash2 aria-hidden="true" />
-                  Delete application
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-
-        <aside className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <KeyRound className="size-4 text-primary" aria-hidden="true" />
-                Credentials
-              </CardTitle>
-              <CardDescription>
-                {client.credential === "private-key"
-                  ? "The client signs assertions with its own private key. Only its public JWKS is stored here."
-                  : client.credential === "secret"
-                    ? "The client authenticates to the token endpoint with its ID and secret."
-                    : "Public client: no secret. The app must use PKCE."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+      <div ref={sectionsRef} className="grid items-start gap-10 lg:grid-cols-[160px_1fr]">
+        <SectionNav container={sectionsRef} />
+        <div className="min-w-0 space-y-10">
+          <SettingsSection id="credentials" title="Credentials">
+            <div className="space-y-4 p-6">
               {rotatedSecret ? (
                 <CredentialsReveal
                   clientId={client.clientId}
@@ -403,79 +312,86 @@ function ApplicationDetail() {
                     )}
                   </div>
                   <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                    Secrets are stored hashed and cannot be shown again. Rotating issues a new one
-                    and immediately revokes the current one.
+                    Stored hashed, so it can't be shown again. Rotating issues a new one and revokes
+                    the current one immediately.
                   </p>
                 </div>
+              )}
+              {client.credential === "public" && (
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Public client: no secret. The app must use PKCE.
+                </p>
               )}
               {rotatedSecret && (
                 <Button variant="ghost" size="sm" onClick={() => setRotatedSecret(null)}>
                   I've saved it
                 </Button>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </SettingsSection>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Access</CardTitle>
-              <CardDescription>Control whether this client can request tokens.</CardDescription>
-            </CardHeader>
-            <CardContent className="divide-y">
-              <ToggleRow
-                id="client-enabled"
-                title="Enabled"
-                description={
-                  client.disabled
-                    ? "Sign-ins are paused. Existing tokens expire within minutes."
-                    : signsIn
-                      ? "People can sign in through this application."
-                      : "The application can request tokens."
-                }
-                checked={!client.disabled}
-                disabled={!canManage || busy !== null}
-                onCheckedChange={(checked) => void toggle({ disabled: !checked })}
-              />
-              {signsIn && (
-                <ToggleRow
-                  id="client-skip-consent"
-                  title="Skip consent screen"
-                  description="For first-party PoliNetwork apps only. People are signed in without reviewing the requested permissions."
-                  checked={client.skipConsent}
+          <SettingsSection id="status" title="Status">
+            <div className="divide-y">
+              <div className="px-6 py-5">
+                <SwitchRow
+                  title="Enabled"
+                  description={
+                    client.disabled
+                      ? "Sign-ins are paused. Existing tokens expire within minutes."
+                      : signsIn
+                        ? "People can sign in through this application."
+                        : "The application can request tokens."
+                  }
+                  checked={!client.disabled}
                   disabled={!canManage || busy !== null}
-                  onCheckedChange={(checked) => void toggle({ skipConsent: checked })}
+                  onCheckedChange={(checked) => void toggle({ disabled: !checked })}
                 />
+              </div>
+              {signsIn && (
+                <div className="px-6 py-5">
+                  <SwitchRow
+                    title="Skip consent screen"
+                    description="For first-party PoliNetwork apps only. People are signed in without reviewing the requested permissions."
+                    checked={client.skipConsent}
+                    disabled={!canManage || busy !== null}
+                    onCheckedChange={(checked) => void toggle({ skipConsent: checked })}
+                  />
+                </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </SettingsSection>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Usage</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <dl className="space-y-3 text-sm">
-                <div className="flex items-center gap-3">
-                  <Users className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <dt className="text-muted-foreground">Authorized</dt>
-                  <dd className="ml-auto font-medium">
-                    {client.authorizedUsers} {client.authorizedUsers === 1 ? "person" : "people"}
-                  </dd>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Clock className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <dt className="text-muted-foreground">Created</dt>
-                  <dd className="ml-auto font-medium">{formatDate(client.createdAt)}</dd>
-                </div>
-                <div className="flex items-center gap-3">
-                  <RefreshCw className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <dt className="text-muted-foreground">Updated</dt>
-                  <dd className="ml-auto font-medium">{formatDate(client.updatedAt)}</dd>
-                </div>
-              </dl>
-            </CardContent>
-          </Card>
-        </aside>
+          <ApplicationSettingsForm
+            initial={draftFromClient(client)}
+            savedCredential={client.credential}
+            apiAccess={apiAccess}
+            canGrantApiAccess={isMasterAdmin}
+            readOnly={!canManage}
+            busy={busy === "save"}
+            resetKey={formResetKey}
+            serverErrors={fieldErrors}
+            onSubmit={(draft) => void save(draft)}
+          />
+
+          {canManage && (
+            <SettingsSection id="danger-zone" title="Danger zone" className="border-destructive/40">
+              <div className="flex flex-wrap items-center justify-between gap-4 p-6">
+                <p className="max-w-md text-sm leading-6 text-muted-foreground">
+                  Deleting removes the client, every consent, and all of its tokens. To pause it
+                  instead, turn off Enabled in Status.
+                </p>
+                <Button
+                  variant="destructive"
+                  disabled={busy !== null}
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash2 aria-hidden="true" />
+                  Delete application
+                </Button>
+              </div>
+            </SettingsSection>
+          )}
+        </div>
       </div>
 
       <Dialog open={rotateOpen} onOpenChange={(open) => busy === null && setRotateOpen(open)}>

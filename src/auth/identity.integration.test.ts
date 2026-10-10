@@ -2,7 +2,7 @@ import { createHash, createHmac } from "node:crypto";
 import { exportJWK, generateKeyPair } from "jose";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
-import { CLIENT_PRESETS } from "./client-presets";
+import { PHASE1_CLIENTS, type Phase1Client } from "./phase1-clients.fixture";
 import { AUTH_COOKIE_PREFIX } from "./cookies";
 import { emptyClientDraft, type OidcClientDraft } from "./oidc-clients";
 import type { ServerFnCall } from "./server-fn-harness";
@@ -48,8 +48,8 @@ function clientDraft(overrides: Partial<OidcClientDraft>): OidcClientDraft {
   };
 }
 
-function presetDraft(id: string, overrides: Partial<OidcClientDraft>): OidcClientDraft {
-  const preset = CLIENT_PRESETS.find((candidate) => candidate.id === id)!;
+function phase1Draft(id: Phase1Client["id"], overrides: Partial<OidcClientDraft>): OidcClientDraft {
+  const preset = PHASE1_CLIENTS.find((candidate) => candidate.id === id)!;
   return clientDraft({ ...preset.draft, ...overrides });
 }
 
@@ -580,7 +580,7 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
         await import("./oidc.functions");
       const pair = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
       const jwks = { keys: [{ ...(await exportJWK(pair.publicKey)), kid: "integration-service" }] };
-      const backend = presetDraft("backend", { jwks: JSON.stringify(jwks) });
+      const backend = phase1Draft("backend", { jwks: JSON.stringify(jwks) });
       const register = (token: string) => callAs(token, createOidcClientFn, { draft: backend });
       expect((await register("application-writer-session")).status).toBe(403);
       const response = await register("integration-master-session");
@@ -660,7 +660,7 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     },
   );
   it.skipIf(!adminUserId || !process.env.OAUTH_BACKEND_RESOURCE_URI)(
-    "applies the three backend-client presets with separate keys and resource links",
+    "registers the three backend clients with separate keys and resource links",
     async () => {
       const { createOidcClientFn } = await import("./oidc.functions");
       for (const [kind, expectedScopes, expectedGrants] of [
@@ -678,7 +678,7 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       ] as const) {
         const pair = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
         const response = await callAs("integration-master-session", createOidcClientFn, {
-          draft: presetDraft(kind, {
+          draft: phase1Draft(kind, {
             jwks: JSON.stringify({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: kind }] }),
             redirectUris: ["https://dashboard.example.invalid/callback"],
           }),

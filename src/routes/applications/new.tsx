@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, CircleCheck, TriangleAlert } from "lucide-react";
-import { CLIENT_PRESETS } from "@/auth/client-presets";
 import {
   emptyClientDraft,
   normalizeClientDraft,
@@ -9,11 +8,10 @@ import {
   type OidcClientDraftErrors,
 } from "@/auth/oidc-clients";
 import { createOidcClientFn, getOidcClientOptions } from "@/auth/oidc.functions";
-import { ClientForm } from "@/components/oidc/client-form";
+import { NewApplicationWizard } from "@/components/oidc/new-application-wizard";
 import { CredentialsReveal } from "@/components/oidc/secret-reveal";
 import { requireAccess, useAccess } from "@/components/access";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { errorFields, errorMessage } from "@/lib/action-error";
 
 export const Route = createFileRoute("/applications/new")({
@@ -36,21 +34,11 @@ function NewApplication() {
   const router = useRouter();
   const { apiAccess } = Route.useLoaderData();
   const { isMasterAdmin } = useAccess();
-  const [initial, setInitial] = useState(emptyClientDraft);
-  const [presetId, setPresetId] = useState<string | null>(null);
-  const [formResetKey, setFormResetKey] = useState(0);
+  const [initial] = useState(emptyClientDraft);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<OidcClientDraftErrors | undefined>();
   const [created, setCreated] = useState<Created | null>(null);
-
-  function applyPreset(id: string | null) {
-    const preset = CLIENT_PRESETS.find((candidate) => candidate.id === id);
-    setPresetId(preset ? preset.id : null);
-    setInitial({ ...emptyClientDraft(), ...preset?.draft });
-    setFormResetKey((value) => value + 1);
-    setFieldErrors(undefined);
-  }
 
   async function create(input: OidcClientDraft) {
     const draft = normalizeClientDraft(input);
@@ -130,7 +118,7 @@ function NewApplication() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
+    <div className="mx-auto max-w-5xl space-y-8">
       <div>
         <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" asChild>
           <Link to="/applications">
@@ -144,34 +132,6 @@ function NewApplication() {
           APIs. Credentials appear once you save.
         </p>
       </div>
-      {apiAccess && isMasterAdmin && (
-        <section aria-labelledby="presets" className="space-y-3">
-          <div>
-            <h2 id="presets" className="text-sm font-semibold">
-              Start from a preset
-            </h2>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              Fills in the reviewed settings for a PoliNetwork service. You can still change
-              anything.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {CLIENT_PRESETS.map((preset) => (
-              <Button
-                key={preset.id}
-                type="button"
-                size="sm"
-                variant={presetId === preset.id ? "default" : "outline"}
-                aria-pressed={presetId === preset.id}
-                title={preset.description}
-                onClick={() => applyPreset(presetId === preset.id ? null : preset.id)}
-              >
-                {preset.name}
-              </Button>
-            ))}
-          </div>
-        </section>
-      )}
       {error && (
         <p
           role="alert"
@@ -180,22 +140,15 @@ function NewApplication() {
           {error}
         </p>
       )}
-      <Card>
-        <CardContent className="pt-6">
-          <ClientForm
-            mode="create"
-            initial={initial}
-            apiAccess={apiAccess}
-            canGrantApiAccess={isMasterAdmin}
-            busy={busy}
-            resetKey={formResetKey}
-            serverErrors={fieldErrors}
-            submitLabel="Create application"
-            onSubmit={(draft) => void create(draft)}
-            onCancel={() => void navigate({ to: "/applications" })}
-          />
-        </CardContent>
-      </Card>
+      <NewApplicationWizard
+        initial={initial}
+        apiAccess={apiAccess}
+        canGrantApiAccess={isMasterAdmin}
+        busy={busy}
+        serverErrors={fieldErrors}
+        onSubmit={(draft) => void create(draft)}
+        onCancel={() => void navigate({ to: "/applications" })}
+      />
     </div>
   );
 }
