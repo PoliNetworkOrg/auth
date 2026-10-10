@@ -24,6 +24,7 @@ import {
 import { requireAccess, useAccess } from "@/components/access";
 import { CopyButton } from "@/components/copy-button";
 import { AppLogo } from "@/components/oidc/app-logo";
+import { EndpointDetails } from "@/components/oidc/endpoint-details";
 import {
   ApplicationSettingsForm,
   SettingsSection,
@@ -327,6 +328,7 @@ function ApplicationDetail() {
                   I've saved it
                 </Button>
               )}
+              <EndpointDetails client={client} />
             </div>
           </SettingsSection>
 

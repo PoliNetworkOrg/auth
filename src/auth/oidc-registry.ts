@@ -1,4 +1,4 @@
-import { and, countDistinct, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, countDistinct, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import { oauthClient, oauthClientResource, oauthConsent } from "../db/schema";
 import { env } from "../env";
@@ -74,7 +74,10 @@ function toSummary(
   };
 }
 
-/** Clients in the shared PoliNetwork pool, newest first, with how many people authorized each. */
+// Case- and accent-insensitive, so "polinet.cc" sits among the P's rather than after "Z".
+const byName = new Intl.Collator("en", { sensitivity: "base", numeric: true });
+
+/** Clients in the shared PoliNetwork pool, by name, with how many people authorized each. */
 async function readOidcClients(
   reader: Pick<typeof db, "select">,
   clientId?: string,
@@ -82,11 +85,7 @@ async function readOidcClients(
   const filter = clientId
     ? and(eq(oauthClient.referenceId, OIDC_CLIENT_REFERENCE), eq(oauthClient.clientId, clientId))
     : eq(oauthClient.referenceId, OIDC_CLIENT_REFERENCE);
-  const rows = await reader
-    .select()
-    .from(oauthClient)
-    .where(filter)
-    .orderBy(desc(oauthClient.createdAt));
+  const rows = await reader.select().from(oauthClient).where(filter);
   const consents = await reader
     .select({ clientId: oauthConsent.clientId, users: countDistinct(oauthConsent.userId) })
     .from(oauthConsent)
@@ -101,13 +100,15 @@ async function readOidcClients(
     resources.push(link.resourceId);
     resourcesByClient.set(link.clientId, resources);
   }
-  return rows.map((row) =>
-    toSummary(
-      row,
-      usersByClient.get(row.clientId) ?? 0,
-      resourcesByClient.get(row.clientId)?.sort() ?? [],
-    ),
-  );
+  return rows
+    .map((row) =>
+      toSummary(
+        row,
+        usersByClient.get(row.clientId) ?? 0,
+        resourcesByClient.get(row.clientId)?.sort() ?? [],
+      ),
+    )
+    .sort((a, b) => byName.compare(a.name, b.name) || a.clientId.localeCompare(b.clientId));
 }
 
 export async function listOidcClients(
