@@ -286,11 +286,7 @@ function ApplicationsIndex() {
                           ? "text-emerald-600 dark:text-emerald-400"
                           : "text-muted-foreground/40"
                       }
-                    >
-                      <span className="font-semibold" aria-hidden="true">
-                        {client.restricted ? "ON" : "OFF"}
-                      </span>
-                    </Capability>
+                    />
                   </div>
                 </li>
               );
