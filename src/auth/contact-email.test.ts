@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { contactEmail } from "./contact-email";
+import { contactEmail, directoryEmail } from "./contact-email";
 
 const placeholder = "pn-entra.subject@identity.invalid";
 const token = (claims: Record<string, unknown>) =>
@@ -24,5 +24,12 @@ describe("contact email", () => {
         { providerId: "telegram", idToken: null, email: "someone@example.com" },
       ]),
     ).toBeUndefined();
+  });
+
+  it("shows the PoliNetwork address in the directory, then the stored one", () => {
+    const pn = { providerId: "pn-entra", idToken: null, email: "alex@polinetwork.org" };
+    expect(directoryEmail("alex@gmail.com", [pn])).toBe("alex@polinetwork.org");
+    expect(contactEmail("alex@gmail.com", [pn])).toBe("alex@gmail.com");
+    expect(directoryEmail("alex@gmail.com", [])).toBe("alex@gmail.com");
   });
 });
