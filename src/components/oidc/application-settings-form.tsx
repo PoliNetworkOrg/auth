@@ -248,6 +248,14 @@ export function ApplicationSettingsForm({
               onChange={(value) => update("logo", value)}
             />
             <TextField
+              label="Dark mode logo URL"
+              hint="Optional. Shown on dark backgrounds instead of the logo."
+              placeholder="https://app.polinetwork.org/logo-dark.png"
+              value={draft.logoDark}
+              error={errors.logoDark}
+              onChange={(value) => update("logoDark", value)}
+            />
+            <TextField
               label="Homepage URL"
               placeholder="https://app.polinetwork.org"
               value={draft.uri}

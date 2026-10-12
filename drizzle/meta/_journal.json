@@ -134,6 +134,13 @@
       "when": 1791674187685,
       "tag": "0018_identity_evidence_telegram_username",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791823091127,
+      "tag": "0019_oauth_client_icon_dark",
+      "breakpoints": true
     }
   ]
 }

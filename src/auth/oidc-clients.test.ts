@@ -84,12 +84,14 @@ describe("client draft validation", () => {
         redirectUris: ["https://a.b/cb"],
         uri: "http://insecure.example",
         logo: "not a url",
+        logoDark: "http://insecure.example/dark.png",
         contacts: ["team@polinetwork.org", "nope"],
       },
       withoutApi,
     );
     expect(errors.uri).toMatch(/https/);
     expect(errors.logo).toBeDefined();
+    expect(errors.logoDark).toMatch(/https/);
     expect(errors.contactItems).toEqual([null, expect.any(String)]);
   });
 
@@ -283,6 +285,7 @@ describe("editing a registered client", () => {
     name: "Telegram Bot",
     uri: null,
     logo: null,
+    logoDark: null,
     redirectUris: [],
     postLogoutRedirectUris: [],
     contacts: [],

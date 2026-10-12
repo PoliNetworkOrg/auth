@@ -23,6 +23,7 @@ import {
   linkNewOidcClient,
   listOidcClients,
   recheckNewOidcClientKeys,
+  setNewOidcClientDarkLogo,
   rotateOidcClientSecret,
   updateOidcClient,
 } from "./oidc-registry";
@@ -53,6 +54,7 @@ const draftSchema = z.object({
   name: z.string(),
   uri: z.string(),
   logo: z.string(),
+  logoDark: z.string(),
   redirectUris: z.array(z.string()).max(50),
   postLogoutRedirectUris: z.array(z.string()).max(50),
   contacts: z.array(z.string()).max(20),
@@ -138,6 +140,7 @@ export const createOidcClientFn = createServerFn({ method: "POST" })
 
     if (jwks && !(await recheckNewOidcClientKeys(actorId, created.client_id)))
       throw new ActionError(409, "This public key already belongs to another client.");
+    await setNewOidcClientDarkLogo(actorId, created.client_id, draft.logoDark);
     let linked = true;
     try {
       await linkNewOidcClient(actorId, created.client_id, draft.resources);

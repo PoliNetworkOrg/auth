@@ -218,6 +218,7 @@ function ApplicationsIndex() {
                     <AppLogo
                       name={client.name}
                       logo={client.logo}
+                      logoDark={client.logoDark}
                       bare
                       className={cn("size-14 text-base", client.disabled && "opacity-50 grayscale")}
                     />

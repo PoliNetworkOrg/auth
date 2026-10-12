@@ -229,6 +229,7 @@ function ApplicationDetail() {
           <AppLogo
             name={client.name}
             logo={client.logo}
+            logoDark={client.logoDark}
             className={`size-16 text-lg ${client.disabled ? "opacity-50 grayscale" : ""}`}
           />
           <div className="min-w-0 flex-1 basis-64">
