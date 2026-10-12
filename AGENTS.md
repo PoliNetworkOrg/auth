@@ -12,6 +12,10 @@ Before editing files for a substantial task:
 
 <!-- intent-skills:end -->
 
+## Commits and Pull Requests
+
+Commit messages and PR titles use Conventional Commits: `type(scope): summary`, e.g. `feat(auth): …` or `fix(account): …`, with `!` after the scope for breaking changes. A squash merge turns the PR title into the commit on `main`.
+
 <!--VITE PLUS START-->
 
 # Using Vite+, the Unified Toolchain for the Web
