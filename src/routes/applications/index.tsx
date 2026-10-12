@@ -41,11 +41,13 @@ function Capability({
   icon: Icon,
   available = true,
   label,
+  className,
   children,
 }: {
   icon: LucideIcon;
   available?: boolean;
   label: string;
+  className?: string;
   children?: ReactNode;
 }) {
   return (
@@ -56,6 +58,7 @@ function Capability({
           className={cn(
             "relative z-10 flex items-center gap-1.5",
             !available && "text-muted-foreground/40",
+            className,
           )}
         >
           <span className="relative">
@@ -258,7 +261,7 @@ function ApplicationsIndex() {
                       </Badge>
                     )}
                   </div>
-                  <div className="mt-auto flex items-center gap-4 border-t pt-4 text-xs text-muted-foreground">
+                  <div className="mt-auto flex items-center justify-between gap-4 border-t pt-4 text-xs text-muted-foreground">
                     <Capability
                       icon={Users}
                       available={signsIn}
@@ -274,7 +277,19 @@ function ApplicationsIndex() {
                         </span>
                       )}
                     </Capability>
-                    {client.restricted && <Capability icon={Lambda} label="API access" />}
+                    <Capability
+                      icon={Lambda}
+                      label={client.restricted ? "API access" : "No API access"}
+                      className={
+                        client.restricted
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-muted-foreground/40"
+                      }
+                    >
+                      <span className="font-semibold" aria-hidden="true">
+                        {client.restricted ? "ON" : "OFF"}
+                      </span>
+                    </Capability>
                   </div>
                 </li>
               );
