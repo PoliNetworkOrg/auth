@@ -68,7 +68,10 @@ export function SignInIcons({ held }: { held: (trait: UserTrait) => boolean }) {
           <li
             key={trait.key}
             title={has ? trait.description : `No ${trait.label.toLowerCase()}`}
-            className={cn("flex", has ? "text-foreground" : "text-muted-foreground/30 grayscale")}
+            className={cn(
+              "flex",
+              has ? "text-foreground" : "text-muted-foreground opacity-30 grayscale",
+            )}
           >
             <Icon className="size-4" aria-hidden="true" />
             <span className="sr-only">
