@@ -43,7 +43,7 @@
     "dotenv-cli": "^11.0.0",
     "drizzle-orm": "^0.45.1",
     "jose": "^6.2.12",
-    "lucide-react": "^0.577.0",
+    "lucide-react": "^1.55.0",
     "nitro": "3.0.260610-beta",
     "pg": "^8.16.3",
     "radix-ui": "^1.6.7",
