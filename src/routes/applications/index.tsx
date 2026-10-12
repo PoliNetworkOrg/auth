@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { z } from "zod";
-import { AppWindow, ChevronRight, ExternalLink, Plus, Users } from "lucide-react";
-import { credentialLabels, type OidcClientSummary } from "@/auth/oidc-clients";
+import type { ReactNode } from "react";
+import { cn } from "cn";
+import { AppWindow, Braces, ExternalLink, Plus, Users, type LucideIcon } from "lucide-react";
+import { type OidcClientSummary } from "@/auth/oidc-clients";
 import { getOidcClients } from "@/auth/oidc.functions";
 import { accessOf, useAccess } from "@/components/access";
 import { AppLogo } from "@/components/oidc/app-logo";
@@ -33,19 +35,46 @@ export const Route = createFileRoute("/applications/")({
   component: ApplicationsIndex,
 });
 
-function ClientBadges({ client }: { client: OidcClientSummary }) {
+/** A footer capability: the icon when the app has it, struck through and dimmed when it doesn't. */
+function Capability({
+  icon: Icon,
+  available,
+  label,
+  children,
+}: {
+  icon: LucideIcon;
+  available: boolean;
+  label: string;
+  children?: ReactNode;
+}) {
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {client.disabled && (
-        <Badge className="border-destructive/40 bg-destructive/5 text-destructive">Disabled</Badge>
+    // Sits above the card's stretched link so its tooltip shows on hover.
+    <span
+      title={label}
+      className={cn(
+        "relative z-10 flex items-center gap-1.5",
+        !available && "text-muted-foreground/40",
       )}
-      <Badge className="bg-card text-muted-foreground">{credentialLabels[client.credential]}</Badge>
-      {client.applicationType === "native" && (
-        <Badge className="bg-card text-muted-foreground">Native</Badge>
-      )}
-      {client.restricted && <Badge className="bg-card text-muted-foreground">API access</Badge>}
-      {client.skipConsent && <Badge className="bg-card text-muted-foreground">Skips consent</Badge>}
-    </div>
+    >
+      <span className="relative">
+        <Icon className="size-4" aria-hidden="true" />
+        {!available && (
+          // The wider card-coloured stroke cuts a gap in the icon around the slash.
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            strokeLinecap="round"
+            className="absolute inset-0 size-4"
+            aria-hidden="true"
+          >
+            <path d="m3 3 18 18" strokeWidth="5" className="stroke-card" />
+            <path d="m3 3 18 18" strokeWidth="2" stroke="currentColor" />
+          </svg>
+        )}
+      </span>
+      <span className="sr-only">{label}</span>
+      {children}
+    </span>
   );
 }
 
@@ -56,7 +85,7 @@ function KindFilter({ clients }: { clients: OidcClientSummary[] }) {
     <div
       role="group"
       aria-label="Application kind"
-      className="flex w-fit rounded-lg border bg-card p-1"
+      className="flex w-fit gap-1 rounded-lg border bg-card p-1"
     >
       {KINDS.map((option) => (
         <Button
@@ -165,70 +194,87 @@ function ApplicationsIndex() {
             </CardContent>
           </Card>
         ) : (
-          <Card>
-            <ul className="divide-y" aria-label="Applications">
-              {shown.map((client) => (
+          <ul
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            aria-label="Applications"
+          >
+            {shown.map((client) => {
+              // Apps that only call APIs as themselves have no one to count.
+              const signsIn = client.grantTypes.includes("authorization_code");
+              return (
                 <li
                   key={client.clientId}
-                  className="relative flex items-center gap-4 px-5 py-4 transition-colors hover:bg-accent/50 has-[a[data-row-link]:focus-visible]:bg-accent/50"
+                  className="relative flex flex-col rounded-2xl border bg-card p-5 transition-colors hover:border-foreground/25 has-[a[data-card-link]:focus-visible]:border-ring"
                 >
-                  <AppLogo
-                    name={client.name}
-                    logo={client.logo}
-                    className={client.disabled ? "opacity-50 grayscale" : undefined}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <h2 className="truncate text-sm font-semibold">
-                        <Link
-                          to="/applications/$clientId"
-                          params={{ clientId: client.clientId }}
-                          data-row-link
-                          className="outline-none after:absolute after:inset-0"
-                        >
-                          {client.name}
-                        </Link>
-                      </h2>
-                      <ClientBadges client={client} />
-                    </div>
-                  </div>
-                  {/* Apps that only call APIs as themselves have no one to count. */}
-                  {client.grantTypes.includes("authorization_code") && (
-                    <div className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
-                      <Users className="size-3.5" aria-hidden="true" />
-                      <span>
-                        {client.authorizedUsers}{" "}
-                        {client.authorizedUsers === 1 ? "person" : "people"}
-                      </span>
-                    </div>
-                  )}
-                  {client.uri && (
-                    // Sits above the row's stretched link so it opens the app, not its settings.
-                    <Button
-                      asChild
-                      variant="ghost"
-                      size="icon-sm"
-                      className="relative z-10 text-muted-foreground"
-                    >
-                      <a
-                        href={client.uri}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={`Open ${client.name}`}
-                        aria-label={`Open ${client.name}`}
+                  <div className="flex items-start justify-between gap-2">
+                    <AppLogo
+                      name={client.name}
+                      logo={client.logo}
+                      className={client.disabled ? "opacity-50 grayscale" : undefined}
+                    />
+                    {client.uri && (
+                      // Sits above the card's stretched link so it opens the app, not its settings.
+                      <Button
+                        asChild
+                        variant="ghost"
+                        size="icon-sm"
+                        className="relative z-10 -mt-1 -mr-1 text-muted-foreground"
                       >
-                        <ExternalLink aria-hidden="true" />
-                      </a>
-                    </Button>
-                  )}
-                  <ChevronRight
-                    className="size-4 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                  />
+                        <a
+                          href={client.uri}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={`Open ${client.name}`}
+                          aria-label={`Open ${client.name}`}
+                        >
+                          <ExternalLink aria-hidden="true" />
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                  <div className="mt-4 mb-5 flex min-w-0 items-center gap-2">
+                    <h2 className="truncate text-sm font-semibold">
+                      <Link
+                        to="/applications/$clientId"
+                        params={{ clientId: client.clientId }}
+                        data-card-link
+                        className="outline-none after:absolute after:inset-0 after:rounded-2xl"
+                      >
+                        {client.name}
+                      </Link>
+                    </h2>
+                    {client.disabled && (
+                      <Badge className="border-destructive/40 bg-destructive/5 text-destructive">
+                        Disabled
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="mt-auto flex items-center gap-4 border-t pt-4 text-xs text-muted-foreground">
+                    <Capability
+                      icon={Users}
+                      available={signsIn}
+                      label={
+                        signsIn
+                          ? `${client.authorizedUsers} ${client.authorizedUsers === 1 ? "person" : "people"} authorized`
+                          : "Doesn't sign people in"
+                      }
+                    >
+                      {signsIn && (
+                        <span className="tabular-nums" aria-hidden="true">
+                          {client.authorizedUsers}
+                        </span>
+                      )}
+                    </Capability>
+                    <Capability
+                      icon={Braces}
+                      available={client.restricted}
+                      label={client.restricted ? "API access" : "No API access"}
+                    />
+                  </div>
                 </li>
-              ))}
-            </ul>
-          </Card>
+              );
+            })}
+          </ul>
         )}
       </div>
     </div>
