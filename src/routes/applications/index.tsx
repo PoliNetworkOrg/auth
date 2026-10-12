@@ -81,7 +81,7 @@ function KindFilter({ clients }: { clients: OidcClientSummary[] }) {
     <div
       role="group"
       aria-label="Application kind"
-      className="flex w-fit rounded-lg border bg-card p-1"
+      className="flex w-fit gap-1 rounded-lg border bg-card p-1"
     >
       {KINDS.map((option) => (
         <Button
