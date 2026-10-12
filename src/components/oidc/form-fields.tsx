@@ -1,7 +1,7 @@
 // Fields shared by the new-application wizard and the application settings page.
-import { useId, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "cn";
-import { Plus, Trash2 } from "lucide-react";
+import { ImageOff, Plus, Trash2 } from "lucide-react";
 import {
   apiScopes,
   oidcResources,
@@ -61,6 +61,7 @@ export function TextField({
   inputMode = "url",
   maxLength,
   autoComplete = "off",
+  addon,
 }: {
   label: string;
   value: string;
@@ -72,32 +73,88 @@ export function TextField({
   inputMode?: "url" | "text";
   maxLength?: number;
   autoComplete?: string;
+  /** Shown beside the input, such as a preview of what it points to. */
+  addon?: ReactNode;
 }) {
   const id = useId();
+  const input = (
+    <Input
+      id={id}
+      value={value}
+      inputMode={inputMode}
+      maxLength={maxLength}
+      autoComplete={autoComplete}
+      spellCheck={false}
+      placeholder={placeholder}
+      aria-required={required || undefined}
+      aria-invalid={!!error}
+      aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
   return (
     <div className="space-y-2">
       <FieldLabel htmlFor={id} required={required}>
         {label}
       </FieldLabel>
-      <Input
-        id={id}
-        value={value}
-        inputMode={inputMode}
-        maxLength={maxLength}
-        autoComplete={autoComplete}
-        spellCheck={false}
-        placeholder={placeholder}
-        aria-required={required || undefined}
-        aria-invalid={!!error}
-        aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      {addon ? (
+        <div className="flex items-center gap-2">
+          {input}
+          {addon}
+        </div>
+      ) : (
+        input
+      )}
       {error ? (
         <FieldError id={`${id}-error`}>{error}</FieldError>
       ) : hint ? (
         <p id={`${id}-hint`} className="text-xs leading-5 text-muted-foreground">
           {hint}
         </p>
+      ) : null}
+    </div>
+  );
+}
+
+function previewableUrl(value: string) {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A small tile showing the image a logo URL field points to, on the background it is meant for. */
+export function LogoPreview({ url, dark }: { url: string; dark?: boolean }) {
+  const [src, setSrc] = useState(() => previewableUrl(url));
+  const [failed, setFailed] = useState<string | null>(null);
+  // Waits for typing to pause, so partial URLs aren't fetched on every keystroke.
+  useEffect(() => {
+    const timeout = setTimeout(() => setSrc(previewableUrl(url)), 400);
+    return () => clearTimeout(timeout);
+  }, [url]);
+  const broken = !!src && failed === src;
+  return (
+    <div
+      title={broken ? "This image couldn't be loaded" : undefined}
+      className={cn(
+        // `dark` swaps in the dark theme tokens, whatever the page theme is.
+        "flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border p-1",
+        dark ? "dark bg-background" : "bg-white",
+      )}
+    >
+      {broken ? (
+        <ImageOff className="size-4 text-muted-foreground" aria-hidden="true" />
+      ) : src ? (
+        <img
+          key={src}
+          src={src}
+          alt=""
+          referrerPolicy="no-referrer"
+          className="size-full object-contain"
+          onError={() => setFailed(src)}
+        />
       ) : null}
     </div>
   );
