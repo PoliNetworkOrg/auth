@@ -48,9 +48,13 @@ function Capability({
   children?: ReactNode;
 }) {
   return (
+    // Sits above the card's stretched link so its tooltip shows on hover.
     <span
       title={label}
-      className={cn("flex items-center gap-1.5", !available && "text-muted-foreground/40")}
+      className={cn(
+        "relative z-10 flex items-center gap-1.5",
+        !available && "text-muted-foreground/40",
+      )}
     >
       <span className="relative">
         <Icon className="size-4" aria-hidden="true" />
