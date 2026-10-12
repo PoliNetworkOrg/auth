@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { z } from "zod";
 import type { ReactNode } from "react";
 import { cn } from "cn";
-import { AppWindow, Braces, ExternalLink, Plus, Users, type LucideIcon } from "lucide-react";
+import { AppWindow, ExternalLink, Lambda, Plus, Users, type LucideIcon } from "lucide-react";
 import { type OidcClientSummary } from "@/auth/oidc-clients";
 import { getOidcClients } from "@/auth/oidc.functions";
 import { accessOf, useAccess } from "@/components/access";
@@ -10,6 +10,7 @@ import { AppLogo } from "@/components/oidc/app-logo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const KINDS = [
   { value: undefined, label: "All", matches: () => true },
@@ -35,46 +36,50 @@ export const Route = createFileRoute("/applications/")({
   component: ApplicationsIndex,
 });
 
-/** A footer capability: the icon when the app has it, struck through and dimmed when it doesn't. */
+/** A footer capability with a tooltip; struck through and dimmed when the app lacks it. */
 function Capability({
   icon: Icon,
-  available,
+  available = true,
   label,
   children,
 }: {
   icon: LucideIcon;
-  available: boolean;
+  available?: boolean;
   label: string;
   children?: ReactNode;
 }) {
   return (
-    // Sits above the card's stretched link so its tooltip shows on hover.
-    <span
-      title={label}
-      className={cn(
-        "relative z-10 flex items-center gap-1.5",
-        !available && "text-muted-foreground/40",
-      )}
-    >
-      <span className="relative">
-        <Icon className="size-4" aria-hidden="true" />
-        {!available && (
-          // The wider card-coloured stroke cuts a gap in the icon around the slash.
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            strokeLinecap="round"
-            className="absolute inset-0 size-4"
-            aria-hidden="true"
-          >
-            <path d="m3 3 18 18" strokeWidth="5" className="stroke-card" />
-            <path d="m3 3 18 18" strokeWidth="2" stroke="currentColor" />
-          </svg>
-        )}
-      </span>
-      <span className="sr-only">{label}</span>
-      {children}
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {/* Sits above the card's stretched link so its tooltip shows on hover. */}
+        <span
+          className={cn(
+            "relative z-10 flex items-center gap-1.5",
+            !available && "text-muted-foreground/40",
+          )}
+        >
+          <span className="relative">
+            <Icon className="size-4" aria-hidden="true" />
+            {!available && (
+              // The wider card-coloured stroke cuts a gap in the icon around the slash.
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                strokeLinecap="round"
+                className="absolute inset-0 size-4"
+                aria-hidden="true"
+              >
+                <path d="m3 3 18 18" strokeWidth="5" className="stroke-card" />
+                <path d="m3 3 18 18" strokeWidth="2" stroke="currentColor" />
+              </svg>
+            )}
+          </span>
+          <span className="sr-only">{label}</span>
+          {children}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -213,23 +218,27 @@ function ApplicationsIndex() {
                       className={client.disabled ? "opacity-50 grayscale" : undefined}
                     />
                     {client.uri && (
-                      // Sits above the card's stretched link so it opens the app, not its settings.
-                      <Button
-                        asChild
-                        variant="ghost"
-                        size="icon-sm"
-                        className="relative z-10 -mt-1 -mr-1 text-muted-foreground"
-                      >
-                        <a
-                          href={client.uri}
-                          target="_blank"
-                          rel="noreferrer"
-                          title={`Open ${client.name}`}
-                          aria-label={`Open ${client.name}`}
-                        >
-                          <ExternalLink aria-hidden="true" />
-                        </a>
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          {/* Sits above the card's stretched link so it opens the app, not its settings. */}
+                          <Button
+                            asChild
+                            variant="ghost"
+                            size="icon-sm"
+                            className="relative z-10 -mt-1 -mr-1 text-muted-foreground"
+                          >
+                            <a
+                              href={client.uri}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={`Open ${client.name}`}
+                            >
+                              <ExternalLink aria-hidden="true" />
+                            </a>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Open {client.name}</TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                   <div className="mt-4 mb-5 flex min-w-0 items-center gap-2">
@@ -265,11 +274,7 @@ function ApplicationsIndex() {
                         </span>
                       )}
                     </Capability>
-                    <Capability
-                      icon={Braces}
-                      available={client.restricted}
-                      label={client.restricted ? "API access" : "No API access"}
-                    />
+                    {client.restricted && <Capability icon={Lambda} label="API access" />}
                   </div>
                 </li>
               );
