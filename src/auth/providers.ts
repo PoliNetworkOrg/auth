@@ -8,6 +8,7 @@ import { authorizationMutationLock } from "../db/security-lock";
 import { env } from "../env";
 import { claimEmail } from "./contact-email";
 import { checkPnGroupStates, membershipEvidence } from "./membership";
+import { isEntraMember } from "./policy";
 
 type ProviderSettings = {
   clientId: string;
@@ -95,6 +96,8 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
       if (!payload.sub || !payload.exp) throw new Error("Missing identity claims");
       if (!telegram && payload.tid !== settings.tenantId)
         throw new Error("Unexpected Entra tenant");
+      if (!telegram && !isEntraMember(payload.acct))
+        throw new Error("Entra guest accounts cannot sign in");
       const telegramId =
         telegram &&
         (typeof payload.id === "string" ||
