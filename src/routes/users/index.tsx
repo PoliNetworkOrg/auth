@@ -7,13 +7,13 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   Info,
   Minus,
   Plus,
   Search,
-  Send,
   Slash,
   Users,
   X,
@@ -31,7 +31,7 @@ import {
   userSearchSchema,
 } from "@/auth/users";
 import { accessOf, useAccess } from "@/components/access";
-import { SignInIcons, StatusBadges, TRAIT_ICONS } from "@/components/users/traits";
+import { SignInIcons, STATUS_TRAITS, TRAIT_ICONS } from "@/components/users/traits";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -64,6 +64,25 @@ export const Route = createFileRoute("/users/")({
 });
 
 const ANY_ROLE = "any";
+
+/** A green check when the person holds the status, a gray cross when not. */
+function HeldMark({ label, held }: { label: string; held: boolean }) {
+  const Mark = held ? Check : X;
+  return (
+    <span className="flex justify-center" title={held ? label : `Not ${label}`}>
+      <Mark
+        className={cn(
+          "size-4",
+          held ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/40",
+        )}
+        aria-hidden="true"
+      />
+      <span className="sr-only">
+        {label}: {held ? "yes" : "no"}
+      </span>
+    </span>
+  );
+}
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" });
@@ -374,9 +393,11 @@ function UsersIndex() {
                   <th scope="col" className="px-5 py-3 font-medium">
                     Person
                   </th>
-                  <th scope="col" className="px-3 py-3 font-medium">
-                    Status
-                  </th>
+                  {STATUS_TRAITS.map((trait) => (
+                    <th key={trait.key} scope="col" className="px-3 py-3 text-center font-medium">
+                      {trait.label}
+                    </th>
+                  ))}
                   <th scope="col" className="px-3 py-3 font-medium">
                     Telegram
                   </th>
@@ -418,23 +439,24 @@ function UsersIndex() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-3">
-                      <StatusBadges held={held(user.traits)} className="min-w-24" />
-                    </td>
+                    {STATUS_TRAITS.map((trait) => (
+                      <td key={trait.key} className="px-3 py-3">
+                        <HeldMark label={trait.label} held={user.traits[trait.key]} />
+                      </td>
+                    ))}
                     <td className="px-3 py-3 whitespace-nowrap">
                       {user.traits.telegram ? (
-                        <span className="inline-flex items-center gap-1.5 text-xs">
-                          <Send className="size-3.5 text-primary" aria-hidden="true" />
-                          {user.telegramUsername && <span>@{user.telegramUsername}</span>}
-                          <span
+                        <div>
+                          {user.telegramUsername && <p>@{user.telegramUsername}</p>}
+                          <p
                             className={cn(
                               "font-mono",
-                              user.telegramUsername && "text-muted-foreground",
+                              user.telegramUsername && "text-xs text-muted-foreground",
                             )}
                           >
                             {user.telegramId ?? "Linked"}
-                          </span>
-                        </span>
+                          </p>
+                        </div>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
