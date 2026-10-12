@@ -278,15 +278,13 @@ function ApplicationsIndex() {
                         </span>
                       )}
                     </Capability>
-                    <Capability
-                      icon={Lambda}
-                      label={client.restricted ? "API access" : "No API access"}
-                      className={
-                        client.restricted
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-muted-foreground/40"
-                      }
-                    />
+                    {client.restricted && (
+                      <Capability
+                        icon={Lambda}
+                        label="API access"
+                        className="text-emerald-600 dark:text-emerald-400"
+                      />
+                    )}
                   </div>
                 </li>
               );
