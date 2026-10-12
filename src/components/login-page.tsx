@@ -3,6 +3,7 @@ import { useLocation, useRouter } from "@tanstack/react-router";
 import { cn } from "cn";
 import { Building2, Fingerprint, Link2, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
+import { getClientLogoDark } from "@/auth/account.functions";
 import { authClient } from "@/auth/client";
 import { useProviders } from "@/components/access";
 import { DevLoginPanel } from "@/components/dev-login";
@@ -44,21 +45,24 @@ export function LoginLayout({ children, wide = false }: { children: ReactNode; w
 }
 
 /** The app that started an OpenID Connect sign-in, when the page was reached from one. */
-type RequestingApp = { name: string; logo: string | null };
+type RequestingApp = { name: string; logo: string | null; logoDark?: string | null };
 
 /** Two logos joined by a link glyph: the requesting app and PoliNetwork. */
 export function AppHandshake({ app }: { app: RequestingApp | null }) {
   return (
     <div className="flex items-center justify-center gap-3" aria-hidden="true">
-      <AppLogo name={app?.name ?? "?"} logo={app?.logo} className="size-14 rounded-2xl text-lg" />
+      <AppLogo
+        name={app?.name ?? "?"}
+        logo={app?.logo}
+        logoDark={app?.logoDark}
+        className="size-14 rounded-2xl text-lg"
+      />
       <span className="flex items-center text-muted-foreground">
         <span className="h-px w-4 bg-border" />
         <Link2 className="size-4" />
         <span className="h-px w-4 bg-border" />
       </span>
-      <div className="flex size-14 items-center justify-center rounded-2xl border bg-background">
-        <img src="/polinetwork-logo.svg" width={36} height={36} alt="" className="size-9" />
-      </div>
+      <img src="/polinetwork-logo.svg" width={56} height={56} alt="" className="size-14" />
     </div>
   );
 }
@@ -85,13 +89,20 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
     if (!oauthClientId) return;
     let active = true;
     // The auth client attaches the signed OAuth query, which authorizes this lookup.
-    void authClient.oauth2
-      .publicClientPrelogin({ client_id: oauthClientId })
-      .then((result) => {
+    void Promise.all([
+      authClient.oauth2.publicClientPrelogin({ client_id: oauthClientId }),
+      // Optional: without it the app shows its one logo in both themes.
+      getClientLogoDark({ data: { clientId: oauthClientId } }).catch((error: unknown) => {
+        console.error(error);
+        return null;
+      }),
+    ])
+      .then(([result, logoDark]) => {
         if (active && result.data)
           setRequestingApp({
             name: result.data.client_name ?? "the application",
             logo: result.data.logo_uri ?? null,
+            logoDark,
           });
       })
       .catch(() => {

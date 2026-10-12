@@ -1,13 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { APIError } from "better-auth/api";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { db } from "@/db/index";
+import { oauthClient } from "@/db/schema";
 import { validate } from "@/lib/validate";
 import { ownSessionToken, readAccountOverview } from "./account-overview";
 import { disconnectAccount } from "./accounts";
 import { getIdentity } from "./identity";
 import { auth } from "./index";
-import { sessionMiddleware } from "./middleware";
+import { actionMiddleware, sessionMiddleware } from "./middleware";
 import { confirmStudentVerification, requestStudentVerification } from "./student-verification";
 
 /**
@@ -91,6 +94,7 @@ export type ConsentApp =
       app: {
         name: string;
         logo: string | null;
+        logoDark: string | null;
         uri: string | null;
         policyUri: string | null;
         tosUri: string | null;
@@ -107,15 +111,19 @@ export const getConsentApp = createServerFn({ method: "GET" })
   .validator(validate(z.object({ clientId: z.string().min(1) })))
   .handler(async ({ data }): Promise<ConsentApp> => {
     try {
-      const client = await auth.api.getOAuthClientPublic({
-        query: { client_id: data.clientId },
-        headers: getRequest().headers,
-      });
+      const [client, logoDark] = await Promise.all([
+        auth.api.getOAuthClientPublic({
+          query: { client_id: data.clientId },
+          headers: getRequest().headers,
+        }),
+        readClientLogoDark(data.clientId),
+      ]);
       return {
         status: "ready",
         app: {
           name: client.client_name ?? "This application",
           logo: client.logo_uri ?? null,
+          logoDark,
           uri: client.client_uri ?? null,
           policyUri: client.policy_uri ?? null,
           tosUri: client.tos_uri ?? null,
@@ -128,3 +136,20 @@ export const getConsentApp = createServerFn({ method: "GET" })
       return { status: "error", app: null };
     }
   });
+
+/**
+ * The dark logo of an enabled client, which the provider's public lookups leave out. As
+ * public as the rest: anyone with a client ID can start a sign-in and read its name and logo.
+ */
+export const getClientLogoDark = createServerFn({ method: "GET" })
+  .middleware([actionMiddleware])
+  .validator(validate(z.object({ clientId: z.string().min(1).max(255) })))
+  .handler(({ data }) => readClientLogoDark(data.clientId));
+
+async function readClientLogoDark(clientId: string) {
+  const [row] = await db
+    .select({ iconDark: oauthClient.iconDark, disabled: oauthClient.disabled })
+    .from(oauthClient)
+    .where(eq(oauthClient.clientId, clientId));
+  return row && !row.disabled ? row.iconDark : null;
+}

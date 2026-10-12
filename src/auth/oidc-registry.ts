@@ -50,6 +50,7 @@ function toSummary(
     name: row.name ?? "Untitled application",
     uri: row.uri ?? null,
     logo: row.icon ?? null,
+    logoDark: row.iconDark ?? null,
     redirectUris: row.redirectUris,
     postLogoutRedirectUris: row.postLogoutRedirectUris ?? [],
     contacts: row.contacts ?? [],
@@ -188,6 +189,18 @@ export async function linkNewOidcClient(
   );
 }
 
+/** Stores a newly created client's dark logo, which the provider has no field for. */
+export async function setNewOidcClientDarkLogo(
+  actorId: string,
+  clientId: string,
+  logoDark: string,
+) {
+  if (!logoDark) return;
+  await changePooledClient(actorId, clientId, (transaction) =>
+    transaction.update(oauthClient).set({ iconDark: logoDark }).where(pooledClient(clientId)),
+  );
+}
+
 /**
  * Rechecks a newly created client's public keys against every other client, under the RBAC
  * write lock. The provider inserts the client outside that lock, so a key checked before the
@@ -274,6 +287,7 @@ export async function updateOidcClient(
       values.name = draft.name;
       values.uri = draft.uri || null;
       values.icon = draft.logo || null;
+      values.iconDark = draft.logoDark || null;
       values.redirectUris = registration.redirectUris;
       values.postLogoutRedirectUris = registration.postLogoutRedirectUris.length
         ? registration.postLogoutRedirectUris

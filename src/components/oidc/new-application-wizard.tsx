@@ -93,6 +93,14 @@ function BasicsStep({ api, errors }: { api: ClientDraftApi; errors: OidcClientDr
         error={errors.logo}
         onChange={(value) => update("logo", value)}
       />
+      <TextField
+        label="Dark mode logo URL"
+        hint="Optional. Shown on dark backgrounds instead of the logo, for one that would disappear there."
+        placeholder="https://app.polinetwork.org/icon-dark.png"
+        value={draft.logoDark}
+        error={errors.logoDark}
+        onChange={(value) => update("logoDark", value)}
+      />
       <ListField
         label="Contact emails"
         type="email"
@@ -435,7 +443,12 @@ function Summary({ draft, reached }: { draft: OidcClientDraft; reached: number }
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <AppLogo name={draft.name || "New app"} logo={draft.logo} className="size-11" />
+        <AppLogo
+          name={draft.name || "New app"}
+          logo={draft.logo}
+          logoDark={draft.logoDark}
+          className="size-11"
+        />
         <p className="line-clamp-2 min-w-0 font-semibold break-words">
           {draft.name.trim() || "Untitled application"}
         </p>

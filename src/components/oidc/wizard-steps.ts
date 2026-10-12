@@ -10,7 +10,7 @@ export const wizardSteps = [
 export type WizardStepId = (typeof wizardSteps)[number]["id"];
 
 const fieldsByStep: Record<WizardStepId, (keyof OidcClientDraftErrors)[]> = {
-  basics: ["name", "uri", "logo", "tosUri", "policyUri", "contactItems"],
+  basics: ["name", "uri", "logo", "logoDark", "tosUri", "policyUri", "contactItems"],
   usage: [],
   authentication: ["credential", "jwks"],
   access: ["redirectUris", "redirectUriItems", "postLogoutRedirectUriItems", "scopes", "apiScopes"],

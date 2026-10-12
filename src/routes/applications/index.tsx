@@ -218,7 +218,8 @@ function ApplicationsIndex() {
                     <AppLogo
                       name={client.name}
                       logo={client.logo}
-                      className={client.disabled ? "opacity-50 grayscale" : undefined}
+                      logoDark={client.logoDark}
+                      className={cn("size-14 text-base", client.disabled && "opacity-50 grayscale")}
                     />
                     {client.uri && (
                       <Tooltip>
@@ -261,7 +262,7 @@ function ApplicationsIndex() {
                       </Badge>
                     )}
                   </div>
-                  <div className="mt-auto flex items-center justify-between gap-4 border-t pt-4 text-xs text-muted-foreground">
+                  <div className="mt-auto flex items-center justify-between gap-4 text-xs text-muted-foreground">
                     <Capability
                       icon={Users}
                       available={signsIn}
@@ -277,19 +278,13 @@ function ApplicationsIndex() {
                         </span>
                       )}
                     </Capability>
-                    <Capability
-                      icon={Lambda}
-                      label={client.restricted ? "API access" : "No API access"}
-                      className={
-                        client.restricted
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-muted-foreground/40"
-                      }
-                    >
-                      <span className="font-semibold" aria-hidden="true">
-                        {client.restricted ? "ON" : "OFF"}
-                      </span>
-                    </Capability>
+                    {client.restricted && (
+                      <Capability
+                        icon={Lambda}
+                        label="API access"
+                        className="text-emerald-600 dark:text-emerald-400"
+                      />
+                    )}
                   </div>
                 </li>
               );

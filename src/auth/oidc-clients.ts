@@ -181,6 +181,8 @@ export type OidcClientSummary = {
   name: string;
   uri: string | null;
   logo: string | null;
+  /** Drawn instead of `logo` on dark backgrounds. */
+  logoDark: string | null;
   redirectUris: string[];
   postLogoutRedirectUris: string[];
   contacts: string[];
@@ -212,6 +214,7 @@ export type OidcClientDraft = {
   name: string;
   uri: string;
   logo: string;
+  logoDark: string;
   redirectUris: string[];
   postLogoutRedirectUris: string[];
   contacts: string[];
@@ -239,6 +242,7 @@ export type OidcClientDraftErrors = {
   name?: string;
   uri?: string;
   logo?: string;
+  logoDark?: string;
   tosUri?: string;
   policyUri?: string;
   credential?: string;
@@ -260,6 +264,7 @@ export function emptyClientDraft(): OidcClientDraft {
     name: "",
     uri: "",
     logo: "",
+    logoDark: "",
     redirectUris: [""],
     postLogoutRedirectUris: [],
     contacts: [],
@@ -299,6 +304,7 @@ export function draftFromClient(client: OidcClientSummary): OidcClientDraft {
     name: client.name,
     uri: client.uri ?? "",
     logo: client.logo ?? "",
+    logoDark: client.logoDark ?? "",
     redirectUris: client.redirectUris.length ? [...client.redirectUris] : [""],
     postLogoutRedirectUris: [...client.postLogoutRedirectUris],
     contacts: [...client.contacts],
@@ -451,7 +457,7 @@ export function validateClientDraft(
   else if (name.length > MAX_CLIENT_NAME_LENGTH)
     errors.name = `Keep the name under ${MAX_CLIENT_NAME_LENGTH} characters.`;
 
-  for (const field of ["uri", "logo", "tosUri", "policyUri"] as const) {
+  for (const field of ["uri", "logo", "logoDark", "tosUri", "policyUri"] as const) {
     const problem = validateHttpsUrl(draft[field]);
     if (problem) errors[field] = problem;
   }
@@ -521,6 +527,7 @@ export function normalizeClientDraft(draft: OidcClientDraft): OidcClientDraft {
     name: draft.name.trim(),
     uri: draft.uri.trim(),
     logo: draft.logo.trim(),
+    logoDark: draft.logoDark.trim(),
     redirectUris: draft.redirectUris.map((uri) => uri.trim()).filter(Boolean),
     postLogoutRedirectUris: draft.postLogoutRedirectUris.map((uri) => uri.trim()).filter(Boolean),
     contacts: draft.contacts.map((contact) => contact.trim()).filter(Boolean),

@@ -136,6 +136,8 @@ export const oauthClient = pgTable(
     name: text("name"),
     uri: text("uri"),
     icon: text("icon"),
+    // Ours, not the provider's: the logo drawn on dark backgrounds.
+    iconDark: text("icon_dark"),
     contacts: text("contacts").array(),
     tos: text("tos"),
     policy: text("policy"),
