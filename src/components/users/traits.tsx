@@ -1,9 +1,22 @@
 import type { ComponentType } from "react";
-import { BadgeCheck, Building2, Crown, Fingerprint, GraduationCap, Send } from "lucide-react";
+import { BadgeCheck, Crown, Fingerprint, GraduationCap, Send } from "lucide-react";
 import { cn } from "cn";
 import { type UserTrait, USER_TRAITS } from "@/auth/users";
 import { GoogleIcon } from "@/components/google-icon";
 import { Badge } from "@/components/ui/badge";
+
+function PoliNetworkIcon({ className }: { className?: string }) {
+  return (
+    <img
+      src="/brands/polinetwork.svg"
+      alt=""
+      width={16}
+      height={16}
+      draggable={false}
+      className={className}
+    />
+  );
+}
 
 export const TRAIT_ICONS: Record<UserTrait, ComponentType<{ className?: string }>> = {
   socio: BadgeCheck,
@@ -11,7 +24,7 @@ export const TRAIT_ICONS: Record<UserTrait, ComponentType<{ className?: string }
   student: GraduationCap,
   telegram: Send,
   google: GoogleIcon,
-  polinetwork: Building2,
+  polinetwork: PoliNetworkIcon,
   passkey: Fingerprint,
 };
 
