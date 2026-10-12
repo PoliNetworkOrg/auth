@@ -21,6 +21,7 @@ import {
   IdentityScopeList,
   JwksField,
   ListField,
+  LogoPreview,
   RedirectRule,
   SwitchRow,
   TextField,
@@ -246,6 +247,7 @@ export function ApplicationSettingsForm({
               value={draft.logo}
               error={errors.logo}
               onChange={(value) => update("logo", value)}
+              addon={<LogoPreview url={draft.logo} />}
             />
             <TextField
               label="Dark mode logo URL"
@@ -254,6 +256,7 @@ export function ApplicationSettingsForm({
               value={draft.logoDark}
               error={errors.logoDark}
               onChange={(value) => update("logoDark", value)}
+              addon={<LogoPreview url={draft.logoDark} dark />}
             />
             <TextField
               label="Homepage URL"

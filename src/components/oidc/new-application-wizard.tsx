@@ -35,6 +35,7 @@ import {
   IdentityScopeList,
   JwksField,
   ListField,
+  LogoPreview,
   RedirectRule,
   RequiredMark,
   SwitchRow,
@@ -92,6 +93,7 @@ function BasicsStep({ api, errors }: { api: ClientDraftApi; errors: OidcClientDr
         value={draft.logo}
         error={errors.logo}
         onChange={(value) => update("logo", value)}
+        addon={<LogoPreview url={draft.logo} />}
       />
       <TextField
         label="Dark mode logo URL"
@@ -100,6 +102,7 @@ function BasicsStep({ api, errors }: { api: ClientDraftApi; errors: OidcClientDr
         value={draft.logoDark}
         error={errors.logoDark}
         onChange={(value) => update("logoDark", value)}
+        addon={<LogoPreview url={draft.logoDark} dark />}
       />
       <ListField
         label="Contact emails"
