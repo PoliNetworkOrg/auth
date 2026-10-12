@@ -191,9 +191,6 @@ function ApplicationsIndex() {
                       </h2>
                       <ClientBadges client={client} />
                     </div>
-                    <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                      {client.clientId}
-                    </p>
                   </div>
                   {/* Apps that only call APIs as themselves have no one to count. */}
                   {client.grantTypes.includes("authorization_code") && (
