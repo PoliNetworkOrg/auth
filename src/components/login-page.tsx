@@ -55,14 +55,14 @@ export function AppHandshake({ app }: { app: RequestingApp | null }) {
         name={app?.name ?? "?"}
         logo={app?.logo}
         logoDark={app?.logoDark}
-        className="size-16 rounded-2xl text-lg"
+        className="size-14 rounded-2xl text-lg"
       />
       <span className="flex items-center text-muted-foreground">
         <span className="h-px w-4 bg-border" />
         <Link2 className="size-4" />
         <span className="h-px w-4 bg-border" />
       </span>
-      <img src="/polinetwork-logo.svg" width={64} height={64} alt="" className="size-16" />
+      <img src="/polinetwork-logo.svg" width={56} height={56} alt="" className="size-14" />
     </div>
   );
 }
