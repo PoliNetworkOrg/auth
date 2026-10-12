@@ -31,6 +31,25 @@ export function claimEmail(claims: { [claim: string]: unknown }) {
   return undefined;
 }
 
+/** The address a provider's linked account carries, saved at sign-in or in its ID token. */
+function providerEmail(provider: string, tokens: SignInToken[]) {
+  for (const token of tokens) {
+    if (token.providerId !== provider) continue;
+    const saved = realEmail(token.email);
+    if (saved) return saved;
+    if (!token.idToken) continue;
+    let claims;
+    try {
+      claims = decodeJwt(token.idToken);
+    } catch {
+      continue;
+    }
+    const address = claimEmail(claims);
+    if (address) return address;
+  }
+  return undefined;
+}
+
 /**
  * The address to show for someone. PoliNetwork and Telegram sign-ins store a placeholder
  * email, so this falls back to the address saved at their last sign-in, then to the one in
@@ -41,31 +60,26 @@ export function contactEmail(email: string, tokens: SignInToken[]) {
   const stored = realEmail(email);
   if (stored) return stored;
   for (const provider of EMAIL_PROVIDERS) {
-    for (const token of tokens) {
-      if (token.providerId !== provider) continue;
-      const saved = realEmail(token.email);
-      if (saved) return saved;
-      if (!token.idToken) continue;
-      let claims;
-      try {
-        claims = decodeJwt(token.idToken);
-      } catch {
-        continue;
-      }
-      const address = claimEmail(claims);
-      if (address) return address;
-    }
+    const address = providerEmail(provider, tokens);
+    if (address) return address;
   }
   return undefined;
 }
 
-/** `contactEmail` for many people at once, keyed by user ID. Null when none is known. */
+/**
+ * The address administrators see for someone: their PoliNetwork one when they linked it,
+ * since that is how the association knows them, and `contactEmail` otherwise.
+ */
+export function directoryEmail(email: string, tokens: SignInToken[]) {
+  return providerEmail("pn-entra", tokens) ?? contactEmail(email, tokens);
+}
+
+/** `directoryEmail` for many people at once, keyed by user ID. Null when none is known. */
 export async function contactEmails(
   reader: Reader,
   people: { id: string; email: string }[],
 ): Promise<Map<string, string | null>> {
-  const missing = people.filter((person) => isPlaceholderEmail(person.email));
-  const tokens = missing.length
+  const tokens = people.length
     ? await reader
         .select({
           userId: account.userId,
@@ -86,7 +100,7 @@ export async function contactEmails(
           and(
             inArray(
               account.userId,
-              missing.map((person) => person.id),
+              people.map((person) => person.id),
             ),
             inArray(account.providerId, EMAIL_PROVIDERS),
           ),
@@ -95,7 +109,7 @@ export async function contactEmails(
   return new Map(
     people.map((person) => [
       person.id,
-      contactEmail(
+      directoryEmail(
         person.email,
         tokens.filter((token) => token.userId === person.id),
       ) ?? null,
