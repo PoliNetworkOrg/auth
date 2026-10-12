@@ -83,6 +83,16 @@ export function hasPolimiStudentDomain(email: string) {
   return email.split("@").at(-1) === "mail.polimi.it";
 }
 
+/**
+ * Whether an Entra ID token belongs to a member of the tenant rather than a B2B guest.
+ * Guests sign in with their home address but get tokens from our tenant, so the issuer and
+ * `tid` checks pass for them. Needs the `acct` optional claim (0 member, 1 guest) on the app
+ * registration; a token without it is refused.
+ */
+export function isEntraMember(acct: unknown) {
+  return acct === 0;
+}
+
 export function isLoginProvider(providerId: string) {
   return providerId === "google" || providerId === "pn-entra";
 }

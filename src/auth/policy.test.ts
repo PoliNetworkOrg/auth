@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   hasAppRole,
   hasPolimiStudentDomain,
+  isEntraMember,
   identityStates,
   isLinkOnlyProvider,
   isLoginProvider,
@@ -90,6 +91,12 @@ describe("identity states", () => {
     expect(hasPolimiStudentDomain("name@mail.polimi.it")).toBe(true);
     expect(hasPolimiStudentDomain("name@polimi.it")).toBe(false);
     expect(hasPolimiStudentDomain("name@mail.polimi.it.example.org")).toBe(false);
+  });
+  it("accepts only Entra tenant members, never guests or tokens without acct", () => {
+    expect(isEntraMember(0)).toBe(true);
+    expect(isEntraMember(1)).toBe(false);
+    expect(isEntraMember("0")).toBe(false);
+    expect(isEntraMember(undefined)).toBe(false);
   });
   it("keeps verifier providers out of the login set", () => {
     expect(isLoginProvider("google")).toBe(true);
