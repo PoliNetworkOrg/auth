@@ -218,7 +218,8 @@ function ApplicationsIndex() {
                     <AppLogo
                       name={client.name}
                       logo={client.logo}
-                      className={client.disabled ? "opacity-50 grayscale" : undefined}
+                      bare
+                      className={cn("size-14 text-base", client.disabled && "opacity-50 grayscale")}
                     />
                     {client.uri && (
                       <Tooltip>
@@ -261,7 +262,7 @@ function ApplicationsIndex() {
                       </Badge>
                     )}
                   </div>
-                  <div className="mt-auto flex items-center justify-between gap-4 border-t pt-4 text-xs text-muted-foreground">
+                  <div className="mt-auto flex items-center justify-between gap-4 text-xs text-muted-foreground">
                     <Capability
                       icon={Users}
                       available={signsIn}
