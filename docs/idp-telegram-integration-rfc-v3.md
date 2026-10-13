@@ -862,7 +862,7 @@ Every tRPC procedure, HTTP route and socket event is listed. **Anything not list
 - **Snapshot client:** poll, events, persistence, validation and atomic swap (§5).
 - **`ctx.actor` and `ctx.can()`;** every procedure goes through `policy()` (§8).
 - **Actor fields removed from every input:** `adderId`, `removerId`, `interruptedById`, `performerId`, `adminId`, `createdBy`, `modifiedBy`, `updatedBy`, and the self `userId` of `auth.updateProfilePic`.
-- **Azure creation boundary:** expose only `azure.members.create` to the migrated dashboard for creation, and `azure.members.setAssocNumber` for changing an existing user's member number. The backend uses a fixed Soci group ID internally and adds only the user it just created. There is no dashboard group-write allowlist or arbitrary group-member API in the new model. During the compatibility phase, legacy anonymous callers stay on the logged legacy path until their cutover (§13).
+- **Azure creation boundary:** expose only `azure.members.getAll` to the migrated dashboard for read-only browsing (`azure:members:read`), `azure.members.create` for creation, and `azure.members.setAssocNumber` for changing an existing user's member number. The backend uses a fixed Soci group ID internally and adds only the user it just created. There is no dashboard group-write allowlist or arbitrary group-member API in the new model. During the compatibility phase, legacy anonymous callers stay on the logged legacy path until their cutover (§13).
 
 ### 9.2 Audit log
 
@@ -1117,7 +1117,7 @@ The principle: **each caller moves independently, and each step can be rolled ba
   - the new procedures (`tg.access.resolve`, `me.access`, `tg.auditLog.record`);
   - the new audit columns, the new grants table and the `/internal/events` endpoint;
   - socket token authentication, accepted when present;
-  - the dedicated `azure.members.create` and `azure.members.setAssocNumber` policies and denial of other Azure dashboard operations for token-bearing callers.
+  - the dedicated `azure.members.getAll`, `azure.members.create` and `azure.members.setAssocNumber` policies and denial of other Azure dashboard operations for token-bearing callers.
 - Requests with a token are fully enforced, with actor fields ignored. Anonymous requests take the legacy path and are logged.
 - Publish the additive SDK.
 
