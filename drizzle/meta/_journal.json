@@ -141,6 +141,13 @@
       "when": 1791823091127,
       "tag": "0019_oauth_client_icon_dark",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791892585254,
+      "tag": "0020_azure_members_write_permission",
+      "breakpoints": true
     }
   ]
 }

@@ -187,8 +187,8 @@ changing either without seeing what already exists makes no sense. The other imp
 are seeded defaults you can edit.
 
 The permissions that other PoliNetwork services check during the IdP–Telegram migration
-(`admin:access`, `tg:*`, `wa:groups:manage`, `groups:labels:write`, `web:*` and
-`azure:members:create`, see [RFC §4.1](docs/idp-telegram-integration-rfc-v3.md)) are seeded
+(`admin:access`, `tg:*`, `wa:groups:manage`, `groups:labels:write`, `web:*`,
+`azure:members:create` and `azure:members:write`, see [RFC §4.1](docs/idp-telegram-integration-rfc-v3.md)) are seeded
 as ordinary permissions, with `tg:immune` granting `tg:trusted`. No role is given them:
 Master Admin holds them through its wildcard, and administrators choose which roles grant
 them.
