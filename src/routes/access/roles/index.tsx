@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronRight, KeyRound, Plus, ShieldCheck, Sparkles, Users } from "lucide-react";
 import {
@@ -8,6 +9,7 @@ import {
 } from "@/auth/rbac";
 import { getCatalog } from "@/auth/rbac.functions";
 import { requireAccess, useAccess } from "@/components/access";
+import { CatalogSearch } from "@/components/rbac/catalog-search";
 import { KeyChip } from "@/components/rbac/fields";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,10 +78,20 @@ function RoleRow({ role, effective }: { role: RoleSummary; effective: number | n
 function RolesIndex() {
   const { can } = useAccess();
   const catalog = Route.useLoaderData();
-  const managed = catalog.roles
+  const [query, setQuery] = useState("");
+  const search = query.trim().toLowerCase();
+  const filtered = catalog.roles.filter((role) =>
+    [
+      role.name,
+      role.key,
+      role.description,
+      role.managed ? staticRole(role.key)?.evidence : null,
+    ].some((value) => value?.toLowerCase().includes(search)),
+  );
+  const managed = filtered
     .filter((role) => role.managed)
     .sort((a, b) => staticRoleOrder(a.key) - staticRoleOrder(b.key));
-  const custom = catalog.roles.filter((role) => !role.managed);
+  const custom = filtered.filter((role) => !role.managed);
   const countFor = (role: RoleSummary) =>
     staticRole(role.key)?.grantsAllPermissions
       ? null
@@ -104,6 +116,14 @@ function RolesIndex() {
         )}
       </div>
 
+      <CatalogSearch
+        kind="roles"
+        query={query}
+        onQueryChange={setQuery}
+        count={filtered.length}
+        total={catalog.roles.length}
+      />
+
       {
         <div className="space-y-8">
           <Card>
@@ -117,11 +137,17 @@ function RolesIndex() {
               </CardDescription>
             </CardHeader>
             <CardContent className="px-0 pb-0">
-              <ul className="divide-y border-t" aria-label="Built-in roles">
-                {managed.map((role) => (
-                  <RoleRow key={role.id} role={role} effective={countFor(role)} />
-                ))}
-              </ul>
+              {managed.length === 0 ? (
+                <p className="border-t px-5 py-6 text-sm text-muted-foreground">
+                  No built-in roles match your search.
+                </p>
+              ) : (
+                <ul className="divide-y border-t" aria-label="Built-in roles">
+                  {managed.map((role) => (
+                    <RoleRow key={role.id} role={role} effective={countFor(role)} />
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
 
@@ -134,12 +160,16 @@ function RolesIndex() {
                     <ShieldCheck className="size-6" aria-hidden="true" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold">No roles of your own yet</h3>
+                    <h3 className="text-lg font-semibold">
+                      {search ? "No custom roles match your search" : "No roles of your own yet"}
+                    </h3>
                     <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-                      Create a role to bundle permissions and give them to specific people.
+                      {search
+                        ? "Try a different name, key, or description, or clear the search."
+                        : "Create a role to bundle permissions and give them to specific people."}
                     </p>
                   </div>
-                  {can("idp:roles:write") && (
+                  {!search && can("idp:roles:write") && (
                     <Button asChild>
                       <Link to="/access/roles/new">
                         <Plus aria-hidden="true" />
