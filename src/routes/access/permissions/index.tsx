@@ -4,7 +4,7 @@ import { ChevronRight, KeyRound, Plus, ShieldCheck, Sparkles } from "lucide-reac
 import { type PermissionSummary, expandPermissionKeys } from "@/auth/rbac";
 import { getCatalog } from "@/auth/rbac.functions";
 import { requireAccess, useAccess } from "@/components/access";
-import { CatalogSearch } from "@/components/rbac/catalog-search";
+import { CatalogSearch, CatalogSearchEmpty } from "@/components/rbac/catalog-search";
 import { KeyChip } from "@/components/rbac/fields";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -84,14 +84,6 @@ function PermissionsIndex() {
             application still enforces its own.
           </p>
         </div>
-        {can("idp:permissions:write") && (
-          <Button asChild>
-            <Link to="/access/permissions/new">
-              <Plus aria-hidden="true" />
-              New permission
-            </Link>
-          </Button>
-        )}
       </div>
 
       <CatalogSearch
@@ -100,84 +92,94 @@ function PermissionsIndex() {
         onQueryChange={setQuery}
         count={filtered.length}
         total={catalog.permissions.length}
-      />
+      >
+        {can("idp:permissions:write") && (
+          <Button asChild>
+            <Link to="/access/permissions/new">
+              <Plus aria-hidden="true" />
+              New permission
+            </Link>
+          </Button>
+        )}
+      </CatalogSearch>
+
+      {search && filtered.length === 0 && <CatalogSearchEmpty kind="permissions" />}
 
       {
         <div className="space-y-8">
-          <Card>
-            <CardHeader>
-              <CardTitle>Built into the identity provider</CardTitle>
-              <CardDescription>
-                These permissions control this service itself. They always exist and cannot be
-                deleted, because the code checks for these exact keys. Give them to a role to let
-                someone administer part of PoliNetwork Auth.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-0 pb-0">
-              {managed.length === 0 ? (
-                <p className="border-t px-5 py-6 text-sm text-muted-foreground">
-                  No built-in permissions match your search.
-                </p>
-              ) : (
-                <ul className="divide-y border-t" aria-label="Built-in permissions">
-                  {managed.map((permission) => (
-                    <PermissionRow
-                      key={permission.id}
-                      permission={permission}
-                      implied={impliedBy(permission)}
-                    />
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+          {(managed.length > 0 || !search) && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Built into the identity provider</CardTitle>
+                <CardDescription>
+                  These permissions control this service itself. They always exist and cannot be
+                  deleted, because the code checks for these exact keys. Give them to a role to let
+                  someone administer part of PoliNetwork Auth.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-0 pb-0">
+                {managed.length === 0 ? (
+                  <p className="border-t px-5 py-6 text-sm text-muted-foreground">
+                    No built-in permissions match your search.
+                  </p>
+                ) : (
+                  <ul className="divide-y border-t" aria-label="Built-in permissions">
+                    {managed.map((permission) => (
+                      <PermissionRow
+                        key={permission.id}
+                        permission={permission}
+                        implied={impliedBy(permission)}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
-          <div>
-            <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
-              Permissions you created
-            </h2>
-            {custom.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center gap-4 px-6 py-14 text-center">
-                  <div className="flex size-14 items-center justify-center rounded-2xl border bg-background text-primary">
-                    <KeyRound className="size-6" aria-hidden="true" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold">
-                      {search
-                        ? "No custom permissions match your search"
-                        : "No permissions of your own yet"}
-                    </h3>
-                    <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-                      {search
-                        ? "Try a different name, key, or description, or clear the search."
-                        : "Name the first thing one of your applications should be able to check for, such as reading the member list."}
-                    </p>
-                  </div>
-                  {!search && can("idp:permissions:write") && (
-                    <Button asChild>
-                      <Link to="/access/permissions/new">
-                        <Plus aria-hidden="true" />
-                        New permission
-                      </Link>
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <ul className="divide-y" aria-label="Your permissions">
-                  {custom.map((permission) => (
-                    <PermissionRow
-                      key={permission.id}
-                      permission={permission}
-                      implied={impliedBy(permission)}
-                    />
-                  ))}
-                </ul>
-              </Card>
-            )}
-          </div>
+          {(custom.length > 0 || !search) && (
+            <div>
+              <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
+                Permissions you created
+              </h2>
+              {custom.length === 0 ? (
+                <Card>
+                  <CardContent className="flex flex-col items-center gap-4 px-6 py-14 text-center">
+                    <div className="flex size-14 items-center justify-center rounded-2xl border bg-background text-primary">
+                      <KeyRound className="size-6" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold">No permissions of your own yet</h3>
+                      <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+                        Name the first thing one of your applications should be able to check for,
+                        such as reading the member list.
+                      </p>
+                    </div>
+                    {can("idp:permissions:write") && (
+                      <Button asChild>
+                        <Link to="/access/permissions/new">
+                          <Plus aria-hidden="true" />
+                          New permission
+                        </Link>
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <ul className="divide-y" aria-label="Your permissions">
+                    {custom.map((permission) => (
+                      <PermissionRow
+                        key={permission.id}
+                        permission={permission}
+                        implied={impliedBy(permission)}
+                      />
+                    ))}
+                  </ul>
+                </Card>
+              )}
+            </div>
+          )}
         </div>
       }
     </div>

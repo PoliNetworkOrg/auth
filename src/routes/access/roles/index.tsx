@@ -9,7 +9,7 @@ import {
 } from "@/auth/rbac";
 import { getCatalog } from "@/auth/rbac.functions";
 import { requireAccess, useAccess } from "@/components/access";
-import { CatalogSearch } from "@/components/rbac/catalog-search";
+import { CatalogSearch, CatalogSearchEmpty } from "@/components/rbac/catalog-search";
 import { KeyChip } from "@/components/rbac/fields";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -106,14 +106,6 @@ function RolesIndex() {
             <code className="font-mono text-xs">polinetwork:identity</code> scope.
           </p>
         </div>
-        {can("idp:roles:write") && (
-          <Button asChild>
-            <Link to="/access/roles/new">
-              <Plus aria-hidden="true" />
-              New role
-            </Link>
-          </Button>
-        )}
       </div>
 
       <CatalogSearch
@@ -122,73 +114,86 @@ function RolesIndex() {
         onQueryChange={setQuery}
         count={filtered.length}
         total={catalog.roles.length}
-      />
+      >
+        {can("idp:roles:write") && (
+          <Button asChild>
+            <Link to="/access/roles/new">
+              <Plus aria-hidden="true" />
+              New role
+            </Link>
+          </Button>
+        )}
+      </CatalogSearch>
+
+      {search && filtered.length === 0 && <CatalogSearchEmpty kind="roles" />}
 
       {
         <div className="space-y-8">
-          <Card>
-            <CardHeader>
-              <CardTitle>Built into the identity provider</CardTitle>
-              <CardDescription>
-                These roles always exist and nobody hands them out: they follow the evidence the
-                identity provider already collects, and Master Admin follows the administrator
-                allowlist configured for this deployment. You can still choose what they grant and
-                where they sit in the hierarchy.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-0 pb-0">
-              {managed.length === 0 ? (
-                <p className="border-t px-5 py-6 text-sm text-muted-foreground">
-                  No built-in roles match your search.
-                </p>
-              ) : (
-                <ul className="divide-y border-t" aria-label="Built-in roles">
-                  {managed.map((role) => (
-                    <RoleRow key={role.id} role={role} effective={countFor(role)} />
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+          {(managed.length > 0 || !search) && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Built into the identity provider</CardTitle>
+                <CardDescription>
+                  These roles always exist and nobody hands them out: they follow the evidence the
+                  identity provider already collects, and Master Admin follows the administrator
+                  allowlist configured for this deployment. You can still choose what they grant and
+                  where they sit in the hierarchy.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-0 pb-0">
+                {managed.length === 0 ? (
+                  <p className="border-t px-5 py-6 text-sm text-muted-foreground">
+                    No built-in roles match your search.
+                  </p>
+                ) : (
+                  <ul className="divide-y border-t" aria-label="Built-in roles">
+                    {managed.map((role) => (
+                      <RoleRow key={role.id} role={role} effective={countFor(role)} />
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
-          <div>
-            <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Roles you created</h2>
-            {custom.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center gap-4 px-6 py-14 text-center">
-                  <div className="flex size-14 items-center justify-center rounded-2xl border bg-background text-primary">
-                    <ShieldCheck className="size-6" aria-hidden="true" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold">
-                      {search ? "No custom roles match your search" : "No roles of your own yet"}
-                    </h3>
-                    <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-                      {search
-                        ? "Try a different name, key, or description, or clear the search."
-                        : "Create a role to bundle permissions and give them to specific people."}
-                    </p>
-                  </div>
-                  {!search && can("idp:roles:write") && (
-                    <Button asChild>
-                      <Link to="/access/roles/new">
-                        <Plus aria-hidden="true" />
-                        New role
-                      </Link>
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <ul className="divide-y" aria-label="Your roles">
-                  {custom.map((role) => (
-                    <RoleRow key={role.id} role={role} effective={countFor(role)} />
-                  ))}
-                </ul>
-              </Card>
-            )}
-          </div>
+          {(custom.length > 0 || !search) && (
+            <div>
+              <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
+                Roles you created
+              </h2>
+              {custom.length === 0 ? (
+                <Card>
+                  <CardContent className="flex flex-col items-center gap-4 px-6 py-14 text-center">
+                    <div className="flex size-14 items-center justify-center rounded-2xl border bg-background text-primary">
+                      <ShieldCheck className="size-6" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold">No roles of your own yet</h3>
+                      <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+                        Create a role to bundle permissions and give them to specific people.
+                      </p>
+                    </div>
+                    {can("idp:roles:write") && (
+                      <Button asChild>
+                        <Link to="/access/roles/new">
+                          <Plus aria-hidden="true" />
+                          New role
+                        </Link>
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <ul className="divide-y" aria-label="Your roles">
+                    {custom.map((role) => (
+                      <RoleRow key={role.id} role={role} effective={countFor(role)} />
+                    ))}
+                  </ul>
+                </Card>
+              )}
+            </div>
+          )}
         </div>
       }
     </div>
