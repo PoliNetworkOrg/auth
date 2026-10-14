@@ -13,6 +13,7 @@ import { env } from "../env";
 import { AUTH_COOKIE_PREFIX } from "./cookies";
 import { appEmail } from "./contact-email";
 import { startAccessDispatcher } from "./access-dispatcher";
+import { startDataRetention } from "./data-retention";
 import { getOidcClaims } from "./identity";
 import { ensureIdTokenKey, jwtOptions } from "./jwt-options";
 import { startKeyPruning } from "./key-pruning";
@@ -242,4 +243,5 @@ export const auth = betterAuth({
 if (import.meta.env.PROD) {
   startAccessDispatcher(auth);
   startKeyPruning();
+  startDataRetention();
 }
