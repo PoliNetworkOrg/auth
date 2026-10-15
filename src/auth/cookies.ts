@@ -9,3 +9,10 @@
  * prefix keeps our cookies apart from theirs.
  */
 export const AUTH_COOKIE_PREFIX = "pn-identity";
+
+/**
+ * Set in a browser that cannot create passkeys, so its sign-ins skip the passkey offer for
+ * the rest of the browser session instead of coming back to it. The person never saw the
+ * offer, so it is not recorded as declined.
+ */
+export const PASSKEY_UNSUPPORTED_COOKIE = `${AUTH_COOKIE_PREFIX}.passkey-unsupported`;

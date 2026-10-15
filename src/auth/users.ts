@@ -24,7 +24,8 @@ export type GroupTrait = "socio" | "direttivo";
 
 export const USER_SORTS = ["name", "newest", "oldest"] as const;
 
-export const USER_PAGE_SIZE = 50;
+export const USER_PAGE_SIZES = [10, 20, 25, 50, 100] as const;
+export const USER_PAGE_SIZE = 25;
 
 // The router parses search values as JSON, so a Telegram ID typed into the search box
 // arrives as a number.
@@ -48,6 +49,12 @@ export const userSearchSchema = z.object({
   role: text(MAX_KEY_LENGTH),
   sort: z.enum(USER_SORTS).optional().catch(undefined),
   page: z.coerce.number().int().min(1).max(100_000).optional().catch(undefined),
+  pageSize: z.coerce
+    .number()
+    .int()
+    .refine((value) => USER_PAGE_SIZES.some((size) => size === value))
+    .optional()
+    .catch(undefined),
   socio: presence,
   direttivo: presence,
   student: presence,

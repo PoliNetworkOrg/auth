@@ -226,6 +226,7 @@ export async function listUsers(actorId: string, search: UserSearch): Promise<Us
       }
       const where = and(...filters);
       const page = search.page ?? 1;
+      const pageSize = search.pageSize ?? USER_PAGE_SIZE;
 
       const [{ total }] = await transaction.select({ total: count() }).from(user).where(where);
       const rows = await transaction
@@ -253,8 +254,8 @@ export async function listUsers(actorId: string, search: UserSearch): Promise<Us
               : [asc(user.name)]),
           asc(user.id),
         )
-        .limit(USER_PAGE_SIZE)
-        .offset((page - 1) * USER_PAGE_SIZE);
+        .limit(pageSize)
+        .offset((page - 1) * pageSize);
 
       const ids = rows.map((row) => row.id);
       const linked = ids.length
@@ -333,7 +334,7 @@ export async function listUsers(actorId: string, search: UserSearch): Promise<Us
         }),
         total,
         page,
-        pageSize: USER_PAGE_SIZE,
+        pageSize,
         membership: { socio: groups.socio.source, direttivo: groups.direttivo.source },
       };
     },
