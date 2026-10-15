@@ -127,14 +127,16 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
             : (result.error.message ?? "Sign-in failed. Please try again."),
         );
       } else if (method === "passkey") {
-        // No redirect follows a passkey, so load the page again as the signed-in person.
+        // In an OpenID Connect sign-in the response carries the next step, and the auth client is
+        // already navigating there: stay on this page instead of flashing the account page.
+        if (oauthFlow && "url" in result.data) return;
+        // Otherwise no redirect follows a passkey, so load the page again as the signed-in person.
         await router.invalidate();
       }
     } catch {
       toast.error("Unable to reach the sign-in service. Please try again.");
-    } finally {
-      setBusy(null);
     }
+    setBusy(null);
   }
 
   return (
