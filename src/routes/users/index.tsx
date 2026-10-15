@@ -26,6 +26,7 @@ import {
   type UserListPage,
   type UserSearch,
   type UserTrait,
+  USER_PAGE_SIZES,
   USER_TRAITS,
   hasUserFilters,
   userSearchSchema,
@@ -351,7 +352,10 @@ function UsersIndex() {
                 className="h-7 rounded-full px-3"
                 onClick={() => {
                   setQuery("");
-                  void navigate({ search: { sort: search.sort }, replace: true });
+                  void navigate({
+                    search: { sort: search.sort, pageSize: search.pageSize },
+                    replace: true,
+                  });
                 }}
               >
                 <X aria-hidden="true" />
@@ -490,45 +494,65 @@ function UsersIndex() {
         </Card>
       )}
 
-      {data.total > data.pageSize && (
-        <nav aria-label="Pages" className="flex items-center justify-between gap-3">
-          <Button variant="outline" disabled={data.page === 1} asChild={data.page > 1}>
-            {data.page > 1 ? (
-              <Link
-                from={Route.fullPath}
-                search={(previous) => ({ ...previous, page: data.page - 1 })}
-              >
-                <ChevronLeft aria-hidden="true" />
-                Previous
-              </Link>
-            ) : (
-              <>
-                <ChevronLeft aria-hidden="true" />
-                Previous
-              </>
-            )}
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            {first}–{last} of {data.total}
-          </span>
-          <Button variant="outline" disabled={!hasNext} asChild={hasNext}>
-            {hasNext ? (
-              <Link
-                from={Route.fullPath}
-                search={(previous) => ({ ...previous, page: data.page + 1 })}
-              >
-                Next
-                <ChevronRight aria-hidden="true" />
-              </Link>
-            ) : (
-              <>
-                Next
-                <ChevronRight aria-hidden="true" />
-              </>
-            )}
-          </Button>
-        </nav>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span>Rows per page</span>
+          <Select
+            value={String(data.pageSize)}
+            onValueChange={(value) => update({ pageSize: Number(value) })}
+          >
+            <SelectTrigger aria-label="Rows per page" className="w-20">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {USER_PAGE_SIZES.map((size) => (
+                <SelectItem key={size} value={String(size)}>
+                  {size}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {data.total > data.pageSize && (
+          <nav aria-label="Pages" className="flex items-center gap-3">
+            <Button variant="outline" disabled={data.page === 1} asChild={data.page > 1}>
+              {data.page > 1 ? (
+                <Link
+                  from={Route.fullPath}
+                  search={(previous) => ({ ...previous, page: data.page - 1 })}
+                >
+                  <ChevronLeft aria-hidden="true" />
+                  Previous
+                </Link>
+              ) : (
+                <>
+                  <ChevronLeft aria-hidden="true" />
+                  Previous
+                </>
+              )}
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              {first}–{last} of {data.total}
+            </span>
+            <Button variant="outline" disabled={!hasNext} asChild={hasNext}>
+              {hasNext ? (
+                <Link
+                  from={Route.fullPath}
+                  search={(previous) => ({ ...previous, page: data.page + 1 })}
+                >
+                  Next
+                  <ChevronRight aria-hidden="true" />
+                </Link>
+              ) : (
+                <>
+                  Next
+                  <ChevronRight aria-hidden="true" />
+                </>
+              )}
+            </Button>
+          </nav>
+        )}
+      </div>
     </div>
   );
 }
