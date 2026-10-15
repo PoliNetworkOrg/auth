@@ -16,7 +16,7 @@ export function SectionShell({
   children: ReactNode;
 }) {
   return (
-    <div className="min-h-screen">
+    <div className="flex-1">
       <AppHeader active={active} />
       <main className="mx-auto max-w-6xl px-5 py-10 sm:px-8 sm:py-14">{children}</main>
     </div>

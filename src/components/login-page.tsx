@@ -20,7 +20,7 @@ const providers = [
 
 export function LoginLayout({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
-    <div data-login-layout className="flex min-h-svh flex-col bg-muted">
+    <div data-login-layout className="flex flex-1 flex-col bg-muted">
       <header className="flex justify-end p-5 sm:p-6">
         <ThemeSwitch />
       </header>
@@ -37,7 +37,6 @@ export function LoginLayout({ children, wide = false }: { children: ReactNode; w
             </span>
           </a>
           {children}
-          <p className="text-center text-xs leading-5 text-muted-foreground">PoliNetwork APS</p>
         </div>
       </main>
     </div>
@@ -225,10 +224,18 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
               </p>
             )}
           </div>
+
           <p className="text-center text-xs leading-5 text-muted-foreground">
-            {oauthFlow
-              ? "After signing in you'll review what the application can access before anything is shared."
-              : "New here? Continue with an account to get started. You can add a passkey once you're signed in."}
+            By continuing, you acknowledge that you have read and understood our{" "}
+            <a
+              href="https://polinetwork.org/privacy"
+              aria-label="privacy policy"
+              rel="noreferrer noopener"
+              className="underline"
+              target="_blank"
+            >
+              Privacy Policy.
+            </a>
           </p>
         </CardContent>
       </Card>

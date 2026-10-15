@@ -32,7 +32,7 @@ function AccountPage({ viewer, details }: { viewer: Viewer; details: AccountDeta
   const providers = useProviders();
   const actions = useAccountActions();
   return (
-    <div className="min-h-screen">
+    <div className="flex-1">
       <AppHeader active="account" />
       <main className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)] gap-10 px-5 py-8 sm:px-8 sm:py-12">
         <header className="flex items-start gap-4 sm:items-center sm:gap-5">

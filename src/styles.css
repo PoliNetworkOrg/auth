@@ -105,6 +105,9 @@
   body:has([data-login-layout]) {
     @apply bg-muted;
   }
+  body:has([data-login-layout]) > [data-app-footer] {
+    display: none;
+  }
   button:not(:disabled) {
     cursor: pointer;
   }

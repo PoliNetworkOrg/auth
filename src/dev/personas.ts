@@ -78,7 +78,7 @@ export const DEV_PERSONAS: DevPersona[] = [
     id: DEV_ADMIN_ID,
     name: "Ada Admin",
     email: "admin@polinetwork.test",
-    description: "Master Admin: every permission",
+    description: "Master Admin",
     accounts: [{ providerId: "google", accountId: "dev-admin" }],
   },
   {
@@ -86,7 +86,7 @@ export const DEV_PERSONAS: DevPersona[] = [
     id: "dev-staff",
     name: "Sam Staff",
     email: "staff@polinetwork.test",
-    description: "Can read the user directory and roles, nothing else",
+    description: "Can read the user directory and roles",
     accounts: [{ providerId: "google", accountId: "dev-staff" }],
     roles: [
       {
@@ -103,7 +103,7 @@ export const DEV_PERSONAS: DevPersona[] = [
     id: "dev-student",
     name: "Stella Student",
     email: "student@polinetwork.test",
-    description: "Verified Polimi student with Telegram linked, no admin access",
+    description: "Verified Polimi student with Telegram linked",
     accounts: [
       { providerId: "google", accountId: "dev-student" },
       {
@@ -119,7 +119,7 @@ export const DEV_PERSONAS: DevPersona[] = [
     id: "dev-member",
     name: "Nico Newcomer",
     email: "member@polinetwork.test",
-    description: "Just signed up with Google: no statuses, no roles",
+    description: "Blank login with Google",
     accounts: [{ providerId: "google", accountId: "dev-member" }],
   },
 ];
@@ -135,8 +135,8 @@ export function listPersonas(): DevPersonaSummary[] {
     description,
     ...(id === DEV_ADMIN_ID && !env.IDP_ADMIN_USER_IDS.includes(DEV_ADMIN_ID)
       ? {
-          warning: `Add ${DEV_ADMIN_ID} to IDP_ADMIN_USER_IDS in .env.local to make this Master Admin.`,
-        }
+        warning: `Add ${DEV_ADMIN_ID} to IDP_ADMIN_USER_IDS in .env.local to make this Master Admin.`,
+      }
       : {}),
   }));
 }
@@ -144,7 +144,7 @@ export function listPersonas(): DevPersonaSummary[] {
 type Writer = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** Thrown instead of silently moving an identity between people. */
-export class DevFixtureConflict extends Error {}
+export class DevFixtureConflict extends Error { }
 
 /** Finds the fixture role by its stable ID, so a key renamed in the role editor still matches;
  * then by key, so a role created by hand under that key is reused rather than collided with. */
