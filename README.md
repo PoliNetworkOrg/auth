@@ -213,8 +213,12 @@ membership answers. An account unlinked while Graph is pending cannot authorize 
 
 Every RBAC mutation records its actor, operation, target and before/after state in
 `rbac_audit_event`. These events commit atomically with the change and reject updates,
-deletes and truncation. Database owners remain trusted and can disable triggers; export
-audit events to separately controlled storage if protection from database owners is needed.
+deletes and truncation. The privacy policy keeps them for five years: from `0020` on, the
+database lets a delete through only when every row it touches is older than that, and the
+production server deletes those rows daily. The same daily job deletes sessions, verification
+values and OAuth tokens 30 days after they expire. Database owners remain trusted and can
+disable triggers; export audit events to separately controlled storage if protection from
+database owners is needed.
 
 ### The user directory
 
