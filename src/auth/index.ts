@@ -1,4 +1,4 @@
-import { oauthProvider } from "@better-auth/oauth-provider";
+import { getOAuthProviderState, oauthProvider } from "@better-auth/oauth-provider";
 import { getAuthenticatorName, passkey } from "@better-auth/passkey";
 import { eq } from "drizzle-orm";
 import { betterAuth, type User } from "better-auth";
@@ -6,15 +6,22 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { jwt } from "better-auth/plugins/jwt";
+import { parseCookies } from "better-auth/cookies";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { db } from "../db";
 import * as schema from "../db/schema";
 import { env } from "../env";
-import { AUTH_COOKIE_PREFIX } from "./cookies";
+import { AUTH_COOKIE_PREFIX, PASSKEY_UNSUPPORTED_COOKIE } from "./cookies";
 import { appEmail } from "./contact-email";
 import { startAccessDispatcher } from "./access-dispatcher";
 import { startDataRetention } from "./data-retention";
 import { getOidcClaims } from "./identity";
+import {
+  PASSKEY_PROMPT_PAGE,
+  SESSION_FRESH_AGE,
+  readPasskeyPromptState,
+  shouldOfferPasskey,
+} from "./passkey-prompt";
 import { ensureIdTokenKey, jwtOptions } from "./jwt-options";
 import { startKeyPruning } from "./key-pruning";
 import { logAuthorizationDenial } from "./denial-log";
@@ -165,7 +172,7 @@ export const auth = betterAuth({
       trustedProviders: ["google", "pn-entra", "telegram"],
     },
   },
-  session: { cookieCache: { enabled: false } },
+  session: { cookieCache: { enabled: false }, freshAge: SESSION_FRESH_AGE },
   advanced: { cookiePrefix: AUTH_COOKIE_PREFIX, ipAddress: clientIpOptions(env) },
   rateLimit: { enabled: true, customStorage: postgresRateLimitStorage(db) },
   plugins: [
@@ -198,6 +205,22 @@ export const auth = betterAuth({
       allowDynamicClientRegistration: false,
       // Lets the login page name the requesting app before the user signs in.
       allowPublicClientPrelogin: true,
+      // Offers a passkey once, on the way to the app; the page continues the sign-in after.
+      postLogin: {
+        page: PASSKEY_PROMPT_PAGE,
+        consentReferenceId: () => undefined,
+        shouldRedirect: async ({ headers, user, session }) => {
+          const query = new URLSearchParams((await getOAuthProviderState())?.query ?? "");
+          return shouldOfferPasskey({
+            ...(await readPasskeyPromptState(user.id)),
+            unsupportedBrowser: parseCookies(headers.get("cookie") ?? "").has(
+              PASSKEY_UNSUPPORTED_COOKIE,
+            ),
+            sessionCreatedAt: new Date(session.createdAt),
+            prompt: query.get("prompt"),
+          });
+        },
+      },
       // Administrators share one client pool instead of owning clients individually.
       clientReference: () => OIDC_CLIENT_REFERENCE,
       clientPrivileges: async ({ user, action }) => {
