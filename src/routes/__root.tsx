@@ -41,8 +41,28 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body>
-        {children}
+      <body className="flex min-h-svh flex-col">
+        <div className="flex flex-1 flex-col">{children}</div>
+        <footer data-app-footer className="py-5 text-xs text-muted-foreground">
+          <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
+            <a
+              href="https://polinetwork.org"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              PoliNetwork APS
+            </a>
+            <a
+              href="https://polinetwork.org/privacy"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="underline underline-offset-4 hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              Privacy Policy
+            </a>
+          </div>
+        </footer>
         <Toaster position="bottom-right" richColors />
         <TanStackDevtools
           config={{
