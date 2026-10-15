@@ -1,0 +1,1 @@
+ALTER TABLE "user" ADD COLUMN "passkey_prompt_declined_at" timestamp;

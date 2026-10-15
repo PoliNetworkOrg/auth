@@ -11,6 +11,7 @@ import { disconnectAccount } from "./accounts";
 import { getIdentity } from "./identity";
 import { auth } from "./index";
 import { actionMiddleware, sessionMiddleware } from "./middleware";
+import { declinePasskeyPrompt } from "./passkey-prompt";
 import { confirmStudentVerification, requestStudentVerification } from "./student-verification";
 
 /**
@@ -87,6 +88,11 @@ export const confirmStudentVerificationFn = createServerFn({ method: "POST" })
   .middleware([sessionMiddleware])
   .validator(validate(z.object({ email: z.string().max(254), code: z.string().max(32) })))
   .handler(({ context, data }) => confirmStudentVerification(context.session.userId, data));
+
+/** Skips the passkey offer for good; passkeys can still be added from the account page. */
+export const declinePasskeyPromptFn = createServerFn({ method: "POST" })
+  .middleware([sessionMiddleware])
+  .handler(({ context }) => declinePasskeyPrompt(context.session.userId));
 
 export type ConsentApp =
   | {
