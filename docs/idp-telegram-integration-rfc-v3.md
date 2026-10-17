@@ -244,7 +244,7 @@ A **projection** is a named, admin-controlled view of the access data. It is def
 export const ACCESS_PROJECTIONS = {
   backend: {
     clients: ["backend"],
-    prefixes: ["admin:", "tg:", "wa:", "groups:", "web:", "azure:"],
+    prefixes: ["admin:", "tg:", "wa:", "groups:", "web:", "azure:", "esign:"],
     fields: ["telegramId"],
   },
 } as const;
