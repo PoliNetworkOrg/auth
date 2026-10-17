@@ -135,8 +135,8 @@ export function listPersonas(): DevPersonaSummary[] {
     description,
     ...(id === DEV_ADMIN_ID && !env.IDP_ADMIN_USER_IDS.includes(DEV_ADMIN_ID)
       ? {
-        warning: `Add ${DEV_ADMIN_ID} to IDP_ADMIN_USER_IDS in .env.local to make this Master Admin.`,
-      }
+          warning: `Add ${DEV_ADMIN_ID} to IDP_ADMIN_USER_IDS in .env.local to make this Master Admin.`,
+        }
       : {}),
   }));
 }
@@ -144,7 +144,7 @@ export function listPersonas(): DevPersonaSummary[] {
 type Writer = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /** Thrown instead of silently moving an identity between people. */
-export class DevFixtureConflict extends Error { }
+export class DevFixtureConflict extends Error {}
 
 /** Finds the fixture role by its stable ID, so a key renamed in the role editor still matches;
  * then by key, so a role created by hand under that key is reused rather than collided with. */

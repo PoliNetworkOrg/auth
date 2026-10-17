@@ -32,6 +32,7 @@ import { Route as AccessRolesNewRouteImport } from './routes/access/roles/new'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiDevLoginRouteImport } from './routes/api/dev/login'
 import { Route as ApiInternalAccessSnapshotRouteImport } from './routes/api/internal/access-snapshot'
+import { Route as ApiInternalEsignUsersRouteImport } from './routes/api/internal/esign-users'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -150,6 +151,11 @@ const ApiInternalAccessSnapshotRoute =
     path: '/api/internal/access-snapshot',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiInternalEsignUsersRoute = ApiInternalEsignUsersRouteImport.update({
+  id: '/api/internal/esign-users',
+  path: '/api/internal/esign-users',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -173,6 +179,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/login': typeof ApiDevLoginRoute
   '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
+  '/api/internal/esign-users': typeof ApiInternalEsignUsersRoute
   '/access/permissions/': typeof AccessPermissionsIndexRoute
   '/access/roles/': typeof AccessRolesIndexRoute
 }
@@ -195,6 +202,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/login': typeof ApiDevLoginRoute
   '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
+  '/api/internal/esign-users': typeof ApiInternalEsignUsersRoute
   '/access/permissions': typeof AccessPermissionsIndexRoute
   '/access/roles': typeof AccessRolesIndexRoute
 }
@@ -221,6 +229,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/login': typeof ApiDevLoginRoute
   '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
+  '/api/internal/esign-users': typeof ApiInternalEsignUsersRoute
   '/access/permissions/': typeof AccessPermissionsIndexRoute
   '/access/roles/': typeof AccessRolesIndexRoute
 }
@@ -248,6 +257,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/dev/login'
     | '/api/internal/access-snapshot'
+    | '/api/internal/esign-users'
     | '/access/permissions/'
     | '/access/roles/'
   fileRoutesByTo: FileRoutesByTo
@@ -270,6 +280,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/dev/login'
     | '/api/internal/access-snapshot'
+    | '/api/internal/esign-users'
     | '/access/permissions'
     | '/access/roles'
   id:
@@ -295,6 +306,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/dev/login'
     | '/api/internal/access-snapshot'
+    | '/api/internal/esign-users'
     | '/access/permissions/'
     | '/access/roles/'
   fileRoutesById: FileRoutesById
@@ -311,6 +323,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiDevLoginRoute: typeof ApiDevLoginRoute
   ApiInternalAccessSnapshotRoute: typeof ApiInternalAccessSnapshotRoute
+  ApiInternalEsignUsersRoute: typeof ApiInternalEsignUsersRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -476,6 +489,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiInternalAccessSnapshotRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/internal/esign-users': {
+      id: '/api/internal/esign-users'
+      path: '/api/internal/esign-users'
+      fullPath: '/api/internal/esign-users'
+      preLoaderRoute: typeof ApiInternalEsignUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -544,6 +564,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiDevLoginRoute: ApiDevLoginRoute,
   ApiInternalAccessSnapshotRoute: ApiInternalAccessSnapshotRoute,
+  ApiInternalEsignUsersRoute: ApiInternalEsignUsersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

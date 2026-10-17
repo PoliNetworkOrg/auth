@@ -138,5 +138,29 @@ describe.skipIf(!baseURL || !databaseURL || !clientId || !audience)(
         ]),
       );
     });
+
+    it("returns registered users to the backend without requiring a first Signatures visit", async () => {
+      const url = `${baseURL}/api/internal/esign-users`;
+      expect((await fetch(url)).status).toBe(401);
+      expect(
+        (
+          await fetch(url, {
+            headers: { Authorization: `Bearer ${await token({ scope: "backend:tg:read" })}` },
+          })
+        ).status,
+      ).toBe(401);
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${await token()}` } });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toContain("no-store");
+      expect(await response.json()).toEqual(
+        expect.arrayContaining([
+          {
+            sub: "snapshot-integration-user",
+            name: "Snapshot User",
+            email: "snapshot@identity.invalid",
+          },
+        ]),
+      );
+    });
   },
 );
