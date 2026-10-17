@@ -13,8 +13,7 @@ import {
 import { authorizationMutationLock } from "../db/security-lock";
 import { env } from "../env";
 import { listEntraGroupMembers } from "./membership";
-import { ACCESS_PROJECTIONS } from "./access-projections";
-import { effectiveRolePermissions, type RbacCatalog } from "./rbac";
+import { effectiveRolePermissions, isManagedPermissionKey, type RbacCatalog } from "./rbac";
 import { readCatalog } from "./rbac-store";
 
 const ENTRA_GRACE_MS = 3_600_000;
@@ -120,7 +119,10 @@ function refreshObservations(groups: Group[]): Promise<Set<string>> {
   return refreshing;
 }
 
-/** Builds only the backend's reviewed projection; every path carries its own expiry. */
+/**
+ * Builds only the backend's reviewed projection: every permission except the identity provider's
+ * own. Every path carries its own expiry.
+ */
 export function projectBackendSubjects(input: {
   users: string[];
   manualRoles: { userId: string; roleKey: string }[];
@@ -140,8 +142,8 @@ export function projectBackendSubjects(input: {
     if (!target || (validUntil && validUntil <= now)) return;
     let keys = rolePermissions.get(roleKey);
     if (!keys) {
-      keys = effectiveRolePermissions(catalog, roleKey).filter((key) =>
-        ACCESS_PROJECTIONS.backend.prefixes.some((prefix) => key.startsWith(prefix)),
+      keys = effectiveRolePermissions(catalog, roleKey).filter(
+        (key) => !isManagedPermissionKey(key),
       );
       rolePermissions.set(roleKey, keys);
     }
