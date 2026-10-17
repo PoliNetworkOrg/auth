@@ -107,10 +107,17 @@ describe.skipIf(!baseURL || !databaseURL || !clientId || !audience)(
       expect(body).toMatchObject({
         schema: "polinetwork.access-snapshot/v1",
         projection: "backend",
+        catalog: {
+          roles: expect.arrayContaining([
+            { key: "snapshot-integration-role", name: "Snapshot test" },
+          ]),
+          permissions: expect.arrayContaining([{ key: "tg:snapshot:test", name: "Snapshot test" }]),
+        },
         subjects: expect.arrayContaining([
           {
             sub: "snapshot-integration-user",
             telegramId: "987654321",
+            roles: { "snapshot-integration-role": { validUntil: null } },
             permissions: { "tg:snapshot:test": { validUntil: null } },
           },
         ]),

@@ -13,7 +13,7 @@ import {
 import { authorizationMutationLock } from "../db/security-lock";
 import { env } from "../env";
 import { listEntraGroupMembers } from "./membership";
-import { effectiveRolePermissions, isManagedPermissionKey, type RbacCatalog } from "./rbac";
+import { isManagedPermissionKey, resolveAccess, type RbacCatalog } from "./rbac";
 import { readCatalog } from "./rbac-store";
 
 const ENTRA_GRACE_MS = 3_600_000;
@@ -29,7 +29,13 @@ export type AccessSource = {
 export type AccessSubject = {
   sub: string;
   telegramId: string | null;
+  /** Effective roles: those granted plus every role they inherit from. */
+  roles: Record<string, { validUntil: string | null }>;
   permissions: Record<string, { validUntil: string | null }>;
+};
+export type AccessCatalog = {
+  roles: { key: string; name: string }[];
+  permissions: { key: string; name: string }[];
 };
 export type AccessSnapshot = {
   schema: typeof SCHEMA;
@@ -37,6 +43,7 @@ export type AccessSnapshot = {
   generation: number;
   builtAt: string;
   sources: Record<string, AccessSource>;
+  catalog: AccessCatalog;
   subjects: AccessSubject[];
 };
 
@@ -119,9 +126,34 @@ function refreshObservations(groups: Group[]): Promise<Set<string>> {
   return refreshing;
 }
 
+/** Keeps the latest expiry among the paths that grant a key, where null never expires. */
+function extend(target: Map<string, string | null>, key: string, expiry: string | null) {
+  const previous = target.get(key);
+  if (previous === null) return;
+  if (previous === undefined || expiry === null || expiry > previous) target.set(key, expiry);
+}
+
+function byKey(held: Map<string, string | null>): Record<string, { validUntil: string | null }> {
+  return Object.fromEntries(
+    [...held.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, validUntil]) => [key, { validUntil }]),
+  );
+}
+
+/** Names for the backend's pickers: every role, and the permissions the projection carries. */
+export function projectBackendCatalog(catalog: RbacCatalog): AccessCatalog {
+  const named = (entries: { key: string; name: string }[]) =>
+    entries.map(({ key, name }) => ({ key, name })).sort((a, b) => a.key.localeCompare(b.key));
+  return {
+    roles: named(catalog.roles),
+    permissions: named(catalog.permissions.filter((entry) => !isManagedPermissionKey(entry.key))),
+  };
+}
+
 /**
  * Builds only the backend's reviewed projection: every permission except the identity provider's
- * own. Every path carries its own expiry.
+ * own, and every effective role. Every path carries its own expiry.
  */
 export function projectBackendSubjects(input: {
   users: string[];
@@ -133,26 +165,28 @@ export function projectBackendSubjects(input: {
   now: Date;
 }): AccessSubject[] {
   const { users, manualRoles, proofs, catalog, groups, observations, now } = input;
-  const permissions = new Map<string, Map<string, string | null>>(
-    users.map((id) => [id, new Map()]),
+  const held = new Map(
+    users.map((id) => [
+      id,
+      { roles: new Map<string, string | null>(), permissions: new Map<string, string | null>() },
+    ]),
   );
-  const rolePermissions = new Map<string, string[]>();
+  const conferred = new Map<string, { roles: string[]; permissions: string[] }>();
   const grant = (userId: string, roleKey: string, validUntil: Date | null) => {
-    const target = permissions.get(userId);
+    const target = held.get(userId);
     if (!target || (validUntil && validUntil <= now)) return;
-    let keys = rolePermissions.get(roleKey);
-    if (!keys) {
-      keys = effectiveRolePermissions(catalog, roleKey).filter(
-        (key) => !isManagedPermissionKey(key),
-      );
-      rolePermissions.set(roleKey, keys);
+    let access = conferred.get(roleKey);
+    if (!access) {
+      const resolved = resolveAccess(catalog, [roleKey]);
+      access = {
+        roles: resolved.roles,
+        permissions: resolved.permissions.filter((key) => !isManagedPermissionKey(key)),
+      };
+      conferred.set(roleKey, access);
     }
     const expiry = validUntil?.toISOString() ?? null;
-    for (const key of keys) {
-      const previous = target.get(key);
-      if (previous === null) continue;
-      if (previous === undefined || expiry === null || expiry > previous) target.set(key, expiry);
-    }
+    for (const key of access.roles) extend(target.roles, key, expiry);
+    for (const key of access.permissions) extend(target.permissions, key, expiry);
   };
 
   for (const row of manualRoles) grant(row.userId, row.roleKey, null);
@@ -205,8 +239,8 @@ export function projectBackendSubjects(input: {
 
   return users
     .flatMap((sub): AccessSubject[] => {
-      const held = permissions.get(sub);
-      if (!held?.size) return [];
+      const access = held.get(sub);
+      if (!access?.permissions.size) return [];
       const ids = telegramIds.get(sub);
       const id = ids?.size === 1 ? [...ids][0]! : null;
       const telegramId = id && owners.get(id) === 1 ? id : null;
@@ -214,11 +248,8 @@ export function projectBackendSubjects(input: {
         {
           sub,
           telegramId,
-          permissions: Object.fromEntries(
-            [...held.entries()]
-              .sort(([a], [b]) => a.localeCompare(b))
-              .map(([key, validUntil]) => [key, { validUntil }]),
-          ),
+          roles: byKey(access.roles),
+          permissions: byKey(access.permissions),
         },
       ];
     })
@@ -281,8 +312,17 @@ export async function buildBackendSnapshot(): Promise<string> {
       observations,
       now,
     });
+    const names = projectBackendCatalog(catalog);
     const fingerprint = createHash("sha256")
-      .update(JSON.stringify({ schema: SCHEMA, projection: "backend", sources, subjects }))
+      .update(
+        JSON.stringify({
+          schema: SCHEMA,
+          projection: "backend",
+          sources,
+          catalog: names,
+          subjects,
+        }),
+      )
       .digest("hex");
     const [previous] = await transaction
       .select()
@@ -300,6 +340,7 @@ export async function buildBackendSnapshot(): Promise<string> {
         ...sources,
         "polimi-email": { health: "ok", observedAt: builtAt },
       },
+      catalog: names,
       subjects,
     };
     const serialized = JSON.stringify(body);

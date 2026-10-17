@@ -277,10 +277,27 @@ If-None-Match: "sha256-9f1c…"
     },
     "polimi-email": { "health": "ok", "observedAt": "2026-10-07T10:15:02Z" }
   },
+  "catalog": {
+    "roles": [
+      { "key": "admin", "name": "Admin" },
+      { "key": "moderator", "name": "Moderator" },
+      { "key": "socio", "name": "Socio" }
+    ],
+    "permissions": [
+      { "key": "admin:access", "name": "Open the admin dashboard" },
+      { "key": "tg:grants:manage", "name": "Manage Telegram grants" },
+      { "key": "tg:moderate", "name": "Moderate groups" },
+      { "key": "tg:moderate:global", "name": "Moderate every group" }
+    ]
+  },
   "subjects": [
     {
       "sub": "usr_8f2a",
       "telegramId": "123456789",
+      "roles": {
+        "moderator": { "validUntil": null },
+        "socio": { "validUntil": "2026-10-07T11:14:31Z" }
+      },
       "permissions": {
         "tg:moderate": { "validUntil": null },
         "tg:moderate:global": { "validUntil": "2026-10-07T11:14:31Z" }
@@ -289,6 +306,7 @@ If-None-Match: "sha256-9f1c…"
     {
       "sub": "usr_luca",
       "telegramId": null,
+      "roles": { "admin": { "validUntil": null } },
       "permissions": {
         "admin:access": { "validUntil": null },
         "tg:grants:manage": { "validUntil": null }
@@ -310,6 +328,10 @@ If-None-Match: "sha256-9f1c…"
 | `master-admin`                                         | Configured break-glass user ID: `null`; Entra administrators group: that group's membership `observedAt` + `ENTRA_GRACE` (1 h). The catalog-wide wildcard includes every permission. |
 
 - The backend drops a permission locally when `now ≥ validUntil`, even if no new snapshot arrives. This one mechanism handles both student expiry and Entra staleness. A permanent right is never removed because an unrelated path expired.
+
+**`roles` lists the subject's effective roles** with the same expiry rule: every role granted through a path above plus every role it inherits from, each with the latest validity among the paths that reach it. It does not change which subjects are included.
+
+**`catalog` names every role and every permission the projection carries,** sorted by key, so a consumer can offer them in a picker without asking the IdP.
 
 **`telegramId` comes from the linked Telegram account,** not from the evidence row's validity.
 
