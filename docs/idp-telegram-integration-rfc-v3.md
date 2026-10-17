@@ -236,7 +236,7 @@ The legacy names `owner`, `president`, `direttivo`, `hr`, `admin`, `web` and `cr
 A **projection** is a named, admin-controlled view of the access data. It is defined in the IdP as configuration (reviewed by pull request), and lists:
 
 - which **clients** may pull it;
-- which **permission prefixes** it contains;
+- which **permissions** it contains (the `backend` projection: every permission except the IdP's own `idp:*`, so permissions created in the dashboard need no code change);
 - which **identity fields** it includes (for example, the Telegram ID).
 
 ```ts
@@ -244,7 +244,6 @@ A **projection** is a named, admin-controlled view of the access data. It is def
 export const ACCESS_PROJECTIONS = {
   backend: {
     clients: ["backend"],
-    prefixes: ["admin:", "tg:", "wa:", "groups:", "web:", "azure:", "esign:"],
     fields: ["telegramId"],
   },
 } as const;

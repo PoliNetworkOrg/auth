@@ -155,4 +155,22 @@ describe("backend access projection", () => {
     expect(subjects.map(({ telegramId }) => telegramId)).toEqual([null, null, null]);
     expect(subjects[0]?.permissions["tg:read"]).toEqual({ validUntil: null });
   });
+
+  it("carries permissions created in the dashboard but never the identity provider's own", () => {
+    const subjects = projectBackendSubjects({
+      users: ["signer"],
+      manualRoles: [{ userId: "signer", roleKey: "secretary" }],
+      proofs: [],
+      catalog: {
+        permissions: [permission("esign:sign"), permission("idp:roles:write")],
+        roles: [role("secretary", ["esign:sign", "idp:roles:write"])],
+      },
+      groups: [],
+      observations: [],
+      now,
+    });
+    expect(subjects).toEqual([
+      { sub: "signer", telegramId: null, permissions: { "esign:sign": { validUntil: null } } },
+    ]);
+  });
 });
