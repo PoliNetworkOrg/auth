@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { asc } from "drizzle-orm";
 import { snapshotClientId } from "@/auth/access-snapshot-token";
+import { contactEmails } from "@/auth/contact-email";
 import { projectionForClient } from "@/auth/access-projections";
 import { db } from "@/db";
 import { user } from "@/db/schema";
@@ -8,7 +9,10 @@ import { env } from "@/env";
 
 const headers = { "Cache-Control": "private, no-store", Vary: "Authorization" };
 
-/** Registered identities for the backend's e-signing picker; access is checked by the backend's live snapshot. */
+/**
+ * Registered identities for the backend's e-signing picker; access is checked by the backend's live snapshot.
+ * The email is the one administrators see (PoliNetwork first), never a sign-in placeholder.
+ */
 export const Route = createFileRoute("/api/internal/esign-users")({
   server: {
     handlers: {
@@ -20,10 +24,18 @@ export const Route = createFileRoute("/api/internal/esign-users")({
         if (projectionForClient(clientId) !== "backend")
           return Response.json({ error: "Forbidden" }, { status: 403, headers });
         const people = await db
-          .select({ sub: user.id, name: user.name, email: user.email })
+          .select({ id: user.id, name: user.name, email: user.email })
           .from(user)
           .orderBy(asc(user.name), asc(user.id));
-        return Response.json(people, { headers });
+        const emails = await contactEmails(db, people, "everyone");
+        return Response.json(
+          people.map((person) => ({
+            sub: person.id,
+            name: person.name,
+            email: emails.get(person.id) ?? null,
+          })),
+          { headers },
+        );
       },
     },
   },

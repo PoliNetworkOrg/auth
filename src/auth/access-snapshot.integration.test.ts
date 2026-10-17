@@ -157,7 +157,8 @@ describe.skipIf(!baseURL || !databaseURL || !clientId || !audience)(
           {
             sub: "snapshot-integration-user",
             name: "Snapshot User",
-            email: "snapshot@identity.invalid",
+            // A sign-in placeholder is never sent.
+            email: null,
           },
         ]),
       );

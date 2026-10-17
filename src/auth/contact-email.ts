@@ -74,10 +74,14 @@ export function directoryEmail(email: string, tokens: SignInToken[]) {
   return providerEmail("pn-entra", tokens) ?? contactEmail(email, tokens);
 }
 
-/** `directoryEmail` for many people at once, keyed by user ID. Null when none is known. */
+/**
+ * `directoryEmail` for many people at once, keyed by user ID. Null when none is known.
+ * `everyone` reads every account instead of naming each person, for lists of all users.
+ */
 export async function contactEmails(
   reader: Reader,
   people: { id: string; email: string }[],
+  scope: "listed" | "everyone" = "listed",
 ): Promise<Map<string, string | null>> {
   const tokens = people.length
     ? await reader
@@ -98,21 +102,23 @@ export async function contactEmails(
         )
         .where(
           and(
-            inArray(
-              account.userId,
-              people.map((person) => person.id),
-            ),
+            scope === "listed"
+              ? inArray(
+                  account.userId,
+                  people.map((person) => person.id),
+                )
+              : undefined,
             inArray(account.providerId, EMAIL_PROVIDERS),
           ),
         )
     : [];
+  const byUser = new Map<string, SignInToken[]>();
+  for (const token of tokens)
+    byUser.set(token.userId, [...(byUser.get(token.userId) ?? []), token]);
   return new Map(
     people.map((person) => [
       person.id,
-      directoryEmail(
-        person.email,
-        tokens.filter((token) => token.userId === person.id),
-      ) ?? null,
+      directoryEmail(person.email, byUser.get(person.id) ?? []) ?? null,
     ]),
   );
 }
