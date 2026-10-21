@@ -127,7 +127,7 @@ export function RoleMembers({
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by name or email"
+              placeholder="Name, email, @Telegram, or ID"
               aria-label={`Find someone to give ${roleName} to`}
               className="pl-9"
             />

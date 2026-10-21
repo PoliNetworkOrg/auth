@@ -26,7 +26,10 @@ vi.mock("../env", () => {
     },
   };
 });
-vi.mock("./membership", () => ({ checkEntraGroupMember: mocks.graph }));
+vi.mock("./membership", () => ({
+  checkEntraGroupMember: mocks.graph,
+  listEntraGroupMembers: vi.fn().mockResolvedValue(null),
+}));
 // Only session authentication is substituted; routes, authorization, evidence, SQL and
 // transactions are real. The separate identity HTTP suite exercises signed session cookies.
 vi.mock("./index", () => ({

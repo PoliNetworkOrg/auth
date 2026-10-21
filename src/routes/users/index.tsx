@@ -283,7 +283,7 @@ function UsersIndex() {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Name, email, Polimi address, Telegram ID or username, or user ID"
+              placeholder="Name, email, @Telegram, ID, role, or account status"
               aria-label="Search users"
               className="pl-9"
             />
