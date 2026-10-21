@@ -25,6 +25,7 @@ const roleDraftSchema = z.object({
   description: z.string(),
   parents: z.array(z.string()).max(50),
   permissions: z.array(z.string()).max(200),
+  deniedPermissions: z.array(z.string()).max(200).default([]),
 });
 
 /** Creates a role, or changes one when `roleId` is given. */

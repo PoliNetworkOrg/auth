@@ -127,6 +127,81 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     return { id, role };
   }
 
+  it("persists role overrides through the server function, identity resolution and audit", async () => {
+    const read = await savePermission(root, draftPermission(unique("read")));
+    const write = await savePermission(root, draftPermission(unique("write"), [read.key]));
+    const parent = await saveRole(root, draftRole(unique("parent"), [write.key]));
+    const actor = await delegate([]);
+    const child = await saveRole(root, draftRole(unique("child"), [], [parent.key]));
+    await assignRole(root, child.id, actor.id);
+    expect((await getIdentity(actor.id)).permissions).toEqual([read.key, write.key].sort());
+
+    const response = await call(saveRoleFn, root, {
+      roleId: child.id,
+      draft: { ...draftRole(child.key, [], [parent.key]), deniedPermissions: [read.key] },
+    });
+    expect(response.status).toBe(200);
+    expect(response.result).toMatchObject({ permissions: [], deniedPermissions: [read.key] });
+    expect(
+      (await loadCatalog(root)).roles.find((entry) => entry.id === child.id).deniedPermissions,
+    ).toEqual([read.key]);
+    expect((await getIdentity(actor.id)).permissions).toEqual([write.key]);
+    expect(
+      (await pool.query("SELECT granted FROM role_permission WHERE role_id = $1", [child.id])).rows,
+    ).toEqual([{ granted: false }]);
+    const audit = await pool.query(
+      "SELECT after FROM rbac_audit_event WHERE target_id = $1 AND operation = 'role.save' ORDER BY \"createdAt\" DESC LIMIT 1",
+      [child.id],
+    );
+    expect(audit.rows[0].after.target.deniedPermissions).toEqual([read.key]);
+
+    const restored = await call(saveRoleFn, root, {
+      roleId: child.id,
+      draft: { ...draftRole(child.key, [], [parent.key]), deniedPermissions: [] },
+    });
+    expect(restored.status).toBe(200);
+    expect(restored.result.deniedPermissions).toEqual([]);
+    expect((await getIdentity(actor.id)).permissions).toEqual([read.key, write.key].sort());
+    const invalid = await call(saveRoleFn, root, {
+      roleId: child.id,
+      draft: { ...draftRole(child.key, [read.key], [parent.key]), deniedPermissions: [read.key] },
+    });
+    expect(invalid.status).toBe(400);
+    expect((await getIdentity(actor.id)).permissions).toEqual([read.key, write.key].sort());
+  });
+
+  it("does not let a delegated writer remove an override to gain permissions", async () => {
+    const high = await savePermission(root, draftPermission(unique("high")));
+    const parent = await saveRole(root, draftRole(unique("parent"), [high.key]));
+    const actor = await delegate([]);
+    const limited = await saveRole(root, {
+      ...draftRole(unique("limited"), ["idp:roles:write"], [parent.key]),
+      deniedPermissions: [high.key],
+    });
+    await assignRole(root, limited.id, actor.id);
+    const unchanged = await call(saveRoleFn, actor.id, {
+      roleId: limited.id,
+      draft: {
+        ...draftRole(limited.key, limited.permissions, limited.parents),
+        deniedPermissions: [high.key],
+        description: "Still limited",
+      },
+    });
+    expect(unchanged.status).toBe(200);
+    const escalation = await call(saveRoleFn, actor.id, {
+      roleId: limited.id,
+      draft: {
+        ...draftRole(limited.key, limited.permissions, limited.parents),
+        deniedPermissions: [],
+      },
+    });
+    expect(escalation.status).toBe(403);
+    expect((await getIdentity(actor.id)).permissions).not.toContain(high.key);
+    expect(
+      (await loadCatalog(root)).roles.find((entry) => entry.id === limited.id).deniedPermissions,
+    ).toEqual([high.key]);
+  });
+
   it("denies creating a privileged role, self-assigning it, and editing one's own role", async () => {
     const actor = await delegate(["idp:roles:write", "idp:roles:assign"]);
     const high = await saveRole(root, draftRole(unique("high"), ["idp:applications:write"]));

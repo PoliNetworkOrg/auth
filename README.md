@@ -105,7 +105,13 @@ and both support a hierarchy:
 - A permission can **also grant** other permissions. Holding `membership:write` can grant
   `membership:read` without listing it everywhere.
 - A role can **inherit from** other roles. It then carries every permission of its parents,
-  including what those inherit in turn.
+  including what those inherit in turn. In the editor, inherited permissions are already
+  checked and labeled **Inherited**; explicit grants are labeled **Direct**. Unchecking an
+  inherited or implied permission creates an **Override**, highlighted in amber. **Use
+  inherited** clears the override. Overrides are saved with the role and follow its
+  descendants, without changing the parent or sibling roles. Another independently held
+  role can still grant an excluded permission. Essential read access required by managed
+  write/assign permissions cannot be excluded while that capability remains enabled.
 
 Both hierarchies are transitive, and the editor refuses an edge that would make two roles
 inherit from each other or two permissions grant each other.
