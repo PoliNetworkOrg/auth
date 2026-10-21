@@ -96,11 +96,18 @@ export function RoleMembers({
       // they may just have changed. The button stays busy until the list shows the change,
       // so the person is never missing from both the search and the list.
       await router.invalidate({ sync: true });
-      // Marked in place rather than searched again, so someone just taken off the role
-      // becomes assignable again without retyping or a flash of "Searching…".
+      // Keep search results in sync without retyping. Removing a direct assignment
+      // leaves inherited holders marked as members.
       setResults((found) =>
         found.map((person) =>
-          person.id === userId ? { ...person, holdsRole: action === "assign" } : person,
+          person.id === userId
+            ? {
+                ...person,
+                holdsRole:
+                  action === "assign" ||
+                  !!members.find((member) => member.userId === userId)?.inheritedFrom?.length,
+              }
+            : person,
         ),
       );
       if (action === "assign") setQuery("");
@@ -177,8 +184,17 @@ export function RoleMembers({
         <ul className="divide-y rounded-xl border" aria-label={`People with ${roleName}`}>
           {members.map((member) => (
             <li key={member.userId} className="flex items-center gap-3 px-4 py-3">
-              <Person name={member.name} email={member.email} image={member.image} />
-              {canWrite && (
+              <div className="min-w-0 flex-1 space-y-1">
+                <Person name={member.name} email={member.email} image={member.image} />
+                {!!member.inheritedFrom?.length && (
+                  <p className="pl-12 text-xs text-muted-foreground">
+                    {member.direct ? "Also inherited from" : "Inherited from"}{" "}
+                    {member.inheritedFrom.join(", ")}. Change membership on the source role to
+                    remove it.
+                  </p>
+                )}
+              </div>
+              {canWrite && member.direct !== false && (
                 <Button
                   size="sm"
                   variant="ghost"
@@ -191,7 +207,7 @@ export function RoleMembers({
                   ) : (
                     <UserMinus aria-hidden="true" />
                   )}
-                  Remove
+                  {member.inheritedFrom?.length ? "Remove direct assignment" : "Remove"}
                 </Button>
               )}
             </li>
