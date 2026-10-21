@@ -6,7 +6,7 @@
     "@/*": "./src/*"
   },
   "scripts": {
-    "dev": "dotenv -e .env.local -- env NODE_OPTIONS='--import ./instrument.server.mjs' vp dev",
+    "dev": "dotenv -e .env.local -- env PORT=3003 NODE_OPTIONS='--import ./instrument.server.mjs' vp dev",
     "dev:db": "docker compose up -d --wait",
     "dev:setup": "tsx src/dev/check-database.ts && docker compose up -d --wait && drizzle-kit migrate && vp run dev:seed",
     "dev:seed": "tsx src/dev/check-database.ts && dotenv -e .env.local -- tsx src/dev/seed.ts",
