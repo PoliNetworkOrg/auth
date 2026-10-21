@@ -212,7 +212,7 @@ export type RoleSummary = {
   deniedPermissions?: string[];
   /** Keys of the roles this role inherits permissions from. */
   parents: string[];
-  /** People holding a hand-made assignment. Always 0 for managed roles. */
+  /** Distinct people with a hand-made assignment, directly or through descendant roles. */
   memberCount: number;
   createdAt: string | null;
   updatedAt: string | null;
@@ -599,6 +599,10 @@ export function hasDraftErrors(errors: RbacDraftErrors) {
 }
 
 export type RoleMember = {
+  /** Whether membership can be removed from this role itself. */
+  direct?: boolean;
+  /** Keys of directly assigned descendant roles that confer this membership. */
+  inheritedFrom?: string[];
   userId: string;
   name: string;
   /** Null when no real address is known, only a placeholder. */

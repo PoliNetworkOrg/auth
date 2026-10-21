@@ -171,7 +171,7 @@ function RoleDetail() {
             {inferred
               ? inferred.evidence
               : canAssign
-                ? "Anyone you add here holds this role until you remove them."
+                ? "Includes direct assignments and people who inherit this role. Inherited membership is managed on its source role."
                 : "The people currently holding this role."}
           </CardDescription>
         </CardHeader>

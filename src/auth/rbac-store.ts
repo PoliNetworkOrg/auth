@@ -5,7 +5,7 @@ import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
 import type { IdentityClaims } from "./policy";
 import { randomUUID } from "node:crypto";
-import { and, count, eq, exists, gt, ilike, or, sql } from "drizzle-orm";
+import { and, countDistinct, eq, exists, gt, ilike, or, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import { authorizationMutationLock } from "../db/security-lock";
 import {
@@ -56,6 +56,31 @@ type CatalogReader = Pick<typeof db, "select">;
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+/**
+ * Expand hand-made assignments through the role hierarchy. UNION deduplicates paths and
+ * terminates even if legacy edges contain a cycle. Keep the source role to explain inherited
+ * membership without treating it as a removable assignment on the parent.
+ * Managed memberships come from identity evidence, never from user_role.
+ */
+const effectiveRoleAssignments = sql`(
+  with recursive membership_paths(user_id, role_id, source_role_id) as (
+    select ${userRole.userId}, ${userRole.roleId}, ${userRole.roleId}
+    from ${userRole}
+    inner join ${role} on ${role.id} = ${userRole.roleId}
+    where not ${role.managed}
+    union
+    select paths.user_id, ${roleParent.parentRoleId}, paths.source_role_id
+    from membership_paths paths
+    inner join ${roleParent} on ${roleParent.roleId} = paths.role_id
+    inner join ${role} parent on parent.id = ${roleParent.parentRoleId}
+    where parent.key <> ${MASTER_ADMIN_ROLE_KEY}
+  )
+  select * from membership_paths
+) membership`;
+const membershipUserId = sql<string>`membership.user_id`;
+const membershipRoleId = sql<string>`membership.role_id`;
+const membershipSourceRoleId = sql<string>`membership.source_role_id`;
+
 // Read one query at a time: `db` may be an open transaction, and a transaction is a single
 // PostgreSQL session that cannot run overlapping queries.
 export async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
@@ -78,9 +103,9 @@ export async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
     .from(permissionImplication)
     .innerJoin(permission, eq(permission.id, permissionImplication.impliedPermissionId));
   const members = await db
-    .select({ roleId: userRole.roleId, members: count() })
-    .from(userRole)
-    .groupBy(userRole.roleId);
+    .select({ roleId: membershipRoleId, members: countDistinct(membershipUserId) })
+    .from(effectiveRoleAssignments)
+    .groupBy(membershipRoleId);
 
   const collect = <T>(rows: T[], keyOf: (row: T) => string, valueOf: (row: T) => string) => {
     const grouped = new Map<string, string[]>();
@@ -453,10 +478,16 @@ export async function listRoleMembers(
         image: user.image,
         assignedAt: userRole.assignedAt,
         assignedBy: userRole.assignedBy,
+        direct: sql<boolean>`bool_or(${membershipSourceRoleId} = ${membershipRoleId})`,
+        inheritedFrom: sql<string[]>`coalesce(array_agg(distinct ${role.key}) filter
+          (where ${membershipSourceRoleId} <> ${membershipRoleId}), array[]::text[])`,
       })
-      .from(userRole)
-      .innerJoin(user, eq(user.id, userRole.userId))
-      .where(and(eq(userRole.roleId, roleId), after ? gt(user.id, after) : undefined))
+      .from(effectiveRoleAssignments)
+      .innerJoin(user, eq(user.id, membershipUserId))
+      .innerJoin(role, eq(role.id, membershipSourceRoleId))
+      .leftJoin(userRole, and(eq(userRole.userId, user.id), eq(userRole.roleId, roleId)))
+      .where(and(eq(membershipRoleId, roleId), after ? gt(user.id, after) : undefined))
+      .groupBy(user.id, userRole.assignedAt, userRole.assignedBy)
       .orderBy(user.id)
       .limit(101);
     const members = rows.slice(0, 100);
@@ -529,7 +560,7 @@ export async function searchUsers(
           email: user.email,
           image: user.image,
           holdsRole: roleId
-            ? sql<boolean>`exists (select 1 from ${userRole} where ${userRole.userId} = ${user.id} and ${userRole.roleId} = ${roleId})`
+            ? sql<boolean>`exists (select 1 from ${effectiveRoleAssignments} where ${membershipUserId} = ${user.id} and ${membershipRoleId} = ${roleId})`
             : sql<boolean>`false`,
         })
         .from(user)

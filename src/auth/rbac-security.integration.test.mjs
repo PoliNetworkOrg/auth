@@ -536,6 +536,77 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     await expect(listRoleMembers(actor.id, actor.role.id)).rejects.toMatchObject({ status: 403 });
   });
 
+  it("counts and lists inherited members once across direct, transitive and diamond paths", async () => {
+    const admin = await saveRole(root, draftRole(unique("admin")));
+    const trusted = await saveRole(root, draftRole(unique("trusted-admin"), [], [admin.key]));
+    const senior = await saveRole(root, draftRole(unique("senior-admin"), [], [trusted.key]));
+    const alternate = await saveRole(root, draftRole(unique("alternate-admin"), [], [admin.key]));
+    const alice = await delegate([]);
+    const bob = await delegate([]);
+    for (const role of [admin, trusted, senior, alternate])
+      await assignRole(root, role.id, alice.id);
+    await assignRole(root, trusted.id, bob.id);
+
+    const countFor = async (role) =>
+      (await loadCatalog(root)).roles.find((entry) => entry.id === role.id).memberCount;
+    expect(await countFor(admin)).toBe(2);
+    expect(await countFor(trusted)).toBe(2);
+    expect(await countFor(senior)).toBe(1);
+    const response = await call(getRoleMembers, root, { roleId: admin.id });
+    expect(response.status).toBe(200);
+    expect(response.result.members).toHaveLength(2);
+    expect(response.result.members.find((member) => member.userId === alice.id)).toMatchObject({
+      direct: true,
+      assignedBy: root,
+      inheritedFrom: [trusted.key, senior.key, alternate.key].sort(),
+    });
+    expect(response.result.members.find((member) => member.userId === bob.id)).toMatchObject({
+      direct: false,
+      assignedBy: null,
+      assignedAt: null,
+      inheritedFrom: [trusted.key],
+    });
+    expect(await searchUsers(root, bob.id, admin.id)).toEqual([
+      expect.objectContaining({ id: bob.id, holdsRole: true }),
+    ]);
+
+    await unassignRole(root, admin.id, alice.id);
+    expect(await countFor(admin)).toBe(2);
+    expect(
+      (await listRoleMembers(root, admin.id)).members.find((member) => member.userId === alice.id)
+        .direct,
+    ).toBe(false);
+    await saveRole(root, draftRole(trusted.key), trusted.id);
+    expect(await countFor(admin)).toBe(1);
+    expect((await listRoleMembers(root, admin.id)).members.map((member) => member.userId)).toEqual([
+      alice.id,
+    ]);
+    await deleteRole(root, alternate.id);
+    expect(await countFor(admin)).toBe(0);
+    expect((await listRoleMembers(root, admin.id)).members).toEqual([]);
+  });
+
+  it("terminates inherited membership cycles without double-counting", async () => {
+    const parent = await saveRole(root, draftRole(unique("cycle-parent")));
+    const child = await saveRole(root, draftRole(unique("cycle-child"), [], [parent.key]));
+    const actor = await delegate([]);
+    await assignRole(root, child.id, actor.id);
+    const master = (await loadCatalog(root)).roles.find((entry) => entry.key === "master-admin");
+    await pool.query("INSERT INTO role_parent (role_id, parent_role_id) VALUES ($1, $2)", [
+      parent.id,
+      child.id,
+    ]);
+    const catalog = await loadCatalog(root);
+    expect(catalog.roles.find((entry) => entry.id === parent.id).memberCount).toBe(1);
+    expect(catalog.roles.find((entry) => entry.id === child.id).memberCount).toBe(1);
+    expect(catalog.roles.find((entry) => entry.id === master.id).memberCount).toBe(0);
+    expect((await listRoleMembers(root, parent.id)).members).toHaveLength(1);
+    await pool.query(
+      "DELETE FROM role_parent WHERE role_id = $1 OR (role_id = $2 AND parent_role_id = $3)",
+      [parent.id, child.id, master.id],
+    );
+  });
+
   it("pages every member beyond the former 500-person cutoff without duplicates", async () => {
     const role = await saveRole(root, draftRole(unique("paged")));
     const prefix = unique("paged-person");

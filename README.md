@@ -113,6 +113,12 @@ and both support a hierarchy:
   role can still grant an excluded permission. Essential read access required by managed
   write/assign permissions cannot be excluded while that capability remains enabled.
 
+Role member counts and lists include people assigned to descendant roles, once per person.
+For example, someone assigned Trusted Admin also counts under Admin when Trusted Admin
+inherits from Admin. Inherited members show their source roles; remove an assignment on
+that source role to revoke the inherited membership. This follows hand-made assignments;
+managed memberships continue to be determined from identity evidence at sign-in.
+
 Both hierarchies are transitive, and the editor refuses an edge that would make two roles
 inherit from each other or two permissions grant each other.
 
