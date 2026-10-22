@@ -1171,6 +1171,8 @@ The principle: **each caller moves independently, and each step can be rolled ba
 
 ## 14. Making this easy to extend
 
+> **Implemented.** The practical guide is [service-integration-guide.md](service-integration-guide.md). It records where the implementation differs from this section: `auth-kit` option names, projections without prefixes, and IdP code changes for a new resource server.
+
 ### 14.1 Shared library: `@polinetwork/auth-kit`
 
 | Function                                                  | What it does                                                                                                                         |
