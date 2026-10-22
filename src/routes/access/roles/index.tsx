@@ -115,9 +115,9 @@ function CreatedRoleRow({ role, effective }: { role: RoleSummary; effective: num
             <KeyChip>{role.key}</KeyChip>
           </div>
           <div className="flex shrink-0 items-center gap-8 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
+            <span className="grid w-12 shrink-0 grid-cols-[18px_1fr] items-center gap-1.5 tabular-nums">
               <MembersIcon />
-              {role.memberCount}
+              <span className="text-right">{role.memberCount}</span>
               <span className="sr-only">{role.memberCount === 1 ? "person" : "people"}</span>
             </span>
             <span className="flex items-center gap-1.5">
