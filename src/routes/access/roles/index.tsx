@@ -1,3 +1,4 @@
+import { matchesSearch } from "@/lib/search";
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";
@@ -141,7 +142,19 @@ function RolesIndex() {
     .sort((a, b) => staticRoleOrder(a.key) - staticRoleOrder(b.key));
   const created = catalog.roles.filter((role) => !role.managed);
   const filtered = created.filter((role) =>
-    [role.name, role.key, role.description].some((value) => value?.toLowerCase().includes(search)),
+    matchesSearch(search, [
+      role.name,
+      role.key,
+      role.description,
+      ...role.parents.flatMap((key) => {
+        const parent = catalog.roles.find((entry) => entry.key === key);
+        return [key, parent?.name, parent?.description];
+      }),
+      ...effectiveRolePermissions(catalog, role.key).flatMap((key) => {
+        const permission = catalog.permissions.find((entry) => entry.key === key);
+        return [key, permission?.name, permission?.description];
+      }),
+    ]),
   );
   const countFor = (role: RoleSummary) => effectiveRolePermissions(catalog, role.key).length;
 

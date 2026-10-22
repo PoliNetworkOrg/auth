@@ -1,3 +1,4 @@
+import { groupListings, traitConditions, searchCondition } from "./people-search";
 import type { FieldErrors } from "@/lib/action-error";
 import { contactEmails } from "./contact-email";
 import { mayDelegateMutation } from "./rbac-delegation";
@@ -5,12 +6,10 @@ import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
 import type { IdentityClaims } from "./policy";
 import { randomUUID } from "node:crypto";
-import { and, count, eq, exists, gt, ilike, or, sql } from "drizzle-orm";
+import { and, count, eq, gt, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import { authorizationMutationLock } from "../db/security-lock";
 import {
-  account,
-  identityEvidence,
   rbacAuditEvent,
   permission,
   permissionImplication,
@@ -501,7 +500,10 @@ export async function searchUsers(
         }
         requireRole(catalog, roleId);
       }
-      const term = `%${query.trim().replace(/[%_\\]/g, (match) => `\\${match}`)}%`;
+      const traits =
+        query.trim() && access.permissions.includes("idp:users:read")
+          ? traitConditions(transaction, await groupListings(), new Date())
+          : undefined;
       const people = await transaction
         .select({
           id: user.id,
@@ -515,30 +517,12 @@ export async function searchUsers(
         .from(user)
         .where(
           query.trim()
-            ? or(
-                ilike(user.name, term),
-                ilike(user.email, term),
-                // The PoliNetwork address saved at sign-in, since the stored email is a placeholder.
-                exists(
-                  transaction
-                    .select({ found: sql`1` })
-                    .from(account)
-                    .innerJoin(
-                      identityEvidence,
-                      and(
-                        eq(account.issuer, identityEvidence.issuer),
-                        eq(account.accountId, identityEvidence.subject),
-                        eq(account.providerId, identityEvidence.providerId),
-                      ),
-                    )
-                    .where(
-                      and(
-                        eq(account.userId, user.id),
-                        eq(account.providerId, "pn-entra"),
-                        ilike(identityEvidence.email, term),
-                      ),
-                    ),
-                ),
+            ? searchCondition(
+                transaction,
+                query,
+                catalog,
+                traits,
+                access.permissions.includes("idp:roles:read"),
               )
             : undefined,
         )

@@ -1,3 +1,4 @@
+import { matchesSearch } from "@/lib/search";
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronRight, KeyRound, Plus, ShieldCheck, Sparkles } from "lucide-react";
@@ -101,12 +102,16 @@ function PermissionsIndex() {
   const filtered = catalog.permissions.filter(
     (permission) =>
       (application === null || applicationKey(permission) === application) &&
-      [
+      matchesSearch(search, [
         permission.name,
         permission.key,
         permission.description,
         labels.get(applicationKey(permission)),
-      ].some((value) => value?.toLowerCase().includes(search)),
+        ...expandPermissionKeys(catalog, permission.implies).flatMap((key) => {
+          const implied = catalog.permissions.find((entry) => entry.key === key);
+          return [key, implied?.name, implied?.description];
+        }),
+      ]),
   );
   const impliedBy = (permission: PermissionSummary) =>
     expandPermissionKeys(catalog, permission.implies).filter((key) => key !== permission.key);

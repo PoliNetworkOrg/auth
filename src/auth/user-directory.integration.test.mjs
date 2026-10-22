@@ -102,8 +102,8 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
 
   async function evidence(issuer, subject, providerId, fields) {
     await pool.query(
-      `INSERT INTO identity_evidence (issuer, subject, provider_id, external_id, states, valid_until, telegram_id, email)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      `INSERT INTO identity_evidence (issuer, subject, provider_id, external_id, states, valid_until, telegram_id, email, telegram_username)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         issuer,
         subject,
@@ -113,6 +113,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
         fields.validUntil ?? new Date(Date.now() + 86_400_000),
         fields.telegramId ?? null,
         fields.email ?? null,
+        fields.telegramUsername ?? null,
       ],
     );
   }
@@ -145,6 +146,7 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
     await account(ada, "telegram", "https://oauth.telegram.org", `${ada}-telegram`);
     await evidence("https://oauth.telegram.org", `${ada}-telegram`, "telegram", {
       telegramId: "4242424242",
+      telegramUsername: "Ada_directory_test",
     });
     const adaMail = `${ada}@mail.polimi.it`;
     await account(ada, "polimi-email", "https://mail.polimi.it", adaMail);
@@ -261,6 +263,38 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("user directory with Postgr
     expect(names(await listUsers(root, { q: chiara }))).toEqual([chiara]);
     // Wildcards are searched for literally.
     expect(names(await listUsers(root, { q: `${tag.slice(0, -1)}_` }))).toEqual([]);
+  });
+
+  it("searches Telegram fragments consistently in People and role assignment", async () => {
+    for (const q of ["@ADA_DIRECTORY", "ada_directory", "424242", `${bruno}@mail.polimi`]) {
+      const expected = q.includes("polimi") ? bruno : ada;
+      expect(names(await listUsers(root, { q }))).toEqual([expected]);
+      expect((await searchUsers(root, q)).map((person) => person.id)).toEqual([expected]);
+    }
+    expect(names(await listUsers(root, { q: "@ada_directory%" }))).toEqual([]);
+    expect(await searchUsers(root, "@ada_directory%")).toEqual([]);
+    expect(await searchUsers(root, "515151")).toEqual([]);
+  });
+
+  it("searches the same traits and roles as the filters, combined with explicit filters", async () => {
+    for (const [q, expected] of [
+      ["Student", ada],
+      ["Passkey", bruno],
+      ["Google", bruno],
+      [moderator.key, bruno],
+    ]) {
+      expect(names(await listUsers(root, { q }))).toEqual([expected]);
+      expect((await searchUsers(root, q)).map((person) => person.id)).toEqual([expected]);
+    }
+    expect(names(await listUsers(root, { q: "Google", passkey: "no" }))).toEqual([]);
+    const reader = await delegate(["idp:users:read", "idp:people:read"]);
+    expect(names(await listUsers(reader, { q: moderator.key }))).toEqual([]);
+    expect(await searchUsers(reader, moderator.key)).toEqual([]);
+    const searcher = await delegate(["idp:people:read"]);
+    expect(await searchUsers(searcher, "Passkey")).toEqual([]);
+    expect((await searchUsers(searcher, "@ADA_DIRECTORY")).map((person) => person.id)).toEqual([
+      ada,
+    ]);
   });
 
   it("keeps people without a known email visible, searchable, and assignable", async () => {
