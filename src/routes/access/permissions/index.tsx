@@ -106,7 +106,7 @@ function PermissionsIndex() {
         permission.name,
         permission.key,
         permission.description,
-        applicationLabel(applicationKey(permission)),
+        labels.get(applicationKey(permission)),
         ...expandPermissionKeys(catalog, permission.implies).flatMap((key) => {
           const implied = catalog.permissions.find((entry) => entry.key === key);
           return [key, implied?.name, implied?.description];
