@@ -82,7 +82,7 @@ export function CatalogSearch({
           className="flex-1 basis-56 sm:max-w-lg"
         />
         <p role="status" className="text-xs whitespace-nowrap text-muted-foreground">
-          {query.trim() ? `${count} of ${total}` : total} {kind}
+          {query.trim() || count !== total ? `${count} of ${total}` : total} {kind}
         </p>
       </div>
       {children}
