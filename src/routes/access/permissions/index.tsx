@@ -105,7 +105,7 @@ function PermissionsIndex() {
         permission.name,
         permission.key,
         permission.description,
-        applicationLabel(applicationKey(permission)),
+        labels.get(applicationKey(permission)),
       ].some((value) => value?.toLowerCase().includes(search)),
   );
   const impliedBy = (permission: PermissionSummary) =>
