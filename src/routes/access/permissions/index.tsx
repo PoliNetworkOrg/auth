@@ -29,6 +29,21 @@ function applicationLabel(key: string) {
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
+/** Labels for each application, suffixed with the key where two would otherwise read the same. */
+function applicationLabels(keys: string[]) {
+  const counts = new Map<string, number>();
+  for (const key of keys) {
+    const label = applicationLabel(key);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return new Map(
+    keys.map((key) => {
+      const label = applicationLabel(key);
+      return [key, (counts.get(label) ?? 0) > 1 ? `${label} (${key})` : label];
+    }),
+  );
+}
+
 function PermissionRow({
   permission,
   implied,
@@ -81,6 +96,7 @@ function PermissionsIndex() {
   const [query, setQuery] = useState("");
   const [application, setApplication] = useState<string | null>(null);
   const applications = [...new Set(catalog.permissions.map(applicationKey))].sort();
+  const labels = applicationLabels(applications);
   const search = query.trim().toLowerCase();
   const filtered = catalog.permissions.filter(
     (permission) =>
@@ -150,7 +166,7 @@ function PermissionsIndex() {
               aria-pressed={application === key}
               onClick={() => setApplication(key)}
             >
-              {applicationLabel(key)}
+              {labels.get(key)}
               <span className="tabular-nums opacity-70">
                 {
                   catalog.permissions.filter((permission) => applicationKey(permission) === key)
@@ -185,8 +201,12 @@ function PermissionsIndex() {
           <Card key={key}>
             <CardHeader>
               <div className="flex flex-wrap items-center gap-3">
-                <CardTitle>{applicationLabel(key)}</CardTitle>
-                <KeyChip>{key}:*</KeyChip>
+                <CardTitle>{labels.get(key)}</CardTitle>
+                <KeyChip>
+                  {permissions.some((permission) => permission.key.includes(":"))
+                    ? `${key}:*`
+                    : key}
+                </KeyChip>
                 <Badge className="bg-muted text-muted-foreground">
                   {permissions.length} {permissions.length === 1 ? "permission" : "permissions"}
                 </Badge>
@@ -199,7 +219,7 @@ function PermissionsIndex() {
               )}
             </CardHeader>
             <CardContent className="px-0 pb-0">
-              <ul className="divide-y border-t" aria-label={`${applicationLabel(key)} permissions`}>
+              <ul className="divide-y border-t" aria-label={`${labels.get(key)} permissions`}>
                 {permissions.map((permission) => (
                   <PermissionRow
                     key={permission.id}
