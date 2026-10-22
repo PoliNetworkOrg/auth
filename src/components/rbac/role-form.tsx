@@ -9,11 +9,14 @@ import {
   type RoleDraft,
   hasDraftErrors,
   normalizeRoleDraft,
-  resolveAccess,
+  roleDraftPermissions,
+  effectiveRolePermissions,
+  intrinsicImplications,
+  toggleRoleDraftPermission,
   roleParentWouldCycle,
   validateRoleDraft,
 } from "@/auth/rbac";
-import { Field, KeyChip } from "@/components/rbac/fields";
+import { Field } from "@/components/rbac/fields";
 import { useAccess } from "@/components/access";
 import { canGrantPermission, canGrantRole } from "@/components/rbac/delegation";
 import { PickList } from "@/components/rbac/pick-list";
@@ -21,12 +24,6 @@ import { useDraftErrors } from "@/components/rbac/use-draft-errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-
-/**
- * Stands in for the role being edited while previewing its effect. Role keys cannot contain
- * a colon, so this can never collide with a stored role.
- */
-const PREVIEW_ROLE_KEY = "draft:preview";
 
 export function RoleForm({
   mode,
@@ -92,43 +89,85 @@ export function RoleForm({
       };
     });
 
+  const preview = roleDraftPermissions(catalog, draft, currentKey);
+  const inherited = roleDraftPermissions(
+    catalog,
+    {
+      ...draft,
+      permissions: [],
+      deniedPermissions: [],
+    },
+    currentKey,
+  );
+  const denied = draft.deniedPermissions ?? [];
   const permissionOptions = catalog.permissions
     .filter(
       (entry) =>
-        canGrantPermission(access, catalog, entry.key) || draft.permissions.includes(entry.key),
+        canGrantPermission(access, catalog, entry.key) ||
+        preview.includes(entry.key) ||
+        denied.includes(entry.key),
     )
-    .map((entry) => ({
-      key: entry.key,
-      label: entry.name,
-      hint: entry.description ?? undefined,
-      disabled: !canGrantPermission(access, catalog, entry.key),
-      disabledReason: "You do not hold this permission or everything it grants.",
-    }));
-
-  // Everything a holder would end up with once both hierarchies are followed.
-  const preview = resolveAccess(
-    {
-      ...catalog,
-      roles: [
-        ...catalog.roles.filter((entry) => entry.key !== (currentKey ?? "")),
-        {
-          id: PREVIEW_ROLE_KEY,
-          key: PREVIEW_ROLE_KEY,
-          name: draft.name,
-          description: null,
-          managed: false,
-          sourceState: null,
-          permissions: draft.permissions,
-          parents: draft.parents,
-          memberCount: 0,
-          createdAt: null,
-          updatedAt: null,
-        },
-      ],
-    },
-    [PREVIEW_ROLE_KEY],
-  );
-  const inherited = preview.permissions.filter((key) => !draft.permissions.includes(key));
+    .map((entry) => {
+      const direct = draft.permissions.includes(entry.key);
+      const excluded = denied.includes(entry.key);
+      const fromParents = inherited.includes(entry.key);
+      const sources = catalog.roles
+        .filter(
+          (role) =>
+            draft.parents.includes(role.key) &&
+            effectiveRolePermissions(catalog, role.key).includes(entry.key),
+        )
+        .map((role) => role.name);
+      const requiredBy = catalog.permissions
+        .filter(
+          (permission) =>
+            preview.includes(permission.key) &&
+            intrinsicImplications(permission.key).includes(entry.key),
+        )
+        .map((permission) => permission.name);
+      const outsideAuthority = !canGrantPermission(access, catalog, entry.key);
+      return {
+        key: entry.key,
+        label: entry.name,
+        hint: entry.description ?? undefined,
+        status: excluded
+          ? ("Override" as const)
+          : direct
+            ? ("Direct" as const)
+            : fromParents
+              ? ("Inherited" as const)
+              : preview.includes(entry.key)
+                ? ("Implied" as const)
+                : undefined,
+        statusHint: excluded
+          ? requiredBy.length > 0
+            ? "This override is inactive because another permission requires this access. Reset the override or remove that permission."
+            : fromParents
+              ? `Excluded for this role. Inherited from ${sources.join(", ")}.`
+              : "Excluded for this role, including future inheritance."
+          : fromParents
+            ? `${direct ? "Also inherited" : "Inherited"} from ${sources.join(", ")}.`
+            : !direct && preview.includes(entry.key)
+              ? "Granted by another permission of this role."
+              : undefined,
+        disabled: outsideAuthority || requiredBy.length > 0,
+        disabledReason: outsideAuthority
+          ? "You do not hold this permission or everything it grants."
+          : `Required by ${requiredBy.join(", ")}. Remove that permission first.`,
+        action:
+          excluded || (direct && fromParents)
+            ? {
+                label: fromParents ? "Use inherited" : "Reset override",
+                disabled: outsideAuthority,
+                onClick: () =>
+                  change({
+                    permissions: draft.permissions.filter((key) => key !== entry.key),
+                    deniedPermissions: denied.filter((key) => key !== entry.key),
+                  }),
+              }
+            : undefined,
+      };
+    });
 
   return (
     <form
@@ -218,17 +257,34 @@ export function RoleForm({
           <>
             <PickList
               legend="Permissions"
-              description="Granted to everyone who holds this role."
+              description="Checked permissions are granted by this role. Inherited permissions follow the parent roles; uncheck one to create an override, or use inherited to reset it. Direct permissions are assigned to this role. Other roles held independently can still grant an excluded permission."
               options={permissionOptions}
-              selected={draft.permissions}
-              onChange={(permissions) => change({ permissions })}
+              selected={preview}
+              onChange={(permissions) => {
+                const key =
+                  preview.find((key) => !permissions.includes(key)) ??
+                  permissions.find((key) => !preview.includes(key));
+                if (key) {
+                  const next = toggleRoleDraftPermission(
+                    catalog,
+                    draft,
+                    key,
+                    permissions.includes(key),
+                    currentKey,
+                  );
+                  change({
+                    permissions: next.permissions,
+                    deniedPermissions: next.deniedPermissions,
+                  });
+                }
+              }}
               emptyText="Create a permission first."
               error={errors.permissions}
             />
 
             <PickList
               legend="Inherits from"
-              description="This role also carries every permission of the roles you pick here, including what those inherit in turn."
+              description="Permissions follow these roles, including their inheritance and overrides. This role can override individual permissions above."
               options={parentOptions}
               selected={draft.parents}
               onChange={(parents) => change({ parents })}
@@ -238,16 +294,6 @@ export function RoleForm({
           </>
         )}
       </fieldset>
-      {inherited.length > 0 && !grantsEverything && (
-        <div className="rounded-xl border bg-muted/40 p-4">
-          <h3 className="text-sm font-medium">Also carries, through inheritance</h3>
-          <p className="mt-2 flex flex-wrap gap-1.5">
-            {inherited.map((key) => (
-              <KeyChip key={key}>{key}</KeyChip>
-            ))}
-          </p>
-        </div>
-      )}
 
       {readOnly ? null : (
         <div className="flex flex-col-reverse gap-3 border-t pt-6 sm:flex-row sm:justify-end">

@@ -10,6 +10,9 @@ export type PickOption = {
   hint?: string;
   disabled?: boolean;
   disabledReason?: string;
+  status?: "Inherited" | "Direct" | "Override" | "Implied";
+  statusHint?: string;
+  action?: { label: string; onClick: () => void; disabled?: boolean };
 };
 
 const SEARCHABLE_FROM = 8;
@@ -82,31 +85,75 @@ export function PickList({
           visible.map((option) => {
             const checked = selected.includes(option.key);
             return (
-              <label
+              <div
                 key={option.key}
+                data-permission-state={option.status?.toLowerCase()}
                 className={cn(
-                  "flex cursor-pointer items-start gap-3 px-4 py-3 transition-colors",
-                  option.disabled ? "cursor-not-allowed opacity-60" : "hover:bg-accent/50",
+                  "flex items-start gap-3 px-4 py-3 transition-colors",
+                  option.status === "Override" && "bg-amber-500/10 border-l-2 border-l-amber-500",
+                  !option.disabled && "hover:bg-accent/50",
                 )}
               >
-                <Checkbox
-                  className="mt-0.5"
-                  checked={checked}
-                  disabled={option.disabled}
-                  onCheckedChange={(value) => toggle(option.key, value === true)}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-baseline gap-x-2">
-                    <span className="text-sm font-medium">{option.label}</span>
-                    <code className="font-mono text-xs text-muted-foreground">{option.key}</code>
-                  </span>
-                  {(option.disabled && option.disabledReason) || option.hint ? (
-                    <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                      {option.disabled ? option.disabledReason : option.hint}
+                <label
+                  className={cn(
+                    "flex min-w-0 flex-1 cursor-pointer items-start gap-3",
+                    option.disabled && "cursor-not-allowed opacity-60",
+                  )}
+                >
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={checked}
+                    disabled={option.disabled}
+                    onCheckedChange={(value) => toggle(option.key, value === true)}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <span className="text-sm font-medium">{option.label}</span>
+                      <code className="font-mono text-xs text-muted-foreground">{option.key}</code>
+                      {option.status && (
+                        <span
+                          className={cn(
+                            "rounded border px-1.5 py-0.5 text-xs",
+                            option.status === "Override"
+                              ? "border-amber-500/50 font-medium text-amber-800 dark:text-amber-300"
+                              : option.status === "Inherited"
+                                ? "border-primary/30 bg-primary/10 text-primary"
+                                : "text-muted-foreground",
+                          )}
+                        >
+                          {option.status}
+                        </span>
+                      )}
                     </span>
-                  ) : null}
-                </span>
-              </label>
+                    {option.hint && (
+                      <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                        {option.hint}
+                      </span>
+                    )}
+                    {option.statusHint && (
+                      <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                        {option.statusHint}
+                      </span>
+                    )}
+                    {option.disabled && option.disabledReason && (
+                      <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                        {option.disabledReason}
+                      </span>
+                    )}
+                  </span>
+                </label>
+                {option.action && (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded px-1 text-xs text-primary underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                    disabled={option.action.disabled}
+                    aria-label={`${option.action.label} for ${option.label}`}
+                    onClick={option.action.onClick}
+                  >
+                    {option.action.label}
+                  </button>
+                )}
+              </div>
             );
           })
         )}

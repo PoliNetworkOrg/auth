@@ -14,6 +14,10 @@ import {
   isStaticRoleKey,
   resolveAccess,
   roleParentWouldCycle,
+  roleDraftFrom,
+  roleDraftPermissions,
+  toggleRoleDraftPermission,
+  normalizeRoleDraft,
   staticRolesForStates,
   validatePermissionDraft,
   validateRoleDraft,
@@ -392,5 +396,156 @@ describe("administration catalog visibility", () => {
   it("keeps the permission graph available when explaining roles", () => {
     const visible = catalogForIdpPermissions(catalog, ["idp:roles:read"]);
     expect(visible).toEqual(catalog);
+  });
+});
+
+describe("role-local permission overrides", () => {
+  const excluded = { ...role("limited", [], ["chair"]), deniedPermissions: ["membership:read"] };
+  const graph: RbacCatalog = {
+    ...catalog,
+    roles: [...catalog.roles, excluded, role("descendant", [], ["limited"])],
+  };
+
+  it("excludes a transitive inherited grant after permission implications", () => {
+    expect(effectiveRolePermissions(graph, "limited")).toEqual(["bank:sign", "membership:write"]);
+    expect(effectiveRolePermissions(graph, "descendant")).toEqual([
+      "bank:sign",
+      "membership:write",
+    ]);
+    expect(effectiveRolePermissions(graph, "chair")).toContain("membership:read");
+    expect(resolveAccess(graph, ["limited"]).roles).toEqual([
+      "chair",
+      "direttivo",
+      "limited",
+      "socio",
+    ]);
+  });
+
+  it("unions independent roles without applying one role's exclusions to another", () => {
+    expect(resolveAccess(graph, ["limited", "socio"]).permissions).toContain("membership:read");
+    expect(resolveAccess(graph, ["socio", "limited"]).permissions).toContain("membership:read");
+    expect(
+      effectiveRolePermissions(
+        { ...graph, roles: [...graph.roles, role("sibling", [], ["chair"])] },
+        "sibling",
+      ),
+    ).toContain("membership:read");
+  });
+
+  it("lets a child explicitly grant a permission excluded by its parent", () => {
+    const restored = {
+      ...graph,
+      roles: [...graph.roles, role("restored", ["membership:read"], ["limited"])],
+    };
+    expect(effectiveRolePermissions(restored, "restored")).toContain("membership:read");
+  });
+
+  it("does not let a second parent resurrect an explicit child exclusion", () => {
+    const multiple = {
+      ...graph,
+      roles: [...catalog.roles, { ...excluded, parents: ["chair", "socio"] }],
+    };
+    expect(effectiveRolePermissions(multiple, "limited")).not.toContain("membership:read");
+  });
+
+  it("preselects inherited and implied permissions without storing direct grants", () => {
+    const draft = roleDraftFrom(role("child", [], ["chair"]));
+    expect(roleDraftPermissions(catalog, draft)).toEqual([
+      "bank:sign",
+      "membership:read",
+      "membership:write",
+    ]);
+    expect(draft.permissions).toEqual([]);
+  });
+
+  it("turns unchecking an inherited permission into an override and checking it back into inheritance", () => {
+    const draft = roleDraftFrom(role("child", [], ["chair"]));
+    const unchecked = toggleRoleDraftPermission(catalog, draft, "membership:read", false);
+    expect(unchecked.permissions).toEqual([]);
+    expect(unchecked.deniedPermissions).toEqual(["membership:read"]);
+    expect(roleDraftPermissions(catalog, unchecked)).not.toContain("membership:read");
+    const checked = toggleRoleDraftPermission(catalog, unchecked, "membership:read", true);
+    expect(checked.deniedPermissions).toEqual([]);
+    expect(checked.permissions).toEqual([]);
+    expect(roleDraftPermissions(catalog, checked)).toContain("membership:read");
+  });
+
+  it("continues adding and removing direct grants without creating exclusions", () => {
+    const draft = roleDraftFrom(role("child", [], ["socio"]));
+    const added = toggleRoleDraftPermission(catalog, draft, "bank:sign", true);
+    expect(added.permissions).toEqual(["bank:sign"]);
+    expect(toggleRoleDraftPermission(catalog, added, "bank:sign", false)).toEqual(draft);
+    expect(roleDraftPermissions(catalog, added)).toEqual(["bank:sign", "membership:read"]);
+  });
+
+  it("excludes a permission granted both directly and through inheritance in a single toggle", () => {
+    const draft = roleDraftFrom(role("child", ["membership:read"], ["socio"]));
+    const unchecked = toggleRoleDraftPermission(catalog, draft, "membership:read", false);
+    expect(unchecked.permissions).toEqual([]);
+    expect(unchecked.deniedPermissions).toEqual(["membership:read"]);
+  });
+
+  it("can exclude an implied permission without removing its independent granting permission", () => {
+    const draft = roleDraftFrom(role("child", ["membership:write"]));
+    const unchecked = toggleRoleDraftPermission(catalog, draft, "membership:read", false);
+    expect(roleDraftPermissions(catalog, unchecked)).toEqual(["membership:write"]);
+  });
+
+  it("preserves explicit exclusions when parents change and applies them to future grants", () => {
+    const draft = roleDraftFrom(excluded);
+    expect(roleDraftPermissions(catalog, { ...draft, parents: [] })).toEqual([]);
+    expect(roleDraftPermissions(catalog, { ...draft, parents: ["socio"] })).toEqual([]);
+    expect(roleDraftPermissions(catalog, { ...draft, deniedPermissions: [] })).toContain(
+      "membership:read",
+    );
+  });
+
+  it("normalizes and preserves stored overrides when a role is reopened", () => {
+    const draft = normalizeRoleDraft({
+      ...roleDraftFrom(excluded),
+      deniedPermissions: ["membership:read", "membership:read"],
+    });
+    expect(draft.deniedPermissions).toEqual(["membership:read"]);
+    expect(roleDraftPermissions(graph, draft, excluded.key)).toEqual(
+      effectiveRolePermissions(graph, excluded.key),
+    );
+  });
+
+  it("rejects unknown exclusions and conflicting grants", () => {
+    const draft = roleDraftFrom(excluded);
+    expect(
+      validateRoleDraft(
+        { ...draft, deniedPermissions: ["gone"] },
+        { catalog: graph, currentKey: excluded.key },
+      ).permissions,
+    ).toBeTruthy();
+    expect(
+      validateRoleDraft(
+        { ...draft, permissions: ["membership:read"] },
+        { catalog: graph, currentKey: excluded.key },
+      ).permissions,
+    ).toBeTruthy();
+  });
+
+  it("preserves intrinsic read access and rejects an override that would break it", () => {
+    const managedGraph = {
+      roles: [role("editor", ["idp:roles:write"])],
+      permissions: MANAGED_PERMISSIONS.map((entry) =>
+        permission(entry.key, [...entry.implies], true),
+      ),
+    };
+    const draft = {
+      ...roleDraftFrom(role("child", [], ["editor"])),
+      deniedPermissions: ["idp:roles:read"],
+    };
+    expect(roleDraftPermissions(managedGraph, draft)).toContain("idp:roles:read");
+    expect(validateRoleDraft(draft, { catalog: managedGraph }).permissions).toBeTruthy();
+  });
+
+  it("keeps Master Admin's wildcard independent from exclusions on another held role", () => {
+    const masterGraph = { ...graph, roles: [...graph.roles, role(MASTER_ADMIN_ROLE_KEY)] };
+    expect(resolveAccess(masterGraph, ["limited", MASTER_ADMIN_ROLE_KEY]).permissions).toContain(
+      "membership:read",
+    );
   });
 });

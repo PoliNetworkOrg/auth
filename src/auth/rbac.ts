@@ -208,9 +208,11 @@ export type RoleSummary = {
   sourceState: string | null;
   /** Keys of the permissions granted directly, before inheritance. */
   permissions: string[];
+  /** Explicit exclusions applied after inheritance and permission implications. */
+  deniedPermissions?: string[];
   /** Keys of the roles this role inherits permissions from. */
   parents: string[];
-  /** People holding a hand-made assignment. Always 0 for managed roles. */
+  /** Distinct people with a hand-made assignment, directly or through descendant roles. */
   memberCount: number;
   createdAt: string | null;
   updatedAt: string | null;
@@ -290,27 +292,90 @@ export function grantsAllPermissions(roleKeys: readonly string[]) {
 }
 
 /**
- * Turns the roles a person holds into the access they actually have: roles expand up the
- * role hierarchy, then the permissions those roles carry expand down the permission
- * hierarchy. Keys that no longer exist in the catalog are dropped.
- *
- * Master Admin is a wildcard rather than a stored list, so it keeps covering permissions
- * created after it was last edited. Nothing may inherit from it (see `validateRoleDraft`),
- * and resolution ignores legacy inheritance edges to it as well. Only a directly conferred
- * Master Admin role activates the wildcard.
+ * Resolve each directly held role independently, then union their permissions. A child's
+ * exclusions override all of its parents, but never another independently held role.
+ * Parent results are already expanded: expanding again would resurrect excluded grants.
+ * Only a directly held Master Admin activates the wildcard. Cycles terminate defensively.
  */
 export function resolveAccess(catalog: RbacCatalog, roleKeys: Iterable<string>): ResolvedAccess {
+  const held = [...roleKeys];
   const index = indexCatalog(catalog);
-  const roles = expandRoleKeys(catalog, roleKeys);
-  if (grantsAllPermissions(roles))
+  const roles = expandRoleKeys(catalog, held);
+  if (grantsAllPermissions(held.filter((key) => index.roles.has(key))))
     return { roles, permissions: catalog.permissions.map((entry) => entry.key).sort() };
-  const granted = roles.flatMap((key) => index.roles.get(key)?.permissions ?? []);
-  return { roles, permissions: expandPermissionKeys(catalog, granted) };
+  const memo = new Map<string, string[]>();
+  const visiting = new Set<string>();
+  const resolve = (key: string): string[] => {
+    if (memo.has(key)) return memo.get(key)!;
+    const role = index.roles.get(key);
+    if (!role || visiting.has(key) || key === MASTER_ADMIN_ROLE_KEY) return [];
+    visiting.add(key);
+    const inherited = role.parents.flatMap(resolve);
+    const denied = new Set(role.deniedPermissions ?? []);
+    const granted = [
+      ...new Set([...expandPermissionKeys(catalog, role.permissions), ...inherited]),
+    ].filter((permission) => !denied.has(permission));
+    // Managed write/assign capabilities always retain their essential read access.
+    const required = closure(granted, intrinsicImplications);
+    const result = [...required].filter((permission) => index.permissions.has(permission)).sort();
+    visiting.delete(key);
+    memo.set(key, result);
+    return result;
+  };
+  return { roles, permissions: [...new Set(held.flatMap(resolve))].sort() };
 }
 
 /** Everything a single role confers, for explaining inheritance in the admin UI. */
 export function effectiveRolePermissions(catalog: RbacCatalog, roleKey: string): string[] {
   return resolveAccess(catalog, [roleKey]).permissions;
+}
+
+/** Resolve a form draft without changing the catalog or its current role. */
+export function roleDraftPermissions(catalog: RbacCatalog, draft: RoleDraft, currentKey?: string) {
+  // Role keys cannot contain a colon, so the preview key cannot collide.
+  const key = "draft:preview";
+  return resolveAccess(
+    {
+      ...catalog,
+      roles: [
+        ...catalog.roles.filter((role) => role.key !== currentKey),
+        {
+          id: key,
+          key,
+          name: draft.name,
+          description: null,
+          managed: false,
+          sourceState: null,
+          permissions: draft.permissions,
+          deniedPermissions: draft.deniedPermissions ?? [],
+          parents: draft.parents,
+          memberCount: 0,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+    },
+    [key],
+  ).permissions;
+}
+
+/** Toggle one effective checkbox while retaining inheritance as the default. */
+export function toggleRoleDraftPermission(
+  catalog: RbacCatalog,
+  draft: RoleDraft,
+  key: string,
+  checked: boolean,
+  currentKey?: string,
+): RoleDraft {
+  const next = {
+    ...draft,
+    permissions: draft.permissions.filter((permission) => permission !== key),
+    deniedPermissions: (draft.deniedPermissions ?? []).filter((permission) => permission !== key),
+  };
+  const inheritedOrImplied = roleDraftPermissions(catalog, next, currentKey).includes(key);
+  if (checked && !inheritedOrImplied) next.permissions.push(key);
+  if (!checked && inheritedOrImplied) next.deniedPermissions.push(key);
+  return next;
 }
 
 /**
@@ -360,6 +425,7 @@ export type RoleDraft = {
   description: string;
   parents: string[];
   permissions: string[];
+  deniedPermissions?: string[];
 };
 
 export type RbacDraftErrors = {
@@ -376,7 +442,14 @@ export function emptyPermissionDraft(): PermissionDraft {
 }
 
 export function emptyRoleDraft(): RoleDraft {
-  return { key: "", name: "", description: "", parents: [], permissions: [] };
+  return {
+    key: "",
+    name: "",
+    description: "",
+    parents: [],
+    permissions: [],
+    deniedPermissions: [],
+  };
 }
 
 export function permissionDraftFrom(permission: PermissionSummary): PermissionDraft {
@@ -395,6 +468,7 @@ export function roleDraftFrom(role: RoleSummary): RoleDraft {
     description: role.description ?? "",
     parents: [...role.parents],
     permissions: [...role.permissions],
+    deniedPermissions: [...(role.deniedPermissions ?? [])],
   };
 }
 
@@ -414,6 +488,7 @@ export function normalizeRoleDraft(draft: RoleDraft): RoleDraft {
     description: draft.description.trim(),
     parents: [...new Set(draft.parents)].sort(),
     permissions: [...new Set(draft.permissions)].sort(),
+    deniedPermissions: [...new Set(draft.deniedPermissions ?? [])].sort(),
   };
 }
 
@@ -491,8 +566,17 @@ export function validateRoleDraft(
   const key = draft.key.trim().toLowerCase();
   if (!currentKey && isStaticRoleKey(key))
     errors.key = "This key belongs to a role the identity provider defines itself.";
-  if (draft.permissions.some((permission) => !index.permissions.has(permission)))
+  const denied = draft.deniedPermissions ?? [];
+  if ([...draft.permissions, ...denied].some((permission) => !index.permissions.has(permission)))
     errors.permissions = "One of the selected permissions no longer exists.";
+  else if (denied.some((permission) => draft.permissions.includes(permission)))
+    errors.permissions = "A permission cannot be both granted and excluded.";
+  else {
+    const effective = roleDraftPermissions(catalog, draft, currentKey);
+    if (denied.some((permission) => effective.includes(permission)))
+      errors.permissions =
+        "Remove the write or assign permission before excluding its required read access.";
+  }
   if (draft.parents.some((parent) => !index.roles.has(parent)))
     errors.parents = "One of the selected roles no longer exists.";
   // Master Admin's wildcard is conferred by the deployment's configuration and is never
@@ -515,6 +599,10 @@ export function hasDraftErrors(errors: RbacDraftErrors) {
 }
 
 export type RoleMember = {
+  /** Whether membership can be removed from this role itself. */
+  direct?: boolean;
+  /** Keys of directly assigned descendant roles that confer this membership. */
+  inheritedFrom?: string[];
   userId: string;
   name: string;
   /** Null when no real address is known, only a placeholder. */

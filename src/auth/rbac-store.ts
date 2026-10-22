@@ -5,7 +5,7 @@ import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
 import type { IdentityClaims } from "./policy";
 import { randomUUID } from "node:crypto";
-import { and, count, eq, exists, gt, ilike, or, sql } from "drizzle-orm";
+import { and, countDistinct, eq, exists, gt, ilike, or, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import { authorizationMutationLock } from "../db/security-lock";
 import {
@@ -56,13 +56,42 @@ type CatalogReader = Pick<typeof db, "select">;
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+/**
+ * Expand hand-made assignments through the role hierarchy. UNION deduplicates paths and
+ * terminates even if legacy edges contain a cycle. Keep the source role to explain inherited
+ * membership without treating it as a removable assignment on the parent.
+ * Managed memberships come from identity evidence, never from user_role.
+ */
+const effectiveRoleAssignments = sql`(
+  with recursive membership_paths(user_id, role_id, source_role_id) as (
+    select ${userRole.userId}, ${userRole.roleId}, ${userRole.roleId}
+    from ${userRole}
+    inner join ${role} on ${role.id} = ${userRole.roleId}
+    where not ${role.managed}
+    union
+    select paths.user_id, ${roleParent.parentRoleId}, paths.source_role_id
+    from membership_paths paths
+    inner join ${roleParent} on ${roleParent.roleId} = paths.role_id
+    inner join ${role} parent on parent.id = ${roleParent.parentRoleId}
+    where parent.key <> ${MASTER_ADMIN_ROLE_KEY}
+  )
+  select * from membership_paths
+) membership`;
+const membershipUserId = sql<string>`membership.user_id`;
+const membershipRoleId = sql<string>`membership.role_id`;
+const membershipSourceRoleId = sql<string>`membership.source_role_id`;
+
 // Read one query at a time: `db` may be an open transaction, and a transaction is a single
 // PostgreSQL session that cannot run overlapping queries.
 export async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
   const roles = await db.select().from(role).orderBy(role.key);
   const permissions = await db.select().from(permission).orderBy(permission.key);
   const rolePermissions = await db
-    .select({ roleId: rolePermission.roleId, permissionKey: permission.key })
+    .select({
+      roleId: rolePermission.roleId,
+      permissionKey: permission.key,
+      granted: rolePermission.granted,
+    })
     .from(rolePermission)
     .innerJoin(permission, eq(permission.id, rolePermission.permissionId));
   const roleParents = await db
@@ -74,9 +103,9 @@ export async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
     .from(permissionImplication)
     .innerJoin(permission, eq(permission.id, permissionImplication.impliedPermissionId));
   const members = await db
-    .select({ roleId: userRole.roleId, members: count() })
-    .from(userRole)
-    .groupBy(userRole.roleId);
+    .select({ roleId: membershipRoleId, members: countDistinct(membershipUserId) })
+    .from(effectiveRoleAssignments)
+    .groupBy(membershipRoleId);
 
   const collect = <T>(rows: T[], keyOf: (row: T) => string, valueOf: (row: T) => string) => {
     const grouped = new Map<string, string[]>();
@@ -90,7 +119,12 @@ export async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
   };
 
   const permissionsByRole = collect(
-    rolePermissions,
+    rolePermissions.filter((row) => row.granted),
+    (row) => row.roleId,
+    (row) => row.permissionKey,
+  );
+  const deniedByRole = collect(
+    rolePermissions.filter((row) => !row.granted),
     (row) => row.roleId,
     (row) => row.permissionKey,
   );
@@ -106,7 +140,7 @@ export async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
   );
   const memberCounts = new Map(members.map((row) => [row.roleId, row.members]));
   const rolesPerPermission = new Map<string, number>();
-  for (const row of rolePermissions)
+  for (const row of rolePermissions.filter((row) => row.granted))
     rolesPerPermission.set(row.permissionKey, (rolesPerPermission.get(row.permissionKey) ?? 0) + 1);
 
   return {
@@ -118,6 +152,7 @@ export async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
       managed: row.managed,
       sourceState: row.sourceState,
       permissions: permissionsByRole.get(row.id) ?? [],
+      deniedPermissions: deniedByRole.get(row.id) ?? [],
       parents: parentsByRole.get(row.id) ?? [],
       memberCount: memberCounts.get(row.id) ?? 0,
       createdAt: row.createdAt?.toISOString() ?? null,
@@ -185,7 +220,12 @@ export async function withAuthorizedRbacWrite<T>(
     ManagedPermissionKey,
     `${string}:write` | `${string}:assign` | `${string}:delete`
   >,
-  change: (transaction: Transaction, catalog: RbacCatalog, access: ResolvedAccess) => Promise<T>,
+  change: (
+    transaction: Transaction,
+    catalog: RbacCatalog,
+    access: ResolvedAccess,
+    heldRoleKeys: string[],
+  ) => Promise<T>,
 ): Promise<T> {
   await refreshIdentityMembership(actorId);
   return db.transaction(
@@ -193,15 +233,16 @@ export async function withAuthorizedRbacWrite<T>(
       await transaction.execute(authorizationMutationLock);
       const subject = await readIdentitySubject(actorId, transaction);
       const catalog = await readCatalog(transaction);
-      const access = resolveAccess(catalog, [
+      const heldRoleKeys = [
         ...(await assignedRoleKeys(actorId, catalog, transaction)),
         ...subject.roleKeys,
-      ]);
+      ];
+      const access = resolveAccess(catalog, heldRoleKeys);
       if (!access.permissions.includes(required)) {
         logAuthorizationDenial(actorId, "rbac-store", [required]);
         throw new RbacError(403, "You do not have permission to do that.");
       }
-      return change(transaction, catalog, access);
+      return change(transaction, catalog, access, heldRoleKeys);
     },
     { isolationLevel: "read committed" },
   );
@@ -253,11 +294,11 @@ async function withRbacWriteLock<T>(
   return withAuthorizedRbacWrite(
     actorId,
     requiredForOperation(operation),
-    async (transaction, catalog, access) => {
+    async (transaction, catalog, access, heldRoleKeys) => {
       const before = await auditSnapshot(transaction, catalog, operation, targetId);
       const result = await change(transaction, catalog, access);
       const next = await readCatalog(transaction);
-      if (!mayDelegateMutation(catalog, next, access, operation, targetId)) {
+      if (!mayDelegateMutation(catalog, next, access, operation, targetId, heldRoleKeys)) {
         logAuthorizationDenial(actorId, "rbac-store", ["bounded-delegation"]);
         throw new RbacError(
           403,
@@ -377,7 +418,9 @@ export async function saveRole(
     // Master Admin already holds everything, so a stored grant list would only mislead.
     if (
       current?.key === MASTER_ADMIN_ROLE_KEY &&
-      (draft.permissions.length > 0 || draft.parents.length > 0)
+      (draft.permissions.length > 0 ||
+        draft.parents.length > 0 ||
+        (draft.deniedPermissions?.length ?? 0) > 0)
     )
       throw new RbacError(
         400,
@@ -386,6 +429,7 @@ export async function saveRole(
     checked(validateRoleDraft(draft, { catalog, currentKey: current?.key }));
     const id = targetId;
     const permissionIds = idsForPermissionKeys(catalog, draft.permissions);
+    const deniedIds = idsForPermissionKeys(catalog, draft.deniedPermissions ?? []);
     const parentIds = idsForRoleKeys(catalog, draft.parents);
     const values = {
       key: draft.key,
@@ -396,10 +440,11 @@ export async function saveRole(
     if (current) await transaction.update(role).set(values).where(eq(role.id, id));
     else await transaction.insert(role).values({ id, managed: false, ...values });
     await transaction.delete(rolePermission).where(eq(rolePermission.roleId, id));
-    if (permissionIds.length)
-      await transaction
-        .insert(rolePermission)
-        .values(permissionIds.map((permissionId) => ({ roleId: id, permissionId })));
+    const grants = [
+      ...permissionIds.map((permissionId) => ({ roleId: id, permissionId, granted: true })),
+      ...deniedIds.map((permissionId) => ({ roleId: id, permissionId, granted: false })),
+    ];
+    if (grants.length) await transaction.insert(rolePermission).values(grants);
     await transaction.delete(roleParent).where(eq(roleParent.roleId, id));
     if (parentIds.length)
       await transaction
@@ -433,10 +478,16 @@ export async function listRoleMembers(
         image: user.image,
         assignedAt: userRole.assignedAt,
         assignedBy: userRole.assignedBy,
+        direct: sql<boolean>`bool_or(${membershipSourceRoleId} = ${membershipRoleId})`,
+        inheritedFrom: sql<string[]>`coalesce(array_agg(distinct ${role.key}) filter
+          (where ${membershipSourceRoleId} <> ${membershipRoleId}), array[]::text[])`,
       })
-      .from(userRole)
-      .innerJoin(user, eq(user.id, userRole.userId))
-      .where(and(eq(userRole.roleId, roleId), after ? gt(user.id, after) : undefined))
+      .from(effectiveRoleAssignments)
+      .innerJoin(user, eq(user.id, membershipUserId))
+      .innerJoin(role, eq(role.id, membershipSourceRoleId))
+      .leftJoin(userRole, and(eq(userRole.userId, user.id), eq(userRole.roleId, roleId)))
+      .where(and(eq(membershipRoleId, roleId), after ? gt(user.id, after) : undefined))
+      .groupBy(user.id, userRole.assignedAt, userRole.assignedBy)
       .orderBy(user.id)
       .limit(101);
     const members = rows.slice(0, 100);
@@ -509,7 +560,7 @@ export async function searchUsers(
           email: user.email,
           image: user.image,
           holdsRole: roleId
-            ? sql<boolean>`exists (select 1 from ${userRole} where ${userRole.userId} = ${user.id} and ${userRole.roleId} = ${roleId})`
+            ? sql<boolean>`exists (select 1 from ${effectiveRoleAssignments} where ${membershipUserId} = ${user.id} and ${membershipRoleId} = ${roleId})`
             : sql<boolean>`false`,
         })
         .from(user)
