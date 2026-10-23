@@ -1,3 +1,4 @@
+import { matchesSearch } from "@/lib/search";
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronRight, KeyRound, Plus, ShieldCheck, Sparkles } from "lucide-react";
@@ -15,6 +16,34 @@ export const Route = createFileRoute("/access/permissions/")({
   loader: () => getCatalog(),
   component: PermissionsIndex,
 });
+
+function applicationKey(permission: PermissionSummary) {
+  return permission.key.split(":")[0];
+}
+
+function applicationLabel(key: string) {
+  if (key === "idp") return "PoliNetwork Auth";
+  if (key === "tg") return "Telegram";
+  if (key === "wa") return "WhatsApp";
+  if (key === "web") return "Website";
+  if (key === "azure") return "Microsoft Entra";
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+/** Labels for each application, suffixed with the key where two would otherwise read the same. */
+function applicationLabels(keys: string[]) {
+  const counts = new Map<string, number>();
+  for (const key of keys) {
+    const label = applicationLabel(key);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return new Map(
+    keys.map((key) => {
+      const label = applicationLabel(key);
+      return [key, (counts.get(label) ?? 0) > 1 ? `${label} (${key})` : label];
+    }),
+  );
+}
 
 function PermissionRow({
   permission,
@@ -40,6 +69,9 @@ function PermissionRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h3 className="truncate text-sm font-semibold">{permission.name}</h3>
+            {permission.managed && (
+              <Badge className="bg-card text-muted-foreground">Built-in</Badge>
+            )}
             {implied.length > 0 && (
               <Badge className="bg-card text-muted-foreground">Also grants {implied.length}</Badge>
             )}
@@ -63,16 +95,34 @@ function PermissionsIndex() {
   const { can } = useAccess();
   const catalog = Route.useLoaderData();
   const [query, setQuery] = useState("");
+  const [application, setApplication] = useState<string | null>(null);
+  const applications = [...new Set(catalog.permissions.map(applicationKey))].sort();
+  const labels = applicationLabels(applications);
   const search = query.trim().toLowerCase();
-  const filtered = catalog.permissions.filter((permission) =>
-    [permission.name, permission.key, permission.description].some((value) =>
-      value?.toLowerCase().includes(search),
-    ),
+  const filtered = catalog.permissions.filter(
+    (permission) =>
+      (application === null || applicationKey(permission) === application) &&
+      matchesSearch(search, [
+        permission.name,
+        permission.key,
+        permission.description,
+        labels.get(applicationKey(permission)),
+        ...expandPermissionKeys(catalog, permission.implies).flatMap((key) => {
+          const implied = catalog.permissions.find((entry) => entry.key === key);
+          return [key, implied?.name, implied?.description];
+        }),
+      ]),
   );
   const impliedBy = (permission: PermissionSummary) =>
     expandPermissionKeys(catalog, permission.implies).filter((key) => key !== permission.key);
-  const managed = filtered.filter((permission) => permission.managed);
-  const custom = filtered.filter((permission) => !permission.managed);
+  const groups = applications
+    .map((key) => ({
+      key,
+      permissions: filtered
+        .filter((permission) => applicationKey(permission) === key)
+        .sort((a, b) => a.key.localeCompare(b.key)),
+    }))
+    .filter((group) => group.permissions.length > 0);
 
   return (
     <div className="space-y-8">
@@ -103,85 +153,90 @@ function PermissionsIndex() {
         )}
       </CatalogSearch>
 
-      {search && filtered.length === 0 && <CatalogSearchEmpty kind="permissions" />}
-
-      {
-        <div className="space-y-8">
-          {(managed.length > 0 || !search) && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Built into the identity provider</CardTitle>
-                <CardDescription>
-                  These permissions control this service itself. They always exist and cannot be
-                  deleted, because the code checks for these exact keys. Give them to a role to let
-                  someone administer part of PoliNetwork Auth.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="px-0 pb-0">
-                {managed.length === 0 ? (
-                  <p className="border-t px-5 py-6 text-sm text-muted-foreground">
-                    No built-in permissions match your search.
-                  </p>
-                ) : (
-                  <ul className="divide-y border-t" aria-label="Built-in permissions">
-                    {managed.map((permission) => (
-                      <PermissionRow
-                        key={permission.id}
-                        permission={permission}
-                        implied={impliedBy(permission)}
-                      />
-                    ))}
-                  </ul>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {(custom.length > 0 || !search) && (
-            <div>
-              <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
-                Permissions you created
-              </h2>
-              {custom.length === 0 ? (
-                <Card>
-                  <CardContent className="flex flex-col items-center gap-4 px-6 py-14 text-center">
-                    <div className="flex size-14 items-center justify-center rounded-2xl border bg-background text-primary">
-                      <KeyRound className="size-6" aria-hidden="true" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold">No permissions of your own yet</h3>
-                      <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-                        Name the first thing one of your applications should be able to check for,
-                        such as reading the member list.
-                      </p>
-                    </div>
-                    {can("idp:permissions:write") && (
-                      <Button asChild>
-                        <Link to="/access/permissions/new">
-                          <Plus aria-hidden="true" />
-                          New permission
-                        </Link>
-                      </Button>
-                    )}
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card>
-                  <ul className="divide-y" aria-label="Your permissions">
-                    {custom.map((permission) => (
-                      <PermissionRow
-                        key={permission.id}
-                        permission={permission}
-                        implied={impliedBy(permission)}
-                      />
-                    ))}
-                  </ul>
-                </Card>
-              )}
-            </div>
-          )}
+      {applications.length > 0 && (
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by application">
+          <Button
+            variant={application === null ? "default" : "outline"}
+            size="sm"
+            aria-pressed={application === null}
+            onClick={() => setApplication(null)}
+          >
+            All applications
+          </Button>
+          {applications.map((key) => (
+            <Button
+              key={key}
+              variant={application === key ? "default" : "outline"}
+              size="sm"
+              aria-pressed={application === key}
+              onClick={() => setApplication(key)}
+            >
+              {labels.get(key)}
+              <span className="tabular-nums opacity-70">
+                {
+                  catalog.permissions.filter((permission) => applicationKey(permission) === key)
+                    .length
+                }
+              </span>
+            </Button>
+          ))}
         </div>
-      }
+      )}
+
+      {filtered.length === 0 &&
+        (search ? (
+          <CatalogSearchEmpty kind="permissions" />
+        ) : (
+          <Card>
+            <CardContent className="flex flex-col items-center gap-4 px-6 py-14 text-center">
+              <KeyRound className="size-6 text-primary" aria-hidden="true" />
+              <div>
+                <h2 className="text-lg font-semibold">No permissions yet</h2>
+                <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+                  Create a permission for something one of your applications should be able to
+                  check.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+
+      <div className="space-y-6">
+        {groups.map(({ key, permissions }) => (
+          <Card key={key}>
+            <CardHeader>
+              <div className="flex flex-wrap items-center gap-3">
+                <CardTitle>{labels.get(key)}</CardTitle>
+                <KeyChip>
+                  {permissions.some((permission) => permission.key.includes(":"))
+                    ? `${key}:*`
+                    : key}
+                </KeyChip>
+                <Badge className="bg-muted text-muted-foreground">
+                  {permissions.length} {permissions.length === 1 ? "permission" : "permissions"}
+                </Badge>
+              </div>
+              {key === "idp" && (
+                <CardDescription>
+                  Permissions for administering PoliNetwork Auth. Built-in permissions always exist
+                  and cannot be deleted.
+                </CardDescription>
+              )}
+            </CardHeader>
+            <CardContent className="px-0 pb-0">
+              <ul className="divide-y border-t" aria-label={`${labels.get(key)} permissions`}>
+                {permissions.map((permission) => (
+                  <PermissionRow
+                    key={permission.id}
+                    permission={permission}
+                    implied={impliedBy(permission)}
+                  />
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }

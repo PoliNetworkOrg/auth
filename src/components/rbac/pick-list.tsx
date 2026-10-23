@@ -1,3 +1,4 @@
+import { matchesSearch } from "@/lib/search";
 import { useId, useState } from "react";
 import { cn } from "cn";
 import { Search } from "lucide-react";
@@ -37,9 +38,13 @@ export function PickList({
   const errorId = useId();
   const term = query.trim().toLowerCase();
   const visible = term
-    ? options.filter(
-        (option) =>
-          option.key.toLowerCase().includes(term) || option.label.toLowerCase().includes(term),
+    ? options.filter((option) =>
+        matchesSearch(term, [
+          option.key,
+          option.label,
+          option.hint,
+          option.disabled ? option.disabledReason : undefined,
+        ]),
       )
     : options;
 
