@@ -335,22 +335,15 @@ Master Admin registers the four Phase 1 clients on `/applications/new`, each wit
 
 During a sign-in the login page names the requesting application. The consent page at `/consent` shows the app, who is signed in (with a switch-account option), each requested scope in plain language, any requested profile claims, and where the browser will be sent; it supports allow and deny and explains expired or disabled requests.
 
-Future consumers should use authorization code with PKCE, validate token signatures, issuer, audience, and expiration, and request `polinetwork:identity` only when needed. APIs must check their own permissions. An ID token or a linked Telegram ID alone is not permission to moderate a group.
+New services follow [docs/service-integration-guide.md](docs/service-integration-guide.md). Future consumers should use authorization code with PKCE, validate token signatures, issuer, audience, and expiration, and request `polinetwork:identity` only when needed. APIs must check their own permissions. An ID token or a linked Telegram ID alone is not permission to moderate a group.
 
-## Migration work before cutover
+## Backend login removal
 
-Inspection found backend auth in `../backend/src/auth/index.ts`, with custom email OTP, passkeys, shared subdomain cookies, and custom Telegram linking. `../admin` reads `user.telegramId` and calls backend Telegram permission routes. `../group-bot` also uses those backend assignments.
+The backend's own login (better-auth with email OTP, passkeys and Telegram link codes) was removed in RFC v3 Phase 6: every PoliNetwork service signs people in through this IdP. Browsers may still hold the backend's old `better-auth` cookies on `.polinetwork.org` until they expire; this service's `pn-identity` cookie prefix (`src/auth/cookies.ts`) keeps them from shadowing its session.
 
-The backend scopes its Better Auth cookies to `.polinetwork.org` with the default `better-auth` prefix, so browsers send them to this service too. This service uses its own `pn-identity` cookie prefix (`src/auth/cookies.ts`) so those cookies cannot shadow its session. Keep the prefixes different while both run.
+To connect a new service, follow [docs/service-integration-guide.md](docs/service-integration-guide.md).
 
-Keep these integrations running while testing this service. A later migration needs:
-
-1. Back up and inventory backend users, accounts, passkeys, Telegram links, roles, and foreign keys. Preserve user IDs or define a reviewed mapping. This prototype's schema is not a replacement migration for the backend's prefixed tables.
-2. Implement a bridge that proves ownership of the existing backend session before connecting an existing user here. Existing backend passkeys are not imported; users register new passkeys in this service. The prototype does not preserve email OTP login. Never import Telegram usernames as ownership proof or manufacture OIDC accounts from old links.
-3. Require official Telegram re-verification and reconcile the verified numeric ID with existing moderation assignments. Review conflicts instead of merging automatically.
-4. Confirm the PN membership rule and choose how often students must reverify their Polimi email.
-5. Test a downstream application in staging, including authorization code, consent, refresh, logout, account conflicts, and revoked permissions. The current shared-cookie clients cannot be pointed at this issuer without integration changes.
-6. Schedule a separate cutover and rollback plan. Retain the backend login until those checks pass.
+Still open: confirm the PN membership rule and how often students must reverify their Polimi email.
 
 ## Validation
 
