@@ -6,6 +6,7 @@ import { jwt } from "better-auth/plugins/jwt";
 import { createLocalJWKSet, jwtVerify } from "jose";
 import { describe, expect, it } from "vite-plus/test";
 import { jwtOptions } from "./jwt-options";
+import { serializeRefreshGrant } from "./refresh-grant";
 import { standardIdTokenClaims } from "./policy";
 
 const baseURL = "https://auth.polinetwork.test";
@@ -36,6 +37,7 @@ async function issueTokens(scopes: string[], customClaims = true) {
         loginPage: "/",
         consentPage: "/consent",
         scopes: ["openid", "profile", "email", "offline_access"],
+        refreshTokenReuseInterval: 10,
         customIdTokenClaims: customClaims
           ? ({ scopes }) => standardIdTokenClaims(appUser, scopes)
           : undefined,
@@ -95,7 +97,11 @@ async function issueTokens(scopes: string[], customClaims = true) {
     }),
   );
   expect(tokenResponse.status).toBe(200);
-  const tokens = (await tokenResponse.json()) as { id_token: string; access_token: string };
+  const tokens = (await tokenResponse.json()) as {
+    id_token: string;
+    access_token: string;
+    refresh_token?: string;
+  };
   const jwks = await auth.api.getJwks();
   const verified = await jwtVerify(tokens.id_token, createLocalJWKSet(jwks), {
     issuer: `${baseURL}/api/auth`,
@@ -109,7 +115,7 @@ async function issueTokens(scopes: string[], customClaims = true) {
   );
   expect(userInfoResponse.status).toBe(200);
   const userInfo = (await userInfoResponse.json()) as Record<string, unknown>;
-  return { payload: verified.payload, userInfo };
+  return { payload: verified.payload, userInfo, auth, client, tokens };
 }
 
 describe("OIDC standard claims in signed tokens", () => {
@@ -141,4 +147,45 @@ describe("OIDC standard claims in signed tokens", () => {
       expect(claims).not.toHaveProperty("name");
     }
   });
+});
+
+describe("refresh token grants", () => {
+  it.each(["refresh_token", " refresh_token "])(
+    "answers concurrent refreshes of one token with the same rotated tokens (%j)",
+    async (grantType) => {
+      const { auth, client, tokens } = await issueTokens(["openid", "offline_access"]);
+      expect(tokens.refresh_token).toBeTruthy();
+      const body = new URLSearchParams({
+        grant_type: grantType,
+        refresh_token: tokens.refresh_token!,
+        client_id: client.client_id,
+        client_secret: client.client_secret!,
+      }).toString();
+      const refresh = () => {
+        const request = new Request(`${baseURL}/api/auth/oauth2/token`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            "content-length": String(body.length),
+          },
+          body,
+        });
+        return serializeRefreshGrant(request, () => auth.handler(request));
+      };
+      const responses = await Promise.all([refresh(), refresh(), refresh()]);
+      const bodies = (await Promise.all(responses.map((response) => response.json()))) as {
+        refresh_token?: string;
+        id_token?: string;
+      }[];
+      expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
+      const [first] = bodies;
+      expect(first.refresh_token).toBeTruthy();
+      expect(first.refresh_token).not.toBe(tokens.refresh_token);
+      expect(first.id_token).toBeTruthy();
+      for (const item of bodies) {
+        expect(item.refresh_token).toBe(first.refresh_token);
+        expect(item.id_token).toBe(first.id_token);
+      }
+    },
+  );
 });
