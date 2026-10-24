@@ -46,6 +46,23 @@ it("runs a second refresh of the same token after the first", async () => {
   expect(calls).toEqual(["first", "second"]);
 });
 
+it("keeps the queue going when a refresh throws", async () => {
+  const failed = serializeRefreshGrant(refreshRequest("token"), async () => {
+    throw new Error("refresh failed");
+  });
+  const waiting = serializeRefreshGrant(
+    refreshRequest("token"),
+    async () => new Response("second"),
+  );
+  await expect(failed).rejects.toThrow("refresh failed");
+  expect(await (await waiting).text()).toBe("second");
+  const later = await serializeRefreshGrant(
+    refreshRequest("token"),
+    async () => new Response("third"),
+  );
+  expect(await later.text()).toBe("third");
+});
+
 it("runs refreshes of different tokens at once", async () => {
   const { calls, finish, handler } = blockedHandler();
   const first = serializeRefreshGrant(refreshRequest("one"), handler("one"));
