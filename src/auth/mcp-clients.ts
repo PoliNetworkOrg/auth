@@ -7,11 +7,11 @@ export const MCP_PATH = "/api/mcp";
 export const MCP_SCOPE = "idp:mcp";
 
 /**
- * Everything a self-registered MCP client may ask for. `openid` is there for clients that
- * add it out of habit and only reveals the user ID; `offline_access` lets them refresh.
- * Profile, email and identity claims are never offered to these clients.
+ * Everything a self-registered MCP client may ask for: `offline_access` lets it refresh.
+ * Without `openid` it gets no ID token and cannot call UserInfo, so anonymous registration
+ * never turns into a way to sign people in elsewhere or read their profile.
  */
-export const MCP_CLIENT_SCOPES = ["openid", "offline_access", MCP_SCOPE];
+export const MCP_CLIENT_SCOPES = ["offline_access", MCP_SCOPE];
 
 /**
  * Callback pages of hosted agents, matched exactly. A self-registered client may otherwise

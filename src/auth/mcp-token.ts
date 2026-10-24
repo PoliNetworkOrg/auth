@@ -1,10 +1,12 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { createLocalJWKSet, jwtVerify, type JWK } from "jose";
 import { db } from "../db/index";
 import { oauthClient, oauthConsent } from "../db/schema";
 import { auth } from "./index";
 import { MCP_SCOPE } from "./mcp-clients";
 import { isMcpClient, issuer, mcpResource } from "./mcp-resource";
+
+const USE_RECORD_INTERVAL_MS = 60 * 60 * 1000;
 
 export type McpCaller = {
   token: string;
@@ -61,14 +63,27 @@ export async function verifyMcpToken(authorization: string | null): Promise<McpC
   } catch {
     return null;
   }
-  const [client] = await db
-    .select({ disabled: oauthClient.disabled })
+  const [connection] = await db
+    .select({
+      disabled: oauthClient.disabled,
+      consentId: oauthConsent.id,
+      usedAt: oauthConsent.updatedAt,
+    })
     .from(oauthClient)
     .innerJoin(
       oauthConsent,
       and(eq(oauthConsent.clientId, oauthClient.clientId), eq(oauthConsent.userId, caller.userId)),
     )
     .where(and(eq(oauthClient.clientId, caller.clientId), isMcpClient))
+    .orderBy(desc(oauthConsent.updatedAt))
     .limit(1);
-  return client && !client.disabled ? caller : null;
+  if (!connection || connection.disabled) return null;
+  // Better Auth only writes a consent's updatedAt. For an agent it also records when the agent
+  // last used the server, at most hourly: the account page shows it and pruning relies on it.
+  if (connection.usedAt.getTime() < Date.now() - USE_RECORD_INTERVAL_MS)
+    await db
+      .update(oauthConsent)
+      .set({ updatedAt: new Date() })
+      .where(eq(oauthConsent.id, connection.consentId));
+  return caller;
 }

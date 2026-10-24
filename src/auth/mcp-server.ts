@@ -4,7 +4,7 @@ import { createLocalJWKSet, decodeJwt, decodeProtectedHeader, jwtVerify, type JW
 import { z } from "zod";
 import { ActionError } from "@/lib/action-error";
 import { db } from "../db/index";
-import { rbacAuditEvent, user } from "../db/schema";
+import { oauthResource, rbacAuditEvent, user } from "../db/schema";
 import { toActionError } from "./guard";
 import { getIdentity } from "./identity";
 import { auth, tokenLifetimes } from "./index";
@@ -161,6 +161,23 @@ async function respond(run: () => Promise<unknown>): Promise<CallToolResult> {
 
 function diagnosisContext(): DiagnosisContext {
   return { resources: configuredResources() };
+}
+
+/** The token policy of every resource, which the provider seeds from its configuration. */
+async function resourcePolicies() {
+  const rows = await db
+    .select({
+      identifier: oauthResource.identifier,
+      allowedScopes: oauthResource.allowedScopes,
+      disabled: oauthResource.disabled,
+    })
+    .from(oauthResource);
+  return Object.fromEntries(
+    rows.map((row) => [
+      row.identifier,
+      { allowedScopes: row.allowedScopes, disabled: row.disabled ?? false },
+    ]),
+  );
 }
 
 function compactClient(client: OidcClientSummary) {
@@ -407,7 +424,7 @@ export function createMcpServer(principal: McpPrincipal) {
             ...(authorizationUrl
               ? {
                   authorizationRequest: checkAuthorizationRequest(client, authorizationUrl, {
-                    ...context,
+                    resourcePolicies: await resourcePolicies(),
                     authorizeEndpoint: `${issuer}/oauth2/authorize`,
                   }),
                 }
@@ -430,16 +447,42 @@ export function createMcpServer(principal: McpPrincipal) {
         respond(async () => {
           const draft = checkClientDraft({ ...emptyClientDraft(), redirectUris: [], ...input });
           const created = await createOidcClient(actor, draft);
-          const [client] = await listOidcClients(actor, created.clientId);
+          // The application exists and its secret is shown only now, so failing to read it
+          // back, for someone who may register applications without seeing them, must not
+          // lose the credentials.
+          const [client] = can("idp:applications:read")
+            ? await listOidcClients(actor, created.clientId).catch(() => [])
+            : [];
           return {
             clientId: created.clientId,
             clientSecret: created.clientSecret,
-            application: client,
-            findings: client ? diagnoseClient(client, diagnosisContext()) : [],
+            ...(client
+              ? { application: client, findings: diagnoseClient(client, diagnosisContext()) }
+              : {}),
           };
         }),
     );
 
+    server.registerTool(
+      offer("rotate_application_secret"),
+      {
+        title: "Rotate a client secret",
+        description:
+          "Replaces an application's client secret. The old one stops working at once; the new one is returned once.",
+        inputSchema: z.object({ clientId: z.string().min(1) }),
+        annotations: { destructiveHint: true },
+      },
+      ({ clientId }) =>
+        respond(async () => {
+          const result = await rotateOidcClientSecret(actor, clientId);
+          if (!result) throw new RbacError(404, "Application not found.");
+          return result;
+        }),
+    );
+  }
+
+  // Changing or deleting an application starts from reading it.
+  if (can("idp:applications:write", "idp:applications:read")) {
     server.registerTool(
       offer("update_application"),
       {
@@ -468,23 +511,6 @@ export function createMcpServer(principal: McpPrincipal) {
             clientSecret: result.clientSecret,
             findings: diagnoseClient(result.client, diagnosisContext()),
           };
-        }),
-    );
-
-    server.registerTool(
-      offer("rotate_application_secret"),
-      {
-        title: "Rotate a client secret",
-        description:
-          "Replaces an application's client secret. The old one stops working at once; the new one is returned once.",
-        inputSchema: z.object({ clientId: z.string().min(1) }),
-        annotations: { destructiveHint: true },
-      },
-      ({ clientId }) =>
-        respond(async () => {
-          const result = await rotateOidcClientSecret(actor, clientId);
-          if (!result) throw new RbacError(404, "Application not found.");
-          return result;
         }),
     );
 

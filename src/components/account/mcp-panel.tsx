@@ -51,15 +51,7 @@ export function McpPanel({ mcp, actions }: { mcp: Mcp; actions: AccountActions }
                 <p className="truncate text-sm font-medium">{name}</p>
                 <p className="truncate text-[13px] text-muted-foreground">
                   {agent.redirectHost && <>{agent.redirectHost} · </>}
-                  {agent.lastUsedAt ? (
-                    <>
-                      Active <TimeAgo value={agent.lastUsedAt} />
-                    </>
-                  ) : (
-                    <>
-                      Connected <TimeAgo value={agent.connectedAt} />
-                    </>
-                  )}
+                  Active <TimeAgo value={agent.lastUsedAt} />
                 </p>
               </div>
               <Button

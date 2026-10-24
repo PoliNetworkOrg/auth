@@ -2,7 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db/index";
 import { oauthClient, oauthClientResource } from "../db/schema";
 import { env } from "../env";
-import { MCP_PATH } from "./mcp-clients";
+import { MCP_CLIENT_SCOPES, MCP_PATH, narrowMcpScope } from "./mcp-clients";
 
 /** The MCP server's resource identifier: the URL agents connect to, and their tokens' audience. */
 export const mcpResource = new URL(MCP_PATH, env.BETTER_AUTH_URL).href;
@@ -54,11 +54,24 @@ export async function finishMcpRegistration(clientId: string) {
   });
 }
 
-/** The scopes an agent's client may ask for, or null when the client is not an agent's. */
-export async function mcpClientScopes(clientId: string) {
+/**
+ * An authorization request from an agent's client, rewritten to get a token for the MCP
+ * server: scopes it may not have are dropped (RFC 6749 §3.3 lets the server grant fewer
+ * than asked), and a missing `resource` is the MCP server, so its token is never one other
+ * services or UserInfo accept. Returns null for every other client, and for a request the
+ * provider must refuse as it is.
+ */
+export async function mcpAuthorizationRequest(params: Record<string, unknown>) {
+  if (typeof params.client_id !== "string" || params.request || params.request_uri) return null;
   const [client] = await db
     .select({ scopes: oauthClient.scopes })
     .from(oauthClient)
-    .where(and(eq(oauthClient.clientId, clientId), isMcpClient));
-  return client ? (client.scopes ?? []) : null;
+    .where(and(eq(oauthClient.clientId, params.client_id), isMcpClient));
+  if (!client) return null;
+  // Registrations from before a scope was withdrawn keep it stored; it is not granted.
+  const allowed = (client.scopes ?? []).filter((scope) => MCP_CLIENT_SCOPES.includes(scope));
+  // Without a scope the provider would grant the stored ones, so name the allowed ones.
+  const scope = narrowMcpScope(params.scope ?? allowed.join(" "), allowed);
+  if (!scope) return null;
+  return { ...params, scope, ...(params.resource === undefined ? { resource: mcpResource } : {}) };
 }

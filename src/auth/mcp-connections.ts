@@ -1,4 +1,4 @@
-import { and, count, desc, eq, lt, notExists, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, lt, notExists, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import { oauthAccessToken, oauthClient, oauthConsent, oauthRefreshToken } from "../db/schema";
 import { isMcpClient } from "./mcp-resource";
@@ -9,8 +9,8 @@ export type McpConnection = {
   /** Where the agent receives its sign-in, such as `127.0.0.1:53682` or `claude.ai`. */
   redirectHost: string | null;
   connectedAt: Date;
-  /** When the agent last refreshed its access, which it does every few minutes in use. */
-  lastUsedAt: Date | null;
+  /** When the agent last used the server, to the hour; see `verifyMcpToken`. */
+  lastUsedAt: Date;
 };
 
 function hostOf(uri: string | undefined) {
@@ -29,9 +29,7 @@ export async function listMcpConnections(userId: string): Promise<McpConnection[
       name: oauthClient.name,
       redirectUris: oauthClient.redirectUris,
       connectedAt: oauthConsent.createdAt,
-      lastUsedAt: sql`(select max(${oauthRefreshToken.createdAt}) from ${oauthRefreshToken}
-        where ${oauthRefreshToken.clientId} = ${oauthClient.clientId}
-        and ${oauthRefreshToken.userId} = ${userId})`.mapWith(oauthRefreshToken.createdAt),
+      lastUsedAt: oauthConsent.updatedAt,
     })
     .from(oauthConsent)
     .innerJoin(oauthClient, eq(oauthClient.clientId, oauthConsent.clientId))
@@ -84,20 +82,32 @@ export async function disconnectMcpConnection(userId: string, clientId: string) 
 const UNUSED_REGISTRATION_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Deletes agent registrations that hold no refresh token: abandoned sign-ins after a day,
- * and agents whose last refresh token expired and was pruned, which takes 60 days of disuse.
- * Anyone can register an agent, so this keeps their number bounded.
+ * An agent unused this long must sign in again anyway: its refresh token lasts 30 days, and
+ * every use of the server is recorded on its consent.
+ */
+const IDLE_CONNECTION_MS = 60 * 24 * 60 * 60 * 1000;
+
+/**
+ * Deletes agent registrations nobody uses: those never approved within a day, and those
+ * nobody has used for 60 days. Anyone can register an agent, so this keeps their number
+ * bounded. Deleting a client also deletes its consents and tokens.
  */
 export async function pruneMcpClients() {
+  const now = Date.now();
   await db.delete(oauthClient).where(
     and(
       isMcpClient,
-      lt(oauthClient.createdAt, new Date(Date.now() - UNUSED_REGISTRATION_MS)),
+      lt(oauthClient.createdAt, new Date(now - UNUSED_REGISTRATION_MS)),
       notExists(
         db
           .select({ one: sql`1` })
-          .from(oauthRefreshToken)
-          .where(eq(oauthRefreshToken.clientId, oauthClient.clientId)),
+          .from(oauthConsent)
+          .where(
+            and(
+              eq(oauthConsent.clientId, oauthClient.clientId),
+              gt(oauthConsent.updatedAt, new Date(now - IDLE_CONNECTION_MS)),
+            ),
+          ),
       ),
     ),
   );

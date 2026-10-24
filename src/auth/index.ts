@@ -26,8 +26,8 @@ import {
 import { ensureIdTokenKey, jwtOptions } from "./jwt-options";
 import { startKeyPruning } from "./key-pruning";
 import { logAuthorizationDenial } from "./denial-log";
-import { MCP_CLIENT_SCOPES, MCP_SCOPE, checkMcpRegistration, narrowMcpScope } from "./mcp-clients";
-import { finishMcpRegistration, mcpClientScopes, mcpResource } from "./mcp-resource";
+import { MCP_CLIENT_SCOPES, MCP_SCOPE, checkMcpRegistration } from "./mcp-clients";
+import { finishMcpRegistration, mcpAuthorizationRequest, mcpResource } from "./mcp-resource";
 import { hasIdpPermission } from "./idp-access";
 import { canAdministerIdp } from "./oidc-admin";
 import { validateClientJwks } from "./client-jwks";
@@ -143,16 +143,12 @@ export const auth = betterAuth({
           },
         };
       }
-      // An agent that asks for more than it may have gets what it may have, not an error.
-      if (
-        context.path === "/oauth2/authorize" &&
-        typeof context.query?.scope === "string" &&
-        typeof context.query.client_id === "string" &&
-        context.query.scope.split(" ").includes(MCP_SCOPE)
-      ) {
-        const allowed = await mcpClientScopes(context.query.client_id);
-        const scope = allowed && narrowMcpScope(context.query.scope, allowed);
-        if (scope) return { context: { query: { ...context.query, scope } } };
+      // Agents' sign-ins always end in a token for the MCP server and nothing more.
+      if (context.path === "/oauth2/authorize") {
+        const fromBody = context.method === "POST";
+        const params = fromBody ? context.body : context.query;
+        const rewritten = params && (await mcpAuthorizationRequest(params));
+        if (rewritten) return { context: fromBody ? { body: rewritten } : { query: rewritten } };
       }
       if (refusedClientMutationPaths.includes(context.path))
         throw new APIError("FORBIDDEN", {

@@ -38,7 +38,7 @@ describe("MCP agent registration", () => {
       problem: null,
       applicationType: "native",
       // Agents ask for every scope the server lists; they get the ones they may have.
-      scope: "openid offline_access idp:mcp",
+      scope: "offline_access idp:mcp",
     });
   });
 
@@ -101,10 +101,11 @@ describe("MCP agent registration", () => {
 describe("MCP scopes", () => {
   it("keeps only what an agent may have", () => {
     expect(narrowMcpScope("openid profile idp:mcp offline_access", MCP_CLIENT_SCOPES)).toBe(
-      "openid idp:mcp offline_access",
+      "idp:mcp offline_access",
     );
     expect(narrowMcpScope("idp:mcp idp:mcp", MCP_CLIENT_SCOPES)).toBe("idp:mcp");
-    expect(narrowMcpScope("profile email", MCP_CLIENT_SCOPES)).toBeNull();
+    // Without openid an agent gets no ID token and cannot read UserInfo.
+    expect(narrowMcpScope("openid profile email", MCP_CLIENT_SCOPES)).toBeNull();
     expect(narrowMcpScope(undefined, MCP_CLIENT_SCOPES)).toBeNull();
   });
 

@@ -74,7 +74,14 @@ describe("redirect URI matching", () => {
 });
 
 describe("authorization request check", () => {
-  const context = { resources, authorizeEndpoint };
+  const internal = "https://auth.polinetwork.org/api/internal";
+  const context = {
+    authorizeEndpoint,
+    resourcePolicies: {
+      [resources.backend]: { allowedScopes: null, disabled: false },
+      [internal]: { allowedScopes: ["idp:access:read"], disabled: false },
+    },
+  };
 
   it("accepts a request the provider would accept", () => {
     const findings = checkAuthorizationRequest(client(), authorize({}), context);
@@ -123,6 +130,13 @@ describe("authorization request check", () => {
     expect(findings.join("\n")).toMatch(/invalid_scope.*email/);
     expect(findings.join("\n")).toMatch(/only S256/);
     expect(findings.join("\n")).toMatch(/not linked to resource/);
+  });
+
+  it("applies the scope policy of a requested resource", () => {
+    const linked = client({ resourceIds: [internal], scopes: ["openid", "profile"] });
+    const refused = checkAuthorizationRequest(linked, authorize({ resource: internal }), context);
+    expect(messages(refused)).toEqual([expect.stringMatching(/invalid_scope.*idp:access:read/)]);
+    expect(messages(refused, "info").join("\n")).not.toMatch(/would accept/);
   });
 
   it("reads a bare query string, and a request without PKCE", () => {

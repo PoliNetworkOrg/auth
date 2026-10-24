@@ -205,10 +205,17 @@ export function diagnoseClient(client: OidcClientSummary, context: DiagnosisCont
  * Checks an authorization request the way `/oauth2/authorize` would, in the same order, and
  * says what the client would get back. `request` is a full authorization URL or its query.
  */
+/** A protected resource's token policy, as the provider stores it. */
+export type ResourcePolicy = { allowedScopes: string[] | null; disabled: boolean };
+
 export function checkAuthorizationRequest(
   client: OidcClientSummary,
   request: string,
-  context: DiagnosisContext & { authorizeEndpoint: string },
+  context: {
+    authorizeEndpoint: string;
+    /** Every resource the provider knows, by identifier. */
+    resourcePolicies: Record<string, ResourcePolicy>;
+  },
 ): Finding[] {
   const { list, error, warning, info } = findings();
   let params: URLSearchParams;
@@ -259,13 +266,26 @@ export function checkAuthorizationRequest(
   if (value("claims") !== undefined && !scopes.includes("openid"))
     error("The claims parameter needs the openid scope (`invalid_request`).");
 
-  const resources = params.getAll("resource");
-  const configured = Object.values(context.resources);
+  const resources = [...new Set(params.getAll("resource"))];
+  // The token carries only the scopes every requested resource allows, and none is refused.
+  let granted = scopes;
   for (const resource of resources) {
-    if (!configured.includes(resource))
-      error(`resource ${resource} is not configured here (\`invalid_target\`).`);
+    const policy = context.resourcePolicies[resource];
+    if (!policy) error(`resource ${resource} is not configured here (\`invalid_target\`).`);
+    else if (policy.disabled) error(`resource ${resource} is disabled (\`invalid_target\`).`);
     else if (!client.resourceIds.includes(resource))
       error(`The application is not linked to resource ${resource} (\`invalid_target\`).`);
+    else if (policy.allowedScopes) {
+      const allowed = policy.allowedScopes;
+      const kept = granted.filter((entry) => allowed.includes(entry));
+      if (!kept.length)
+        error(
+          `None of the requested scopes are allowed for resource ${resource} (\`invalid_scope\`); it accepts ${allowed.join(" ")}.`,
+        );
+      else if (kept.length < granted.length)
+        info(`The token for ${resource} carries only: ${kept.join(" ")}.`);
+      granted = kept;
+    }
   }
   if (!resources.length && scopes.some(isApiScope))
     warning(

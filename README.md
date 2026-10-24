@@ -353,7 +353,7 @@ Your account page shows the server URL and these commands when you hold `idp:mcp
 | Gemini CLI  | `gemini mcp add --scope user --transport http polinetwork-auth https://auth.polinetwork.org/api/mcp`                         |
 | VS Code     | `code --add-mcp '{"name":"polinetwork-auth","type":"http","url":"https://auth.polinetwork.org/api/mcp"}'`                    |
 
-Claude Desktop, claude.ai and ChatGPT add it as a custom connector with the same URL. The agent opens a browser, you sign in and approve it once, and it stays connected: it refreshes its access every few minutes, survives signing out of this website, and stops after 30 days without use. Cursor does not work yet: it registers a `cursor://` callback that is not a valid app scheme, so sign-in is refused.
+Claude Desktop, claude.ai and ChatGPT add it as a custom connector with the same URL. The agent opens a browser, you sign in and approve it once, and it stays connected: it refreshes its access every few minutes, survives signing out of this website, and stops after 30 days without use. Cursor does not work yet: it registers a `cursor://` callback that is not a valid app scheme, so sign-in is refused. Agents that run inside a web page, such as the MCP Inspector in direct mode, do not work either: the token endpoint does not answer cross-origin requests.
 
 ### What an agent can do
 
@@ -381,10 +381,10 @@ The server follows the MCP authorization spec. `/.well-known/oauth-protected-res
 
 - A registration must redirect to `http://localhost`, `http://127.0.0.1` or `http://[::1]` (any port), or exactly to a hosted agent's callback (`claude.ai`, `claude.com`, `chatgpt.com`, `vscode.dev`). Someone who tricks you into approving their client cannot collect the code on their own machine.
 - It may use only the authorization code grant with refresh tokens, as a public client or with a secret, never with keys. A request with a browser session is refused: applications for people are registered from `/applications`.
-- Its scopes are limited to `idp:mcp`, `offline_access` and `openid`, and it is linked to the MCP server alone, so its tokens are useless anywhere else. Agents that ask for more get only these.
+- Its scopes are limited to `idp:mcp` and `offline_access`, and agents that ask for more get only these. Without `openid` it gets no ID token and cannot call UserInfo. It is linked to the MCP server alone, and a request that names no `resource` gets a token for the MCP server, so its tokens are useless anywhere else.
 - Its logo, links and logout addresses are dropped, because PoliNetwork would seem to vouch for them. The consent page shows its name and where it redirects.
 
-Tokens are EdDSA JWTs addressed to `/api/mcp`, valid five minutes. Every request checks the token, that the agent's client still exists with your consent, and that you still hold `idp:mcp`, so taking the permission away or disconnecting the agent from your account page ends access on the next request. People without `idp:mcp` are stopped on the consent page. Registrations that never got a refresh token are deleted after a day, and so are agents whose last refresh token expired and was cleaned up. Registration is rate-limited to five a minute per address.
+Tokens are EdDSA JWTs addressed to `/api/mcp`, valid five minutes. Every request checks the token, that the agent's client still exists with your consent, and that you still hold `idp:mcp`, so taking the permission away or disconnecting the agent from your account page ends access on the next request. People without `idp:mcp` are stopped on the consent page. Registrations nobody approves within a day are deleted, and so are agents nobody has used for 60 days; each use is recorded on the agent's consent, at most hourly. Registration is rate-limited to five a minute per address.
 
 ## Migration work before cutover
 
