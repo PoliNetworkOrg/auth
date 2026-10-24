@@ -178,8 +178,14 @@ describe("refresh token grants", () => {
         id_token?: string;
       }[];
       expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
-      expect(new Set(bodies.map((item) => item.refresh_token)).size).toBe(1);
-      expect(bodies[0].id_token).toBeTruthy();
+      const [first] = bodies;
+      expect(first.refresh_token).toBeTruthy();
+      expect(first.refresh_token).not.toBe(tokens.refresh_token);
+      expect(first.id_token).toBeTruthy();
+      for (const item of bodies) {
+        expect(item.refresh_token).toBe(first.refresh_token);
+        expect(item.id_token).toBe(first.id_token);
+      }
     },
   );
 });
