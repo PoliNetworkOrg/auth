@@ -1,6 +1,7 @@
 import { getOAuthProviderState, oauthProvider } from "@better-auth/oauth-provider";
 import { getAuthenticatorName, passkey } from "@better-auth/passkey";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { betterAuth, type User } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -25,6 +26,8 @@ import {
 import { ensureIdTokenKey, jwtOptions } from "./jwt-options";
 import { startKeyPruning } from "./key-pruning";
 import { logAuthorizationDenial } from "./denial-log";
+import { MCP_CLIENT_SCOPES, MCP_SCOPE, checkMcpRegistration, narrowMcpScope } from "./mcp-clients";
+import { finishMcpRegistration, mcpClientScopes, mcpResource } from "./mcp-resource";
 import { hasIdpPermission } from "./idp-access";
 import { canAdministerIdp } from "./oidc-admin";
 import { validateClientJwks } from "./client-jwks";
@@ -40,6 +43,16 @@ import {
   registrationOptionsSchema,
 } from "./passkeys";
 
+const registeredClientSchema = z.object({ client_id: z.string().min(1) });
+
+/** Token lifetimes in seconds. The MCP server reports them to agents debugging a client. */
+export const tokenLifetimes = {
+  accessToken: 300,
+  clientCredentialsAccessToken: 3600,
+  idToken: 300,
+  refreshToken: 30 * 24 * 60 * 60,
+};
+
 const backendScopes = [
   "openid",
   "profile",
@@ -50,6 +63,13 @@ const backendScopes = [
 const serviceOAuthEnabled = Boolean(
   env.OAUTH_BACKEND_RESOURCE_URI && env.OAUTH_INTERNAL_RESOURCE_URI,
 );
+// Agents connected to the MCP server get short-lived tokens addressed to it alone.
+const mcpResourcePolicy = {
+  identifier: mcpResource,
+  accessTokenTtl: tokenLifetimes.accessToken,
+  allowedScopes: MCP_CLIENT_SCOPES,
+  signingAlgorithm: "EdDSA" as const,
+};
 const serviceResources =
   env.OAUTH_BACKEND_RESOURCE_URI && env.OAUTH_INTERNAL_RESOURCE_URI
     ? [
@@ -99,6 +119,41 @@ export const auth = betterAuth({
           message: "Telegram can only be connected to an existing account.",
         });
       }
+      if (context.path === "/oauth2/register") {
+        // Anonymous registration exists for MCP agents only. Applications in the shared pool
+        // are registered from the application pages, which check them under the RBAC lock.
+        if (await auth.api.getSession({ headers: context.headers ?? new Headers() }))
+          throw new APIError("FORBIDDEN", {
+            error: "access_denied",
+            error_description: "Register applications from the application pages.",
+          });
+        const registration = checkMcpRegistration(context.body);
+        if (registration.problem)
+          throw new APIError("BAD_REQUEST", {
+            error: "invalid_client_metadata",
+            error_description: registration.problem,
+          });
+        return {
+          context: {
+            body: {
+              ...context.body,
+              application_type: registration.applicationType,
+              scope: registration.scope,
+            },
+          },
+        };
+      }
+      // An agent that asks for more than it may have gets what it may have, not an error.
+      if (
+        context.path === "/oauth2/authorize" &&
+        typeof context.query?.scope === "string" &&
+        typeof context.query.client_id === "string" &&
+        context.query.scope.split(" ").includes(MCP_SCOPE)
+      ) {
+        const allowed = await mcpClientScopes(context.query.client_id);
+        const scope = allowed && narrowMcpScope(context.query.scope, allowed);
+        if (scope) return { context: { query: { ...context.query, scope } } };
+      }
       if (refusedClientMutationPaths.includes(context.path))
         throw new APIError("FORBIDDEN", {
           code: "CLIENT_MUTATION_UNSUPPORTED",
@@ -142,6 +197,11 @@ export const auth = betterAuth({
       }
     }),
     after: createAuthMiddleware(async (context) => {
+      if (context.path === "/oauth2/register") {
+        const registered = registeredClientSchema.safeParse(context.context.returned);
+        if (registered.success) await finishMcpRegistration(registered.data.client_id);
+        return;
+      }
       if (context.path === "/passkey/generate-register-options" && context.context.session) {
         const options = registrationOptionsSchema.safeParse(context.context.returned);
         if (!options.success) return;
@@ -193,16 +253,21 @@ export const auth = betterAuth({
       loginPage: "/",
       consentPage: "/consent",
       scopes: serviceOAuthEnabled
-        ? ["polinetwork:identity", ...backendScopes, "idp:access:read"]
-        : ["openid", "profile", "email", "polinetwork:identity", "offline_access"],
+        ? ["polinetwork:identity", ...backendScopes, "idp:access:read", MCP_SCOPE]
+        : ["openid", "profile", "email", "polinetwork:identity", "offline_access", MCP_SCOPE],
       grantTypes: serviceOAuthEnabled
         ? ["authorization_code", "refresh_token", "client_credentials"]
         : ["authorization_code", "refresh_token"],
-      resources: serviceResources,
+      resources: [mcpResourcePolicy, ...serviceResources],
       resourceSeedMode: "overwrite",
       rateLimit: oauthRateLimit,
       enforcePerClientResources: true,
-      allowDynamicClientRegistration: false,
+      // Open to MCP agents only: the `/oauth2/register` hooks refuse anything else, these
+      // scopes are all such a client may ever ask for, and it is linked to the MCP server
+      // alone, so its tokens are useless anywhere else.
+      allowDynamicClientRegistration: true,
+      allowUnauthenticatedClientRegistration: true,
+      clientRegistrationDefaultScopes: MCP_CLIENT_SCOPES,
       // Lets the login page name the requesting app before the user signs in.
       allowPublicClientPrelogin: true,
       // Offers a passkey once, on the way to the app; the page continues the sign-in after.
@@ -242,10 +307,11 @@ export const auth = betterAuth({
         serviceOAuthEnabled && user && ["read", "list"].includes(action)
           ? canAdministerIdp(user.id, db, true)
           : false,
-      accessTokenExpiresIn: 300,
-      m2mAccessTokenExpiresIn: 3600,
+      accessTokenExpiresIn: tokenLifetimes.accessToken,
+      m2mAccessTokenExpiresIn: tokenLifetimes.clientCredentialsAccessToken,
+      refreshTokenExpiresIn: tokenLifetimes.refreshToken,
       refreshTokenReuseInterval: 10,
-      idTokenExpiresIn: 300,
+      idTokenExpiresIn: tokenLifetimes.idToken,
       customIdTokenClaims: async ({ user, scopes }) => ({
         ...standardIdTokenClaims(await withAppEmail(user, scopes), scopes),
         ...(await getOidcClaims(user.id, scopes)),

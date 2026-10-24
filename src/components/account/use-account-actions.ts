@@ -1,7 +1,12 @@
 import { useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { revokeOtherSessionsFn, revokeSessionFn, unlinkAccountFn } from "@/auth/account.functions";
+import {
+  disconnectMcpAgentFn,
+  revokeOtherSessionsFn,
+  revokeSessionFn,
+  unlinkAccountFn,
+} from "@/auth/account.functions";
 import { authClient } from "@/auth/client";
 import { errorMessage } from "@/lib/action-error";
 
@@ -101,6 +106,16 @@ export function useAccountActions() {
           return "Signed out everywhere else.";
         },
         "Unable to sign out of the other sessions.",
+      ),
+    disconnectAgent: (clientId: string) =>
+      run(
+        clientId,
+        async () => {
+          await disconnectMcpAgentFn({ data: { clientId } });
+          await refresh();
+          return "Agent disconnected.";
+        },
+        "Unable to disconnect this agent.",
       ),
   };
 }
