@@ -150,29 +150,36 @@ describe("OIDC standard claims in signed tokens", () => {
 });
 
 describe("refresh token grants", () => {
-  it("answers concurrent refreshes of one token with the same rotated tokens", async () => {
-    const { auth, client, tokens } = await issueTokens(["openid", "offline_access"]);
-    expect(tokens.refresh_token).toBeTruthy();
-    const refresh = () => {
-      const request = new Request(`${baseURL}/api/auth/oauth2/token`, {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          refresh_token: tokens.refresh_token!,
-          client_id: client.client_id,
-          client_secret: client.client_secret!,
-        }),
-      });
-      return serializeRefreshGrant(request, () => auth.handler(request));
-    };
-    const responses = await Promise.all([refresh(), refresh(), refresh()]);
-    const bodies = (await Promise.all(responses.map((response) => response.json()))) as {
-      refresh_token?: string;
-      id_token?: string;
-    }[];
-    expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
-    expect(new Set(bodies.map((body) => body.refresh_token)).size).toBe(1);
-    expect(bodies[0].id_token).toBeTruthy();
-  });
+  it.each(["refresh_token", " refresh_token "])(
+    "answers concurrent refreshes of one token with the same rotated tokens (%j)",
+    async (grantType) => {
+      const { auth, client, tokens } = await issueTokens(["openid", "offline_access"]);
+      expect(tokens.refresh_token).toBeTruthy();
+      const body = new URLSearchParams({
+        grant_type: grantType,
+        refresh_token: tokens.refresh_token!,
+        client_id: client.client_id,
+        client_secret: client.client_secret!,
+      }).toString();
+      const refresh = () => {
+        const request = new Request(`${baseURL}/api/auth/oauth2/token`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            "content-length": String(body.length),
+          },
+          body,
+        });
+        return serializeRefreshGrant(request, () => auth.handler(request));
+      };
+      const responses = await Promise.all([refresh(), refresh(), refresh()]);
+      const bodies = (await Promise.all(responses.map((response) => response.json()))) as {
+        refresh_token?: string;
+        id_token?: string;
+      }[];
+      expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
+      expect(new Set(bodies.map((item) => item.refresh_token)).size).toBe(1);
+      expect(bodies[0].id_token).toBeTruthy();
+    },
+  );
 });
