@@ -147,6 +147,13 @@ export const MANAGED_PERMISSIONS = [
       "Register applications, edit their redirect URIs and scopes, rotate secrets, and delete them.",
     implies: ["idp:applications:read"],
   },
+  {
+    key: "idp:mcp",
+    name: "Use the MCP server",
+    description:
+      "Connect an AI agent to this identity provider. The agent can only do what the person's other permissions allow.",
+    implies: [],
+  },
 ] as const;
 
 export type ManagedPermission = (typeof MANAGED_PERMISSIONS)[number];

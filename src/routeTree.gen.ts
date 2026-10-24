@@ -18,11 +18,15 @@ import { Route as PasskeyRouteImport } from './routes/passkey'
 import { Route as UsersRouteRouteImport } from './routes/users/route'
 import { Route as AccessIndexRouteImport } from './routes/access/index'
 import { Route as ApiIdentityRouteImport } from './routes/api/identity'
+import { Route as ApiMcpRouteImport } from './routes/api/mcp'
 import { Route as ApplicationsIndexRouteImport } from './routes/applications/index'
 import { Route as ApplicationsClientIdRouteImport } from './routes/applications/$clientId'
 import { Route as ApplicationsNewRouteImport } from './routes/applications/new'
 import { Route as UsersIndexRouteImport } from './routes/users/index'
 import { Route as UsersUserIdRouteImport } from './routes/users/$userId'
+import { Route as DotwellKnownOauthAuthorizationServerSplatRouteImport } from './routes/[.]well-known/oauth-authorization-server.$'
+import { Route as DotwellKnownOauthProtectedResourceSplatRouteImport } from './routes/[.]well-known/oauth-protected-resource.$'
+import { Route as DotwellKnownOpenidConfigurationSplatRouteImport } from './routes/[.]well-known/openid-configuration.$'
 import { Route as AccessPermissionsIndexRouteImport } from './routes/access/permissions/index'
 import { Route as AccessPermissionsPermissionIdRouteImport } from './routes/access/permissions/$permissionId'
 import { Route as AccessPermissionsNewRouteImport } from './routes/access/permissions/new'
@@ -79,6 +83,11 @@ const ApiIdentityRoute = ApiIdentityRouteImport.update({
   path: '/api/identity',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMcpRoute = ApiMcpRouteImport.update({
+  id: '/api/mcp',
+  path: '/api/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApplicationsIndexRoute = ApplicationsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -104,6 +113,24 @@ const UsersUserIdRoute = UsersUserIdRouteImport.update({
   path: '/$userId',
   getParentRoute: () => UsersRouteRoute,
 } as any)
+const DotwellKnownOauthAuthorizationServerSplatRoute =
+  DotwellKnownOauthAuthorizationServerSplatRouteImport.update({
+    id: '/.well-known/oauth-authorization-server/$',
+    path: '/.well-known/oauth-authorization-server/$',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const DotwellKnownOauthProtectedResourceSplatRoute =
+  DotwellKnownOauthProtectedResourceSplatRouteImport.update({
+    id: '/.well-known/oauth-protected-resource/$',
+    path: '/.well-known/oauth-protected-resource/$',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const DotwellKnownOpenidConfigurationSplatRoute =
+  DotwellKnownOpenidConfigurationSplatRouteImport.update({
+    id: '/.well-known/openid-configuration/$',
+    path: '/.well-known/openid-configuration/$',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AccessPermissionsIndexRoute = AccessPermissionsIndexRouteImport.update({
   id: '/permissions/',
   path: '/permissions/',
@@ -166,12 +193,16 @@ export interface FileRoutesByFullPath {
   '/logout': typeof LogoutRoute
   '/passkey': typeof PasskeyRoute
   '/api/identity': typeof ApiIdentityRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/access/': typeof AccessIndexRoute
   '/applications/': typeof ApplicationsIndexRoute
   '/users/': typeof UsersIndexRoute
+  '/.well-known/oauth-authorization-server/$': typeof DotwellKnownOauthAuthorizationServerSplatRoute
+  '/.well-known/oauth-protected-resource/$': typeof DotwellKnownOauthProtectedResourceSplatRoute
+  '/.well-known/openid-configuration/$': typeof DotwellKnownOpenidConfigurationSplatRoute
   '/access/permissions/$permissionId': typeof AccessPermissionsPermissionIdRoute
   '/access/permissions/new': typeof AccessPermissionsNewRoute
   '/access/roles/$roleId': typeof AccessRolesRoleIdRoute
@@ -189,12 +220,16 @@ export interface FileRoutesByTo {
   '/logout': typeof LogoutRoute
   '/passkey': typeof PasskeyRoute
   '/api/identity': typeof ApiIdentityRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/access': typeof AccessIndexRoute
   '/applications': typeof ApplicationsIndexRoute
   '/users': typeof UsersIndexRoute
+  '/.well-known/oauth-authorization-server/$': typeof DotwellKnownOauthAuthorizationServerSplatRoute
+  '/.well-known/oauth-protected-resource/$': typeof DotwellKnownOauthProtectedResourceSplatRoute
+  '/.well-known/openid-configuration/$': typeof DotwellKnownOpenidConfigurationSplatRoute
   '/access/permissions/$permissionId': typeof AccessPermissionsPermissionIdRoute
   '/access/permissions/new': typeof AccessPermissionsNewRoute
   '/access/roles/$roleId': typeof AccessRolesRoleIdRoute
@@ -216,12 +251,16 @@ export interface FileRoutesById {
   '/logout': typeof LogoutRoute
   '/passkey': typeof PasskeyRoute
   '/api/identity': typeof ApiIdentityRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
   '/applications/new': typeof ApplicationsNewRoute
   '/users/$userId': typeof UsersUserIdRoute
   '/access/': typeof AccessIndexRoute
   '/applications/': typeof ApplicationsIndexRoute
   '/users/': typeof UsersIndexRoute
+  '/.well-known/oauth-authorization-server/$': typeof DotwellKnownOauthAuthorizationServerSplatRoute
+  '/.well-known/oauth-protected-resource/$': typeof DotwellKnownOauthProtectedResourceSplatRoute
+  '/.well-known/openid-configuration/$': typeof DotwellKnownOpenidConfigurationSplatRoute
   '/access/permissions/$permissionId': typeof AccessPermissionsPermissionIdRoute
   '/access/permissions/new': typeof AccessPermissionsNewRoute
   '/access/roles/$roleId': typeof AccessRolesRoleIdRoute
@@ -244,12 +283,16 @@ export interface FileRouteTypes {
     | '/logout'
     | '/passkey'
     | '/api/identity'
+    | '/api/mcp'
     | '/applications/$clientId'
     | '/applications/new'
     | '/users/$userId'
     | '/access/'
     | '/applications/'
     | '/users/'
+    | '/.well-known/oauth-authorization-server/$'
+    | '/.well-known/oauth-protected-resource/$'
+    | '/.well-known/openid-configuration/$'
     | '/access/permissions/$permissionId'
     | '/access/permissions/new'
     | '/access/roles/$roleId'
@@ -267,12 +310,16 @@ export interface FileRouteTypes {
     | '/logout'
     | '/passkey'
     | '/api/identity'
+    | '/api/mcp'
     | '/applications/$clientId'
     | '/applications/new'
     | '/users/$userId'
     | '/access'
     | '/applications'
     | '/users'
+    | '/.well-known/oauth-authorization-server/$'
+    | '/.well-known/oauth-protected-resource/$'
+    | '/.well-known/openid-configuration/$'
     | '/access/permissions/$permissionId'
     | '/access/permissions/new'
     | '/access/roles/$roleId'
@@ -293,12 +340,16 @@ export interface FileRouteTypes {
     | '/logout'
     | '/passkey'
     | '/api/identity'
+    | '/api/mcp'
     | '/applications/$clientId'
     | '/applications/new'
     | '/users/$userId'
     | '/access/'
     | '/applications/'
     | '/users/'
+    | '/.well-known/oauth-authorization-server/$'
+    | '/.well-known/oauth-protected-resource/$'
+    | '/.well-known/openid-configuration/$'
     | '/access/permissions/$permissionId'
     | '/access/permissions/new'
     | '/access/roles/$roleId'
@@ -320,6 +371,10 @@ export interface RootRouteChildren {
   LogoutRoute: typeof LogoutRoute
   PasskeyRoute: typeof PasskeyRoute
   ApiIdentityRoute: typeof ApiIdentityRoute
+  ApiMcpRoute: typeof ApiMcpRoute
+  DotwellKnownOauthAuthorizationServerSplatRoute: typeof DotwellKnownOauthAuthorizationServerSplatRoute
+  DotwellKnownOauthProtectedResourceSplatRoute: typeof DotwellKnownOauthProtectedResourceSplatRoute
+  DotwellKnownOpenidConfigurationSplatRoute: typeof DotwellKnownOpenidConfigurationSplatRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiDevLoginRoute: typeof ApiDevLoginRoute
   ApiInternalAccessSnapshotRoute: typeof ApiInternalAccessSnapshotRoute
@@ -391,6 +446,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiIdentityRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mcp': {
+      id: '/api/mcp'
+      path: '/api/mcp'
+      fullPath: '/api/mcp'
+      preLoaderRoute: typeof ApiMcpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/applications/': {
       id: '/applications/'
       path: '/'
@@ -425,6 +487,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/users/$userId'
       preLoaderRoute: typeof UsersUserIdRouteImport
       parentRoute: typeof UsersRouteRoute
+    }
+    '/.well-known/oauth-authorization-server/$': {
+      id: '/.well-known/oauth-authorization-server/$'
+      path: '/.well-known/oauth-authorization-server/$'
+      fullPath: '/.well-known/oauth-authorization-server/$'
+      preLoaderRoute: typeof DotwellKnownOauthAuthorizationServerSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.well-known/oauth-protected-resource/$': {
+      id: '/.well-known/oauth-protected-resource/$'
+      path: '/.well-known/oauth-protected-resource/$'
+      fullPath: '/.well-known/oauth-protected-resource/$'
+      preLoaderRoute: typeof DotwellKnownOauthProtectedResourceSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.well-known/openid-configuration/$': {
+      id: '/.well-known/openid-configuration/$'
+      path: '/.well-known/openid-configuration/$'
+      fullPath: '/.well-known/openid-configuration/$'
+      preLoaderRoute: typeof DotwellKnownOpenidConfigurationSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/access/permissions/': {
       id: '/access/permissions/'
@@ -561,6 +644,13 @@ const rootRouteChildren: RootRouteChildren = {
   LogoutRoute: LogoutRoute,
   PasskeyRoute: PasskeyRoute,
   ApiIdentityRoute: ApiIdentityRoute,
+  ApiMcpRoute: ApiMcpRoute,
+  DotwellKnownOauthAuthorizationServerSplatRoute:
+    DotwellKnownOauthAuthorizationServerSplatRoute,
+  DotwellKnownOauthProtectedResourceSplatRoute:
+    DotwellKnownOauthProtectedResourceSplatRoute,
+  DotwellKnownOpenidConfigurationSplatRoute:
+    DotwellKnownOpenidConfigurationSplatRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiDevLoginRoute: ApiDevLoginRoute,
   ApiInternalAccessSnapshotRoute: ApiInternalAccessSnapshotRoute,

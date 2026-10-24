@@ -5,6 +5,7 @@ import type { Viewer } from "@/auth/session.functions";
 import { AccountCards } from "@/components/account/account-cards";
 import { GroupsPanel, PasskeysPanel, PermissionsPanel } from "@/components/account/access-panels";
 import { DebugPanel } from "@/components/account/debug-panel";
+import { McpPanel } from "@/components/account/mcp-panel";
 import { Spinner } from "@/components/account/panel";
 import { SessionsPanel } from "@/components/account/sessions-panel";
 import { useAccountActions } from "@/components/account/use-account-actions";
@@ -65,6 +66,7 @@ function AccountPage({ viewer, details }: { viewer: Viewer; details: AccountDeta
           <SessionsPanel sessions={details.sessions} actions={actions} />
           <GroupsPanel groups={details.groups} />
           <PermissionsPanel permissions={details.permissions} />
+          {details.mcp && <McpPanel mcp={details.mcp} actions={actions} />}
           <DebugPanel debug={details.debug} />
         </div>
       </main>

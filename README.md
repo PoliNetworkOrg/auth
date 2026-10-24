@@ -158,22 +158,23 @@ when that is what you mean.
 ### Permissions the identity provider defines itself
 
 Administering this service is expressed as permissions like any other capability, so it can
-be delegated to a role instead of being wired to a single group. These ten always exist
+be delegated to a role instead of being wired to a single group. These eleven always exist
 and can never be created, deleted, or rekeyed, because the code checks for these exact
 keys; which roles carry them is entirely up to you.
 
-| Permission               | Covers                                                     |
-| ------------------------ | ---------------------------------------------------------- |
-| `idp:people:read`        | Searching the people registered here                       |
-| `idp:users:read`         | Browsing the user directory at `/users`                    |
-| `idp:users:delete`       | Permanently deleting someone's account                     |
-| `idp:permissions:read`   | Seeing permissions in the `/access` section                |
-| `idp:permissions:write`  | Creating, changing, and deleting permissions               |
-| `idp:roles:read`         | Seeing roles, what they grant, and who holds them          |
-| `idp:roles:write`        | Creating, changing, and deleting roles                     |
-| `idp:roles:assign`       | Giving roles to people and taking them away                |
-| `idp:applications:read`  | Seeing the OIDC applications at `/applications`            |
-| `idp:applications:write` | Registering and editing applications, and rotating secrets |
+| Permission               | Covers                                                       |
+| ------------------------ | ------------------------------------------------------------ |
+| `idp:people:read`        | Searching the people registered here                         |
+| `idp:users:read`         | Browsing the user directory at `/users`                      |
+| `idp:users:delete`       | Permanently deleting someone's account                       |
+| `idp:permissions:read`   | Seeing permissions in the `/access` section                  |
+| `idp:permissions:write`  | Creating, changing, and deleting permissions                 |
+| `idp:roles:read`         | Seeing roles, what they grant, and who holds them            |
+| `idp:roles:write`        | Creating, changing, and deleting roles                       |
+| `idp:roles:assign`       | Giving roles to people and taking them away                  |
+| `idp:applications:read`  | Seeing the OIDC applications at `/applications`              |
+| `idp:applications:write` | Registering and editing applications, and rotating secrets   |
+| `idp:mcp`                | Connecting an AI agent through the [MCP server](#mcp-server) |
 
 They use the permission hierarchy themselves: each `write` grants its `read`,
 `idp:roles:assign` grants `idp:roles:read` and `idp:people:read` so an assigner can see the
@@ -321,7 +322,7 @@ keys cannot change; renaming a custom role's key breaks policies that match the 
 
 Managing applications needs the `idp:applications:write` permission, so it can be given to any role. Master Admin holds it only through explicit deployment configuration. To use a Microsoft 365 administrators group distinct from Soci, set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to that group's object ID: only its direct members, checked through the same Graph credentials, keep it. Graph answers are cached for at most 60 seconds from lookup start per user; a failed check denies access instead of caching. `IDP_ADMIN_USER_IDS` remains a break-glass allowlist of local user IDs that always pass. Being a socio never confers administration by itself.
 
-Dynamic registration is disabled. Client-credentials grants are available when both OAuth resource identifiers are configured. Administrators manage every client at `/applications`. New applications go through a step-by-step wizard (Basics, Usage, Authentication, Access, then a review) with a summary that fills in as each step is completed; existing ones are edited on a settings page with a save bar. The app either signs people in, acts as itself (client credentials), or both, and that choice decides the credentials it may use: a client secret (shown once), a private key (a public Ed25519 or P-256 JWKS for `private_key_jwt`), or, for apps that only sign people in, none (public, PKCE only). Redirect URIs, the scopes people are asked for, and the PoliNetwork API scopes granted for signed-in people and for the app itself are chosen separately. Resource links follow the granted API scopes automatically. Everything except the client ID can be changed after creation, including the credential type: switching to a secret issues a new one, shown once, and switching away from a secret or key revokes it. Administrators can also rotate secrets, pause sign-ins by disabling an app, skip the consent screen for first-party apps, and delete apps. All administrators share one client pool (the plugin's `clientReference` is a fixed value), so clients are not tied to whoever created them. Redirect URIs follow the provider's rules, chosen per application as "Public https URLs only" (`application_type: web`) or "Also localhost and app schemes" (`native`: `http://localhost`, `http://127.0.0.1`, `http://[::1]`, or a reverse-domain custom scheme). Server functions in `src/auth/oidc.functions.ts` back the pages, including secret rotation and deletion. API access (backend and `idp:access:read` scopes, the client-credentials grant, and resource links) requires Master Admin, and so does any change to a client that has it. Every change to an existing client checks that rule and writes in one transaction that holds the RBAC write lock, so a writer's rotation or deletion either finishes before a concurrent promotion or is refused after it. The provider's own client mutation endpoints (`/oauth2/create-client`, `/oauth2/update-client`, `/oauth2/delete-client`, `/oauth2/client/rotate-secret`) are disabled over HTTP and refused to server-side callers, because they check and write in separate statements outside that lock; resources are linked only by saving an application.
+Dynamic registration is open to AI agents only, for the [MCP server](#mcp-server). Client-credentials grants are available when both OAuth resource identifiers are configured. Administrators manage every client at `/applications`. New applications go through a step-by-step wizard (Basics, Usage, Authentication, Access, then a review) with a summary that fills in as each step is completed; existing ones are edited on a settings page with a save bar. The app either signs people in, acts as itself (client credentials), or both, and that choice decides the credentials it may use: a client secret (shown once), a private key (a public Ed25519 or P-256 JWKS for `private_key_jwt`), or, for apps that only sign people in, none (public, PKCE only). Redirect URIs, the scopes people are asked for, and the PoliNetwork API scopes granted for signed-in people and for the app itself are chosen separately. Resource links follow the granted API scopes automatically. Everything except the client ID can be changed after creation, including the credential type: switching to a secret issues a new one, shown once, and switching away from a secret or key revokes it. Administrators can also rotate secrets, pause sign-ins by disabling an app, skip the consent screen for first-party apps, and delete apps. All administrators share one client pool (the plugin's `clientReference` is a fixed value), so clients are not tied to whoever created them. Redirect URIs follow the provider's rules, chosen per application as "Public https URLs only" (`application_type: web`) or "Also localhost and app schemes" (`native`: `http://localhost`, `http://127.0.0.1`, `http://[::1]`, or a reverse-domain custom scheme). Server functions in `src/auth/oidc.functions.ts` back the pages, including secret rotation and deletion. API access (backend and `idp:access:read` scopes, the client-credentials grant, and resource links) requires Master Admin, and so does any change to a client that has it. Creating a client and every change to an existing one check that rule and write in one transaction that holds the RBAC write lock, so a writer's rotation or deletion either finishes before a concurrent promotion or is refused after it. New clients are inserted directly, in the row format the provider uses, because its admin create endpoint needs a browser session and writes outside the lock. The provider's own client mutation endpoints (`/oauth2/create-client`, `/oauth2/update-client`, `/oauth2/delete-client`, `/oauth2/client/rotate-secret`) are disabled over HTTP and refused to server-side callers, because they check and write in separate statements outside that lock; resources are linked only by saving an application.
 
 ### Phase 1 backend access snapshot
 
@@ -336,6 +337,54 @@ Master Admin registers the four Phase 1 clients on `/applications/new`, each wit
 During a sign-in the login page names the requesting application. The consent page at `/consent` shows the app, who is signed in (with a switch-account option), each requested scope in plain language, any requested profile claims, and where the browser will be sent; it supports allow and deny and explains expired or disabled requests.
 
 Future consumers should use authorization code with PKCE, validate token signatures, issuer, audience, and expiration, and request `polinetwork:identity` only when needed. APIs must check their own permissions. An ID token or a linked Telegram ID alone is not permission to moderate a group.
+
+## MCP server
+
+`/api/mcp` is an MCP server, so an AI agent such as Claude Code or Codex can read and change this identity provider for you: debug an application that cannot sign people in, register or edit applications, and set up roles, permissions and who holds them. It only works for people holding `idp:mcp`, and the agent can only do what that person could do on the website.
+
+### Connect an agent
+
+Your account page shows the server URL and these commands when you hold `idp:mcp`. For production:
+
+| Agent       | Command                                                                                                                      |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code | `claude mcp add --scope user --transport http polinetwork-auth https://auth.polinetwork.org/api/mcp`, then `/mcp` to sign in |
+| Codex       | `codex mcp add polinetwork-auth --url https://auth.polinetwork.org/api/mcp` (signs in right away)                            |
+| Gemini CLI  | `gemini mcp add --scope user --transport http polinetwork-auth https://auth.polinetwork.org/api/mcp`                         |
+| VS Code     | `code --add-mcp '{"name":"polinetwork-auth","type":"http","url":"https://auth.polinetwork.org/api/mcp"}'`                    |
+
+Claude Desktop, claude.ai and ChatGPT add it as a custom connector with the same URL. The agent opens a browser, you sign in and approve it once, and it stays connected: it refreshes its access every few minutes, survives signing out of this website, and stops after 30 days without use. Cursor does not work yet: it registers a `cursor://` callback that is not a valid app scheme, so sign-in is refused. Agents that run inside a web page, such as the MCP Inspector in direct mode, do not work either: the token endpoint does not answer cross-origin requests.
+
+### What an agent can do
+
+Every tool calls the same code as the matching page, which checks the permission again, keeps the bounded delegation rules, takes the RBAC write lock, and writes the audit log under your name. Tools you have no permission for are not offered.
+
+| Permission               | Tools                                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `idp:mcp`                | `whoami`, `get_server_info` (endpoints, token formats, rules), `inspect_token` (decode and verify a JWT)                                                                              |
+| `idp:applications:read`  | `list_applications`, `get_application`, `diagnose_application` (finds bad settings and, given the authorization URL an app sends, says what `/oauth2/authorize` would answer and why) |
+| `idp:applications:write` | `create_application`, `update_application`, `rotate_application_secret`, `delete_application`                                                                                         |
+| `idp:people:read`        | `search_people`                                                                                                                                                                       |
+| `idp:users:read`         | `list_users`, `get_user`; with `idp:roles:read` also `explain_access` (why someone holds a permission)                                                                                |
+| `idp:roles:read`         | `list_roles`, `get_role`                                                                                                                                                              |
+| `idp:permissions:read`   | `list_permissions`                                                                                                                                                                    |
+| `idp:roles:write`        | `create_role`, `update_role`, `delete_role`                                                                                                                                           |
+| `idp:roles:assign`       | `assign_role`, `unassign_role`                                                                                                                                                        |
+| `idp:permissions:write`  | `create_permission`, `update_permission`, `delete_permission`                                                                                                                         |
+| Master Admin             | `list_audit_events`                                                                                                                                                                   |
+
+Deleting people is left to the website. Deletes ask the agent to repeat the name or key. New client secrets go back to the agent once, like on the page, so it can hand them over.
+
+### How sign-in works
+
+The server follows the MCP authorization spec. `/.well-known/oauth-protected-resource/api/mcp` names this identity provider as its authorization server, and the authorization server metadata is also served at `/.well-known/oauth-authorization-server/api/auth` and `/.well-known/openid-configuration/api/auth`, where agents look first. Agents register themselves through dynamic client registration (`/api/auth/oauth2/register`), which is open but only to agents:
+
+- A registration must redirect to `http://localhost`, `http://127.0.0.1` or `http://[::1]` (any port), or exactly to a hosted agent's callback (`claude.ai`, `claude.com`, `chatgpt.com`, `vscode.dev`). Someone who tricks you into approving their client cannot collect the code on their own machine.
+- It may use only the authorization code grant with refresh tokens, as a public client or with a secret, never with keys. A request with a browser session is refused: applications for people are registered from `/applications`.
+- Its scopes are limited to `idp:mcp` and `offline_access`, and agents that ask for more get only these. Without `openid` it gets no ID token and cannot call UserInfo. It is linked to the MCP server alone, and a request that names no `resource` gets a token for the MCP server, so its tokens are useless anywhere else.
+- Its logo, links and logout addresses are dropped, because PoliNetwork would seem to vouch for them. The consent page shows its name and where it redirects.
+
+Tokens are EdDSA JWTs addressed to `/api/mcp`, valid five minutes. Every request checks the token, that the agent's client still exists with your consent, and that you still hold `idp:mcp`, so taking the permission away or disconnecting the agent from your account page ends access on the next request. People without `idp:mcp` are stopped on the consent page. Registrations nobody approves within a day are deleted, and so are agents nobody has used for 60 days; each use is recorded on the agent's consent, at most hourly. Registration is rate-limited to five a minute per address.
 
 ## Migration work before cutover
 
