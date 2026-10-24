@@ -2,6 +2,7 @@ import { createFileRoute, useLocation } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
+  Bot,
   Clock,
   KeyRound,
   LoaderCircle,
@@ -15,6 +16,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { getConsentApp } from "@/auth/account.functions";
 import { authClient } from "@/auth/client";
+import { MCP_SCOPE } from "@/auth/mcp-clients";
 import { describeScope } from "@/auth/oidc-clients";
 import { useViewer } from "@/components/access";
 import { AppHandshake, LoginLayout } from "@/components/login-page";
@@ -90,6 +92,7 @@ const scopeIcons: Record<string, typeof Shield> = {
   profile: UserRound,
   "polinetwork:identity": BadgeCheck,
   offline_access: RefreshCw,
+  "idp:mcp": Bot,
 };
 
 function Notice({
@@ -204,6 +207,27 @@ function Consent() {
       <LoginLayout wide>
         <Notice icon={ShieldOff} title="This application isn't available">
           It has been disabled or is no longer registered with PoliNetwork. Nothing was shared.
+        </Notice>
+      </LoginLayout>
+    );
+  }
+
+  // An agent asking for the MCP server gets nothing from someone who may not use it, so
+  // they decline here instead of approving access the server would refuse.
+  if (viewer && request.scopes.includes(MCP_SCOPE) && !viewer.permissions.includes(MCP_SCOPE)) {
+    return (
+      <LoginLayout wide>
+        <Notice
+          icon={ShieldOff}
+          title="Your account can't use the MCP server"
+          action={
+            <Button disabled={busy !== null} onClick={() => void decide(false)}>
+              {busy === "deny" && <LoaderCircle className="animate-spin" aria-hidden="true" />}
+              Back to the agent
+            </Button>
+          }
+        >
+          It needs the {MCP_SCOPE} permission. Ask an administrator.
         </Notice>
       </LoginLayout>
     );

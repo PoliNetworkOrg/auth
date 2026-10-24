@@ -40,9 +40,21 @@ export const oidcScopes = [
 export type OidcScopeId = (typeof oidcScopes)[number]["id"];
 export type OidcScopeInfo = { id: string; label: string; description: string; required: boolean };
 
+/** Scopes people may be asked for that applications in the pool cannot pick. */
+const otherScopes: OidcScopeInfo[] = [
+  {
+    id: "idp:mcp",
+    label: "Use PoliNetwork Auth as you",
+    description:
+      "An AI agent reads and changes this identity provider with your permissions, such as applications, roles and people you can manage.",
+    required: false,
+  },
+];
+
 export function describeScope(id: string): OidcScopeInfo {
   return (
-    oidcScopes.find((scope) => scope.id === id) ?? {
+    oidcScopes.find((scope) => scope.id === id) ??
+    otherScopes.find((scope) => scope.id === id) ?? {
       id,
       label: id,
       description: "Additional access requested by the application.",

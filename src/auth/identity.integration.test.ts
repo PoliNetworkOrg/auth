@@ -1085,8 +1085,8 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
     const pair = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
     const jwks = JSON.stringify({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: "raced" }] });
     await insertSecretClient("integration-key-holder");
-    // The creation checks the key, then the provider inserts outside the RBAC lock. A locked
-    // save gives the same key to another client before the creation's own recheck runs.
+    // The creation checks keys under the RBAC lock. A locked save gives the same key to
+    // another client while the creation waits for it.
     const holder = await holdRbacLock();
     try {
       const creation = callAs("application-writer-session", createOidcClientFn, {
@@ -1112,51 +1112,33 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       );
     }
   });
-  it("keeps a new client whose key was replaced under the lock before its recheck", async () => {
+  it("registers nothing until it holds the RBAC lock", async () => {
     const { createOidcClientFn } = await import("./oidc.functions");
-    const publicJwks = async (kid: string) => {
-      const pair = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
-      return JSON.stringify({ keys: [{ ...(await exportJWK(pair.publicKey)), kid }] });
-    };
-    const original = await publicJwks("original");
-    const replacement = await publicJwks("replacement");
-    await insertSecretClient("integration-key-taker");
-    // While the creation waits to recheck, a locked save gives the new client another key
-    // and API access, and the original key goes to a different client. The recheck must look
-    // at the key the new client holds now, and must not delete it.
+    const pair = await generateKeyPair("EdDSA", { crv: "Ed25519", extractable: true });
+    const jwks = JSON.stringify({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: "waits" }] });
+    // A promotion holding the lock must never find a half-created client to race with.
     const holder = await holdRbacLock();
     try {
       const creation = callAs("application-writer-session", createOidcClientFn, {
-        draft: clientDraft({ name: "Rekeyed app", credential: "private-key", jwks: original }),
+        draft: clientDraft({ name: "Waiting key app", credential: "private-key", jwks }),
       });
       await inProcessLockWaiter();
-      await holder.query(
-        `UPDATE oauth_client SET jwks = $1,
-                                 grant_types = ARRAY['authorization_code', 'client_credentials']
-         WHERE name = 'Rekeyed app'`,
-        [JSON.stringify(JSON.parse(replacement))],
-      );
-      await holder.query(
-        `UPDATE oauth_client SET token_endpoint_auth_method = 'private_key_jwt',
-                                 client_secret = NULL, jwks = $1
-         WHERE client_id = 'integration-key-taker'`,
-        [JSON.stringify(JSON.parse(original))],
-      );
+      expect(
+        (await pool.query(`SELECT id FROM oauth_client WHERE name = 'Waiting key app'`)).rows,
+      ).toHaveLength(0);
       await holder.query("COMMIT");
       expect((await creation).status).toBe(200);
       expect(
         (
           await pool.query<{ jwks: string }>(
-            `SELECT jwks FROM oauth_client WHERE name = 'Rekeyed app'`,
+            `SELECT jwks FROM oauth_client WHERE name = 'Waiting key app'`,
           )
         ).rows,
-      ).toEqual([{ jwks: JSON.stringify(JSON.parse(replacement)) }]);
+      ).toEqual([{ jwks: JSON.stringify(JSON.parse(jwks)) }]);
     } finally {
       await holder.query("ROLLBACK").catch(() => {});
       holder.release();
-      await pool.query(
-        `DELETE FROM oauth_client WHERE client_id = 'integration-key-taker' OR name = 'Rekeyed app'`,
-      );
+      await pool.query(`DELETE FROM oauth_client WHERE name = 'Waiting key app'`);
     }
   });
   it("does not expose server-only resource administration over HTTP", async () => {

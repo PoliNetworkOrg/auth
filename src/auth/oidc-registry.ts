@@ -1,18 +1,22 @@
+import { generateRandomString } from "better-auth/crypto";
 import { and, countDistinct, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import { oauthClient, oauthClientResource, oauthConsent } from "../db/schema";
 import { env } from "../env";
-import { ClientJwksError, validateClientJwks } from "./client-jwks";
+import { validateClientJwks } from "./client-jwks";
 import { issueClientSecret } from "./client-secret";
 import { MASTER_ADMIN_ROLE_KEY } from "./rbac";
 import { RbacError, withAuthorizedRbacRead, withAuthorizedRbacWrite } from "./rbac-store";
 import {
   clientRegistration,
   credentialOf,
+  hasDraftErrors,
   isRestrictedClient,
   isRestrictedDraft,
+  normalizeClientDraft,
   OIDC_CLIENT_REFERENCE,
   parsePublicJwks,
+  validateClientDraft,
   type OidcClientDraft,
   type OidcClientSummary,
   type OidcResourceKey,
@@ -31,6 +35,17 @@ export function configuredResources(): Partial<Record<OidcResourceKey, string>> 
 /** Service OAuth runs only with both resources configured; see `src/auth/index.ts`. */
 export function apiAccessEnabled() {
   return Boolean(env.OAUTH_BACKEND_RESOURCE_URI && env.OAUTH_INTERNAL_RESOURCE_URI);
+}
+
+/**
+ * Normalizes a submitted draft and checks it with the rules the application form uses. The
+ * item lists carry nulls for valid entries; the form reads them back as they are.
+ */
+export function checkClientDraft(input: OidcClientDraft): OidcClientDraft {
+  const draft = normalizeClientDraft(input);
+  const fields = validateClientDraft(draft, { apiAccess: apiAccessEnabled() });
+  if (hasDraftErrors(fields)) throw new RbacError(400, "Check the highlighted fields.", fields);
+  return draft;
 }
 
 function resourceKeys(resourceIds: string[]): OidcResourceKey[] {
@@ -168,65 +183,67 @@ async function syncResourceLinks(
 }
 
 /**
- * Links a newly created client to the resources its draft asks for. Master Admin only,
- * like every resource link.
+ * Registers a client in the shared pool, under the RBAC write lock that promotion to API
+ * access also takes, and links it to the resources its draft asks for. Only Master Admin may
+ * register one with API access. The provider's own registration endpoint is not used: it
+ * needs a browser session and writes outside the lock. The row matches what it would store.
+ * `clientSecret` is the first secret of a client that uses one, shown once.
  */
-export async function linkNewOidcClient(
+export async function createOidcClient(
   actorId: string,
-  clientId: string,
-  resources: OidcResourceKey[],
-) {
-  if (!resources.length) return;
-  await withAuthorizedRbacWrite(
-    actorId,
-    "idp:applications:write",
-    async (transaction, _catalog, access) => {
-      if (!access.roles.includes(MASTER_ADMIN_ROLE_KEY))
-        throw new RbacError(403, "Only Master Admin may link API resources.");
-      await transaction.execute(sql`select set_config('polinetwork.actor_id', ${actorId}, true)`);
-      await syncResourceLinks(transaction, clientId, resources);
-    },
-  );
-}
-
-/** Stores a newly created client's dark logo, which the provider has no field for. */
-export async function setNewOidcClientDarkLogo(
-  actorId: string,
-  clientId: string,
-  logoDark: string,
-) {
-  if (!logoDark) return;
-  await changePooledClient(actorId, clientId, (transaction) =>
-    transaction.update(oauthClient).set({ iconDark: logoDark }).where(pooledClient(clientId)),
-  );
-}
-
-/**
- * Rechecks a newly created client's public keys against every other client, under the RBAC
- * write lock. The provider inserts the client outside that lock, so a key checked before the
- * insert may have been given to another client in the meantime. Checks the keys the client
- * holds now, which a locked save may already have replaced. Deletes the new client and
- * returns false when one of them belongs to another client.
- */
-export async function recheckNewOidcClientKeys(actorId: string, clientId: string) {
+  draft: OidcClientDraft,
+): Promise<{ clientId: string; clientSecret: string | null }> {
   return withAuthorizedRbacWrite(
     actorId,
     "idp:applications:write",
     async (transaction, _catalog, access) => {
+      if (isRestrictedDraft(draft) && !access.roles.includes(MASTER_ADMIN_ROLE_KEY))
+        throw new RbacError(403, "Only Master Admin may register applications with API access.");
       await transaction.execute(sql`select set_config('polinetwork.actor_id', ${actorId}, true)`);
-      const [current] = await readOidcClients(transaction, clientId);
-      if (!current?.jwks) return true;
-      try {
-        await validateClientJwks(parsePublicJwks(current.jwks), transaction, clientId);
-        return true;
-      } catch (error) {
-        if (!(error instanceof ClientJwksError)) throw error;
-        // Unreachable in practice: promoting a client saves it under this lock, which
-        // validates its keys. Never let a writer's cleanup delete a restricted client.
-        if (current.restricted && !access.roles.includes(MASTER_ADMIN_ROLE_KEY)) throw error;
-        await transaction.delete(oauthClient).where(pooledClient(clientId));
-        return false;
-      }
+      const registration = clientRegistration(draft);
+      const clientId = generateRandomString(32, "a-z", "A-Z");
+      let jwks: string | null = null;
+      let issued: { secret: string; stored: string } | null = null;
+      if (draft.credential === "private-key") {
+        const parsed = parsePublicJwks(draft.jwks);
+        await validateClientJwks(parsed, transaction);
+        jwks = JSON.stringify(parsed);
+      } else if (draft.credential === "secret") issued = issueClientSecret();
+      const now = new Date();
+      await transaction.insert(oauthClient).values({
+        id: crypto.randomUUID(),
+        clientId,
+        clientSecret: issued?.stored ?? null,
+        referenceId: OIDC_CLIENT_REFERENCE,
+        name: draft.name,
+        uri: draft.uri || null,
+        icon: draft.logo || null,
+        iconDark: draft.logoDark || null,
+        contacts: draft.contacts.length ? draft.contacts : null,
+        tos: draft.tosUri || null,
+        policy: draft.policyUri || null,
+        redirectUris: registration.redirectUris,
+        postLogoutRedirectUris: registration.postLogoutRedirectUris.length
+          ? registration.postLogoutRedirectUris
+          : null,
+        scopes: registration.scopes,
+        grantTypes: registration.grantTypes,
+        responseTypes: draft.signIn ? ["code"] : null,
+        clientCredentialsScopes: registration.clientCredentialsScopes,
+        enableEndSession: registration.enableEndSession,
+        applicationType: draft.applicationType,
+        tokenEndpointAuthMethod:
+          draft.credential === "public"
+            ? "none"
+            : draft.credential === "private-key"
+              ? "private_key_jwt"
+              : "client_secret_basic",
+        jwks,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await syncResourceLinks(transaction, clientId, draft.resources);
+      return { clientId, clientSecret: issued?.secret ?? null };
     },
   );
 }

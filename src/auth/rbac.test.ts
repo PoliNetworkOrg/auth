@@ -272,7 +272,7 @@ describe("permissions the identity provider defines itself", () => {
     ),
   };
 
-  it("covers roles, permissions, applications, and people", () => {
+  it("covers roles, permissions, applications, people, and the MCP server", () => {
     expect(MANAGED_PERMISSIONS.map((entry) => entry.key)).toEqual([
       "idp:people:read",
       "idp:users:read",
@@ -284,6 +284,7 @@ describe("permissions the identity provider defines itself", () => {
       "idp:roles:assign",
       "idp:applications:read",
       "idp:applications:write",
+      "idp:mcp",
     ]);
     for (const entry of MANAGED_PERMISSIONS) expect(isManagedPermissionKey(entry.key)).toBe(true);
     expect(isManagedPermissionKey("membership:read")).toBe(false);

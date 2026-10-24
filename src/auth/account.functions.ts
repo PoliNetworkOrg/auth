@@ -10,6 +10,9 @@ import { ownSessionToken, readAccountOverview } from "./account-overview";
 import { disconnectAccount } from "./accounts";
 import { getIdentity } from "./identity";
 import { auth } from "./index";
+import { MCP_SCOPE } from "./mcp-clients";
+import { disconnectMcpConnection, listMcpConnections } from "./mcp-connections";
+import { mcpResource } from "./mcp-resource";
 import { actionMiddleware, sessionMiddleware } from "./middleware";
 import { declinePasskeyPrompt } from "./passkey-prompt";
 import { confirmStudentVerification, requestStudentVerification } from "./student-verification";
@@ -30,11 +33,10 @@ export const getAccount = createServerFn({ method: "GET" })
       auth.api.listPasskeys({ headers }),
       auth.api.getSession({ headers }),
     ]);
-    const overview = await readAccountOverview(
-      context.session.userId,
-      current?.session.id ?? "",
-      identity,
-    );
+    const [overview, agents] = await Promise.all([
+      readAccountOverview(context.session.userId, current?.session.id ?? "", identity),
+      listMcpConnections(context.session.userId),
+    ]);
     return {
       accounts: accounts.map(({ id, providerId, accountId }) => ({ id, providerId, accountId })),
       identity,
@@ -44,6 +46,11 @@ export const getAccount = createServerFn({ method: "GET" })
         createdAt,
       })),
       ...overview,
+      // Shown to whoever may use the MCP server, and to anyone with an agent left to disconnect.
+      mcp:
+        identity.permissions.includes(MCP_SCOPE) || agents.length
+          ? { serverUrl: mcpResource, agents }
+          : null,
     };
   });
 
@@ -67,6 +74,14 @@ export const revokeOtherSessionsFn = createServerFn({ method: "POST" })
   .middleware([sessionMiddleware])
   .handler(async () => {
     await auth.api.revokeOtherSessions({ headers: getRequest().headers });
+  });
+
+/** Ends one agent's access to the MCP server; its tokens stop working on the next request. */
+export const disconnectMcpAgentFn = createServerFn({ method: "POST" })
+  .middleware([sessionMiddleware])
+  .validator(validate(z.object({ clientId: z.string().min(1).max(200) })))
+  .handler(async ({ context, data }) => {
+    await disconnectMcpConnection(context.session.userId, data.clientId);
   });
 
 /** Removes one of the person's linked accounts; the last login method is refused. */

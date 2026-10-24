@@ -1,29 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { ActionError } from "@/lib/action-error";
 import { validate } from "@/lib/validate";
-import { db } from "../db/index";
-import { validateClientJwks } from "./client-jwks";
-import { auth } from "./index";
 import { permissionMiddleware } from "./middleware";
-import { canAdministerIdp } from "./oidc-admin";
-import {
-  clientRegistration,
-  hasDraftErrors,
-  isRestrictedDraft,
-  normalizeClientDraft,
-  parsePublicJwks,
-  validateClientDraft,
-  type OidcClientDraft,
-} from "./oidc-clients";
 import {
   apiAccessEnabled,
+  checkClientDraft,
+  createOidcClient,
   deleteOidcClient,
-  linkNewOidcClient,
   listOidcClients,
-  recheckNewOidcClientKeys,
-  setNewOidcClientDarkLogo,
   rotateOidcClientSecret,
   updateOidcClient,
 } from "./oidc-registry";
@@ -72,86 +57,16 @@ const draftSchema = z.object({
   enableEndSession: z.boolean(),
 });
 
-/** Normalizes and checks a submitted draft with the rules the form uses. */
-function checkedDraft(input: OidcClientDraft) {
-  const draft = normalizeClientDraft(input);
-  const fields = validateClientDraft(draft, { apiAccess: apiAccessEnabled() });
-  // The item lists carry nulls for valid entries; the form reads them back as they are.
-  if (hasDraftErrors(fields)) throw new ActionError(400, "Check the highlighted fields.", fields);
-  return draft;
-}
-
 /**
  * Registers a client in the shared pool and links it to the resources it asks for. Only
- * Master Admin may register one with API access. A failed link still returns the new client
- * ID; saving the application again retries it.
+ * Master Admin may register one with API access.
  */
 export const createOidcClientFn = createServerFn({ method: "POST" })
   .middleware([permissionMiddleware("idp:applications:write")])
   .validator(validate(z.object({ draft: draftSchema })))
   .handler(async ({ context, data }) => {
-    const actorId = context.session.userId;
-    const draft = checkedDraft(data.draft);
-    if (isRestrictedDraft(draft) && !(await canAdministerIdp(actorId, db, true)))
-      throw new ActionError(403, "Only Master Admin may register applications with API access.");
-    const jwks = draft.credential === "private-key" ? parsePublicJwks(draft.jwks) : undefined;
-    if (jwks) await validateClientJwks(jwks, db);
-
-    const registration = clientRegistration(draft);
-    let created: { client_id: string; client_secret?: string };
-    try {
-      created = await auth.api.adminCreateOAuthClient({
-        headers: getRequest().headers,
-        body: {
-          client_name: draft.name,
-          ...(draft.uri ? { client_uri: draft.uri } : {}),
-          ...(draft.logo ? { logo_uri: draft.logo } : {}),
-          ...(draft.tosUri ? { tos_uri: draft.tosUri } : {}),
-          ...(draft.policyUri ? { policy_uri: draft.policyUri } : {}),
-          ...(draft.contacts.length ? { contacts: draft.contacts } : {}),
-          ...(registration.redirectUris.length
-            ? { redirect_uris: registration.redirectUris, response_types: ["code" as const] }
-            : {}),
-          ...(registration.postLogoutRedirectUris.length
-            ? { post_logout_redirect_uris: registration.postLogoutRedirectUris }
-            : {}),
-          scope: registration.scopes.join(" "),
-          grant_types: registration.grantTypes,
-          application_type: draft.applicationType,
-          token_endpoint_auth_method:
-            draft.credential === "public"
-              ? "none"
-              : draft.credential === "private-key"
-                ? "private_key_jwt"
-                : "client_secret_basic",
-          ...(jwks ? { jwks } : {}),
-          ...(registration.clientCredentialsScopes.length
-            ? { client_credentials_scopes: registration.clientCredentialsScopes }
-            : {}),
-          ...(registration.enableEndSession ? { enable_end_session: true } : {}),
-        },
-      });
-    } catch {
-      throw new ActionError(
-        400,
-        "Unable to register this application. Check its redirect URIs and public key.",
-      );
-    }
-
-    if (jwks && !(await recheckNewOidcClientKeys(actorId, created.client_id)))
-      throw new ActionError(409, "This public key already belongs to another client.");
-    await setNewOidcClientDarkLogo(actorId, created.client_id, draft.logoDark);
-    let linked = true;
-    try {
-      await linkNewOidcClient(actorId, created.client_id, draft.resources);
-    } catch {
-      linked = false;
-    }
-    return {
-      clientId: created.client_id,
-      clientSecret: created.client_secret ?? null,
-      linked,
-    };
+    const created = await createOidcClient(context.session.userId, checkClientDraft(data.draft));
+    return { ...created, linked: true };
   });
 
 /**
@@ -172,7 +87,7 @@ export const updateOidcClientFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const { clientId, disabled, skipConsent } = data;
-    const draft = data.draft ? checkedDraft(data.draft) : undefined;
+    const draft = data.draft ? checkClientDraft(data.draft) : undefined;
     const result = await updateOidcClient(context.session.userId, clientId, {
       draft,
       disabled,
