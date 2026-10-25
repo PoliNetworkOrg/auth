@@ -25,8 +25,10 @@ export type PeopleDirectory = {
     email: string | null;
     telegramId: string | null;
     telegramUsername: string | null;
-    /** The bound roles they hold, sorted. */
+    /** The bound roles they hold, sorted, including through a parent role. */
     roles: string[];
+    /** Those of `roles` given to them directly: the only ones that can be taken back. */
+    assigned: string[];
   }[];
 };
 
@@ -99,6 +101,7 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
           telegramId: telegramByUser.get(person.id)?.telegramId ?? null,
           telegramUsername: telegramByUser.get(person.id)?.telegramUsername ?? null,
           roles: held.get(person.id)!,
+          assigned: (assigned.get(person.id) ?? []).filter((key) => boundKeys.has(key)).sort(),
         })),
       };
     },
@@ -121,6 +124,9 @@ export type PeopleRoleChangeInput = {
  * actor's own access is resolved here and checked by `peopleRoleChangeProblem`.
  */
 export async function changePeopleRole(input: PeopleRoleChangeInput): Promise<void> {
+  // Before the membership refresh, which throws a plain error for an unknown person.
+  const [known] = await db.select({ id: user.id }).from(user).where(eq(user.id, input.actorId));
+  if (!known) throw new RbacError(403, "The acting person has no account here.");
   await refreshIdentityMembership(input.actorId);
   await db.transaction(
     async (transaction) => {
@@ -159,15 +165,19 @@ export async function changePeopleRole(input: PeopleRoleChangeInput): Promise<vo
 
       const operation = input.action === "assign" ? "role.assign" : "role.unassign";
       const before = await auditSnapshot(transaction, catalog, operation, target.id);
-      if (input.action === "assign")
-        await transaction
-          .insert(userRole)
-          .values({ roleId: target.id, userId: input.targetId, assignedBy: input.actorId })
-          .onConflictDoNothing();
-      else
-        await transaction
-          .delete(userRole)
-          .where(and(eq(userRole.roleId, target.id), eq(userRole.userId, input.targetId)));
+      const changed =
+        input.action === "assign"
+          ? await transaction
+              .insert(userRole)
+              .values({ roleId: target.id, userId: input.targetId, assignedBy: input.actorId })
+              .onConflictDoNothing()
+              .returning({ userId: userRole.userId })
+          : await transaction
+              .delete(userRole)
+              .where(and(eq(userRole.roleId, target.id), eq(userRole.userId, input.targetId)))
+              .returning({ userId: userRole.userId });
+      // Already held, or held only through a parent role: nothing happened, so nothing is audited.
+      if (!changed.length) return;
       const after = await auditSnapshot(transaction, catalog, operation, target.id);
       await transaction.insert(rbacAuditEvent).values({
         id: randomUUID(),
