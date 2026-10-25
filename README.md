@@ -377,7 +377,7 @@ Every tool calls the same code as the matching page, which checks the permission
 | `idp:roles:write`        | `create_role`, `update_role`, `delete_role`                                                                                                                                           |
 | `idp:roles:assign`       | `assign_role`, `unassign_role`                                                                                                                                                        |
 | `idp:permissions:write`  | `create_permission`, `update_permission`, `delete_permission`                                                                                                                         |
-| Master Admin             | `list_audit_events`                                                                                                                                                                   |
+| Master Admin             | `list_audit_events`, `set_role_people_binding`                                                                                                                                        |
 
 Deleting people is left to the website. Deletes ask the agent to repeat the name or key. New client secrets go back to the agent once, like on the page, so it can hand them over.
 
