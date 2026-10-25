@@ -338,6 +338,12 @@ During a sign-in the login page names the requesting application. The consent pa
 
 Future consumers should use authorization code with PKCE, validate token signatures, issuer, audience, and expiration, and request `polinetwork:identity` only when needed. APIs must check their own permissions. An ID token or a linked Telegram ID alone is not permission to moderate a group.
 
+### People roles
+
+Master Admin can bind a hand-made role to the admin dashboard's People register on the role's page (People register card): its holders are admins of the Telegram groups (`admin`), or members or the Lead of a team (`team:<key>:member`, `team:<key>:lead`, where the key is the dashboard's team key: `it`, `hr`, `design`, `intl` or `events`). Managed roles, and roles that carry any `idp:*` permission directly, through a parent or through an implication, can't be bound, and saving a role or permission that would give a bound role one is refused.
+
+`GET /api/internal/people-roles` (backend client, `idp:access:read`) lists the bound roles and everyone holding them by hand, with their name, directory email, Telegram ID and username; unlike the access snapshot it includes roles that grant no permission. `POST /api/internal/people-roles` (backend client, `idp:people:roles`) gives or takes back a bound role for `{ actor, sub, role, action: "assign" | "unassign", reason }`, on behalf of the dashboard user the backend authenticated. The backend only names the actor; this IdP resolves the actor's own access and refuses unless: the role is bound; the actor isn't giving themselves a role (giving one up is allowed); admin and team member roles need `admin:access` and `people:write`, or for team members leading that team; Lead roles need `admin:access` and `people:appoint`; and, unless Master Admin, the actor holds every permission the role grants. Changes are audited as `role.assign`/`role.unassign` with `via: "people"` and the reason. Grant `idp:people:roles` to the backend client on its application page to enable writes.
+
 ## MCP server
 
 `/api/mcp` is an MCP server, so an AI agent such as Claude Code or Codex can read and change this identity provider for you: debug an application that cannot sign people in, register or edit applications, and set up roles, permissions and who holds them. It only works for people holding `idp:mcp`, and the agent can only do what that person could do on the website.

@@ -219,6 +219,8 @@ export type RoleSummary = {
   parents: string[];
   /** People holding a hand-made assignment. Always 0 for managed roles. */
   memberCount: number;
+  /** What holding it means in the People register; see `people-binding.ts`. */
+  peopleBinding: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 };

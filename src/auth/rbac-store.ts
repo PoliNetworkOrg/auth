@@ -2,6 +2,7 @@ import { groupListings, traitConditions, searchCondition } from "./people-search
 import type { FieldErrors } from "@/lib/action-error";
 import { contactEmails } from "./contact-email";
 import { mayDelegateMutation } from "./rbac-delegation";
+import { PEOPLE_BINDING_PATTERN, peopleBindingProblem } from "./people-binding";
 import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
 import type { IdentityClaims } from "./policy";
@@ -119,6 +120,7 @@ export async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
       permissions: permissionsByRole.get(row.id) ?? [],
       parents: parentsByRole.get(row.id) ?? [],
       memberCount: memberCounts.get(row.id) ?? 0,
+      peopleBinding: row.peopleBinding,
       createdAt: row.createdAt?.toISOString() ?? null,
       updatedAt: row.updatedAt?.toISOString() ?? null,
     })),
@@ -206,7 +208,7 @@ export async function withAuthorizedRbacWrite<T>(
   );
 }
 
-async function auditSnapshot(
+export async function auditSnapshot(
   transaction: Transaction,
   catalog: RbacCatalog,
   operation: string,
@@ -300,6 +302,17 @@ function idsForRoleKeys(catalog: RbacCatalog, keys: string[]) {
   });
 }
 
+/**
+ * A role People manages must never come to carry this identity provider's own rights, directly,
+ * through a parent or through an implication: People writers could then hand them out.
+ */
+function assertPeopleBindings(catalog: RbacCatalog) {
+  for (const entry of catalog.roles) {
+    const problem = entry.peopleBinding ? peopleBindingProblem(catalog, entry) : null;
+    if (problem) throw new RbacError(400, `${entry.name} is managed from People. ${problem}`);
+  }
+}
+
 function checked(errors: Record<string, string | undefined>) {
   if (hasDraftErrors(errors)) throw new RbacError(400, "Check the highlighted fields.", errors);
 }
@@ -338,7 +351,9 @@ export async function savePermission(
         .values(
           impliedIds.map((impliedPermissionId) => ({ permissionId: id, impliedPermissionId })),
         );
-    return (await readCatalog(transaction)).permissions.find((entry) => entry.id === id)!;
+    const next = await readCatalog(transaction);
+    assertPeopleBindings(next);
+    return next.permissions.find((entry) => entry.id === id)!;
   });
 }
 
@@ -404,7 +419,40 @@ export async function saveRole(
       await transaction
         .insert(roleParent)
         .values(parentIds.map((parentRoleId) => ({ roleId: id, parentRoleId })));
-    return (await readCatalog(transaction)).roles.find((entry) => entry.id === id)!;
+    const next = await readCatalog(transaction);
+    assertPeopleBindings(next);
+    return next.roles.find((entry) => entry.id === id)!;
+  });
+}
+
+/**
+ * Binds a role to a People concept, or unbinds it with `null`. Binding hands the role's
+ * membership to People writers (through the backend), so only Master Admin decides it.
+ */
+export async function setRolePeopleBinding(
+  actorId: string,
+  roleId: string,
+  binding: string | null,
+) {
+  return withRbacWriteLock(actorId, "role.people", roleId, async (transaction, catalog, access) => {
+    if (!access.roles.includes(MASTER_ADMIN_ROLE_KEY)) {
+      logAuthorizationDenial(actorId, "rbac-store", [MASTER_ADMIN_ROLE_KEY]);
+      throw new RbacError(403, "Only Master Admin can choose which roles People manages.");
+    }
+    const current = requireRole(catalog, roleId);
+    if (binding !== null) {
+      if (!PEOPLE_BINDING_PATTERN.test(binding))
+        throw new RbacError(400, "Choose admin, or a team key with member or lead.", {
+          peopleBinding: "Use admin, team:<key>:member or team:<key>:lead.",
+        });
+      const problem = peopleBindingProblem(catalog, current);
+      if (problem) throw new RbacError(400, problem);
+    }
+    await transaction
+      .update(role)
+      .set({ peopleBinding: binding, updatedAt: new Date() })
+      .where(eq(role.id, roleId));
+    return (await readCatalog(transaction)).roles.find((entry) => entry.id === roleId)!;
   });
 }
 

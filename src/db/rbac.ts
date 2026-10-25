@@ -1,5 +1,7 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   jsonb,
   pgTable,
@@ -68,10 +70,22 @@ export const role = pgTable(
     description: text(),
     managed: boolean().default(false).notNull(),
     sourceState: text("source_state"),
+    /**
+     * What holding this role means in the People register (`admin`, `team:<id>:member` or
+     * `team:<id>:lead`). Only a bound role can be handed out or taken back by the backend on
+     * behalf of a dashboard user; see `src/auth/people-roles.ts`.
+     */
+    peopleBinding: text("people_binding"),
     createdAt: now(),
     updatedAt: now(),
   },
-  (table) => [uniqueIndex("role_key_uidx").on(table.key)],
+  (table) => [
+    uniqueIndex("role_key_uidx").on(table.key),
+    check(
+      "role_people_binding_check",
+      sql`${table.peopleBinding} is null or (not ${table.managed} and ${table.peopleBinding} ~ '^(admin|team:[a-z0-9-]{1,32}:(member|lead))$')`,
+    ),
+  ],
 );
 
 /** Role hierarchy: `role_id` inherits every permission of `parent_role_id`. */

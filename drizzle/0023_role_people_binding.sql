@@ -1,0 +1,2 @@
+ALTER TABLE "role" ADD COLUMN "people_binding" text;--> statement-breakpoint
+ALTER TABLE "role" ADD CONSTRAINT "role_people_binding_check" CHECK ("role"."people_binding" is null or (not "role"."managed" and "role"."people_binding" ~ '^(admin|team:[a-z0-9-]{1,32}:(member|lead))$'));
