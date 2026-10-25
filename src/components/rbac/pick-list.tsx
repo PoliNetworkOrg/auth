@@ -4,6 +4,7 @@ import { cn } from "cn";
 import { Search } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export type PickOption = {
   key: string;
@@ -72,50 +73,50 @@ export function PickList({
           />
         </div>
       )}
-      <div
-        className={cn(
-          "max-h-72 divide-y overflow-y-auto rounded-xl border",
-          error && "border-destructive",
-        )}
+      <ScrollArea
+        viewportLabel={legend}
+        className={cn("max-h-72 rounded-xl border", error && "border-destructive")}
         aria-describedby={error ? errorId : undefined}
       >
-        {visible.length === 0 ? (
-          <p className="px-4 py-6 text-center text-xs text-muted-foreground">
-            {options.length === 0 ? emptyText : "Nothing matches that filter."}
-          </p>
-        ) : (
-          visible.map((option) => {
-            const checked = selected.includes(option.key);
-            return (
-              <label
-                key={option.key}
-                className={cn(
-                  "flex cursor-pointer items-start gap-3 px-4 py-3 transition-colors",
-                  option.disabled ? "cursor-not-allowed opacity-60" : "hover:bg-accent/50",
-                )}
-              >
-                <Checkbox
-                  className="mt-0.5"
-                  checked={checked}
-                  disabled={option.disabled}
-                  onCheckedChange={(value) => toggle(option.key, value === true)}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-baseline gap-x-2">
-                    <span className="text-sm font-medium">{option.label}</span>
-                    <code className="font-mono text-xs text-muted-foreground">{option.key}</code>
-                  </span>
-                  {(option.disabled && option.disabledReason) || option.hint ? (
-                    <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
-                      {option.disabled ? option.disabledReason : option.hint}
+        <div className="divide-y">
+          {visible.length === 0 ? (
+            <p className="px-4 py-6 text-center text-xs text-muted-foreground">
+              {options.length === 0 ? emptyText : "Nothing matches that filter."}
+            </p>
+          ) : (
+            visible.map((option) => {
+              const checked = selected.includes(option.key);
+              return (
+                <label
+                  key={option.key}
+                  className={cn(
+                    "flex cursor-pointer items-start gap-3 px-4 py-3 transition-colors",
+                    option.disabled ? "cursor-not-allowed opacity-60" : "hover:bg-accent/50",
+                  )}
+                >
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={checked}
+                    disabled={option.disabled}
+                    onCheckedChange={(value) => toggle(option.key, value === true)}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="text-sm font-medium">{option.label}</span>
+                      <code className="font-mono text-xs text-muted-foreground">{option.key}</code>
                     </span>
-                  ) : null}
-                </span>
-              </label>
-            );
-          })
-        )}
-      </div>
+                    {(option.disabled && option.disabledReason) || option.hint ? (
+                      <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                        {option.disabled ? option.disabledReason : option.hint}
+                      </span>
+                    ) : null}
+                  </span>
+                </label>
+              );
+            })
+          )}
+        </div>
+      </ScrollArea>
       {error && (
         <p id={errorId} role="alert" className="text-xs text-destructive">
           {error}

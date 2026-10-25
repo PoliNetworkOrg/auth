@@ -1,3 +1,4 @@
+import { Hint } from "@/components/ui/tooltip";
 import { useState } from "react";
 import { LogOut, Monitor, Smartphone } from "lucide-react";
 import type { AccountDetails } from "@/auth/account.functions";
@@ -105,17 +106,19 @@ export function SessionsPanel({
                 </p>
               </div>
               {!entry.current && (
-                <Button
-                  variant="destructive-soft"
-                  size="icon-sm"
-                  className="border-0"
-                  aria-label={`Sign out of ${agent.label}`}
-                  title="Sign out"
-                  disabled={locked}
-                  onClick={() => setPending({ kind: "one", id: entry.id, label: agent.label })}
-                >
-                  {actions.busy === entry.id ? <Spinner /> : <LogOut />}
-                </Button>
+                <Hint content="Sign out">
+                  <Button
+                    variant="destructive-soft"
+                    size="icon-sm"
+                    className="border-0"
+                    aria-label={`Sign out of ${agent.label}`}
+
+                    disabled={locked}
+                    onClick={() => setPending({ kind: "one", id: entry.id, label: agent.label })}
+                  >
+                    {actions.busy === entry.id ? <Spinner /> : <LogOut />}
+                  </Button>
+                </Hint>
               )}
             </li>
           );

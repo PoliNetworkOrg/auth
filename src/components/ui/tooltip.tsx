@@ -51,4 +51,21 @@ function TooltipContent({
   );
 }
 
-export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };
+/** Preserves the child's layout and HTML semantics, including list items and table rows. */
+function Hint({ content, children }: { content?: string; children: React.ReactElement }) {
+  if (!content) return children;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        asChild
+        tabIndex={0}
+        className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">{content}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+export { Hint, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };
