@@ -143,6 +143,7 @@ describe.skipIf(!process.env.PEOPLE_ROLES_TEST_DATABASE_URL)(
       expect(directory.users.find((entry) => entry.sub === target)).toMatchObject({
         roles: [`${team}-member`],
         assigned: [`${team}-member`],
+        since: { [`${team}-member`]: new Date().toISOString().slice(0, 10) },
       });
     });
   },

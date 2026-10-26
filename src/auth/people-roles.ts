@@ -41,6 +41,11 @@ export type PeopleDirectory = {
     roles: string[];
     /** Those of `roles` given to them directly: the only ones that can be taken back. */
     assigned: string[];
+    /**
+     * When each of `roles` was first given (`YYYY-MM-DD`, UTC): the earliest assignment that
+     * confers it, directly or through a parent role.
+     */
+    since: Record<string, string>;
   }[];
 };
 
@@ -65,7 +70,7 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
       if (!bound.length) return { roles, users: [] };
 
       const assignments = await transaction
-        .select({ userId: userRole.userId, roleKey: role.key })
+        .select({ userId: userRole.userId, roleKey: role.key, assignedAt: userRole.assignedAt })
         .from(userRole)
         .innerJoin(role, eq(userRole.roleId, role.id))
         .where(eq(role.managed, false));
@@ -76,6 +81,14 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
       for (const [userId, keys] of assigned) {
         const roles = expandRoleKeys(catalog, keys).filter((key) => boundKeys.has(key));
         if (roles.length) held.set(userId, roles);
+      }
+      const since = new Map<string, Record<string, string>>();
+      for (const row of assignments) {
+        const day = row.assignedAt.toISOString().slice(0, 10);
+        const dates = since.get(row.userId) ?? {};
+        for (const key of expandRoleKeys(catalog, [row.roleKey]))
+          if (boundKeys.has(key) && !(dates[key] && dates[key] <= day)) dates[key] = day;
+        since.set(row.userId, dates);
       }
       // Also every PoliNetwork Microsoft 365 account, bound role or not: People matches its
       // Microsoft 365 members to linked accounts by that stable ID instead of an address.
@@ -131,6 +144,7 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
           telegramUsername: telegramByUser.get(person.id)?.telegramUsername ?? null,
           roles: held.get(person.id) ?? [],
           assigned: (assigned.get(person.id) ?? []).filter((key) => boundKeys.has(key)).sort(),
+          since: since.get(person.id) ?? {},
         })),
       };
     },
