@@ -5,6 +5,7 @@ import {
   type RoleSummary,
   MASTER_ADMIN_ROLE_KEY,
   effectiveRolePermissions,
+  expandRoleKeys,
   isManagedPermissionKey,
 } from "./rbac";
 
@@ -90,16 +91,24 @@ export function peopleRoleChangeProblem(change: PeopleRoleChange): string | null
       );
       return held?.kind === "team" && held.team === team && held.role === "lead";
     });
-  const allowed =
-    binding.kind === "admin"
-      ? general(PEOPLE_WRITE_PERMISSION)
-      : binding.role === "lead"
-        ? general(PEOPLE_APPOINT_PERMISSION)
-        : general(PEOPLE_WRITE_PERMISSION) || leadsTeam(binding.team);
-  if (!allowed)
-    return binding.kind === "team" && binding.role === "lead"
-      ? "Appointing or ending a Lead needs people:appoint and admin:access."
-      : "Changing this role needs people:write and admin:access, or leading the team.";
+  // A role grants organizational authority through every inherited binding as well as
+  // through permissions. A member wrapper around a Lead must require appointment rights.
+  for (const key of expandRoleKeys(catalog, [role.key])) {
+    const inherited = parsePeopleBinding(
+      catalog.roles.find((entry) => entry.key === key)?.peopleBinding,
+    );
+    if (!inherited) continue;
+    const allowed =
+      inherited.kind === "admin"
+        ? general(PEOPLE_WRITE_PERMISSION)
+        : inherited.role === "lead"
+          ? general(PEOPLE_APPOINT_PERMISSION)
+          : general(PEOPLE_WRITE_PERMISSION) || leadsTeam(inherited.team);
+    if (!allowed)
+      return inherited.kind === "team" && inherited.role === "lead"
+        ? "Appointing or ending a Lead needs people:appoint and admin:access."
+        : "Changing this role needs people:write and admin:access, or leading the team.";
+  }
 
   if (actor.roles.includes(MASTER_ADMIN_ROLE_KEY)) return null;
   const missing = effectiveRolePermissions(catalog, role.key).filter((key) => !holds(key));

@@ -1,20 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { z } from "zod";
+import { peopleCommandSchema } from "@/auth/people-role-command";
 import { serviceClientId } from "@/auth/access-snapshot-token";
 import { projectionForClient } from "@/auth/access-projections";
-import { changePeopleRole, readPeopleDirectory } from "@/auth/people-roles";
+import { changePeopleRoles, readPeopleDirectory } from "@/auth/people-roles";
 import { RbacError } from "@/auth/rbac-store";
 import { env } from "@/env";
 
 const headers = { "Cache-Control": "private, no-store", Vary: "Authorization" };
-
-const changeSchema = z.object({
-  actor: z.string().min(1).max(200),
-  sub: z.string().min(1).max(200),
-  role: z.string().min(1).max(200),
-  action: z.enum(["assign", "unassign"]),
-  reason: z.string().trim().max(500),
-});
 
 /** Only the backend's own client, with the scope the request needs. */
 async function backendClient(request: Request, scope: "idp:access:read" | "idp:people:roles") {
@@ -43,18 +35,12 @@ export const Route = createFileRoute("/api/internal/people-roles")({
       POST: async ({ request }) => {
         const refused = await backendClient(request, "idp:people:roles");
         if (refused) return refused;
-        const parsed = changeSchema.safeParse(await request.json().catch(() => null));
+        const parsed = peopleCommandSchema.safeParse(await request.json().catch(() => null));
         if (!parsed.success)
           return Response.json({ error: "Invalid request" }, { status: 400, headers });
         try {
-          await changePeopleRole({
-            actorId: parsed.data.actor,
-            targetId: parsed.data.sub,
-            roleKey: parsed.data.role,
-            action: parsed.data.action,
-            reason: parsed.data.reason,
-          });
-          return new Response(null, { status: 204, headers });
+          const result = await changePeopleRoles(parsed.data);
+          return Response.json(result, { headers });
         } catch (error) {
           if (error instanceof RbacError)
             return Response.json({ error: error.message }, { status: error.status, headers });

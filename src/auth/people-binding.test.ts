@@ -12,6 +12,7 @@ import {
   MASTER_ADMIN_ROLE_KEY,
   resolveAccess,
 } from "./rbac";
+import { planPeopleCommand } from "./people-role-command";
 
 function permission(key: string, managed = false): PermissionSummary {
   return {
@@ -160,4 +161,74 @@ describe("peopleRoleChangeProblem", () => {
     expect(change(["direttivo", "admin"], "admin")).toBeNull();
     expect(change([MASTER_ADMIN_ROLE_KEY], "admin")).toBeNull();
   });
+});
+
+it("checks inherited organizational authority even when it grants no extra permission", () => {
+  const wrapper = role("wrapper", ["people:self"], "team:it:member", ["design-lead"]);
+  const extended = { ...catalog, roles: [...catalog.roles, wrapper] };
+  for (const action of ["assign", "unassign"] as const) {
+    expect(
+      peopleRoleChangeProblem({
+        catalog: extended,
+        actorId: "actor",
+        actor: resolveAccess(extended, ["hr-member"]),
+        targetId: "target",
+        role: wrapper,
+        action,
+      }),
+    ).toMatch(/people:appoint/);
+  }
+});
+
+it("plans a complete revocation and rejects authority still inherited from an unbound role", () => {
+  const command = {
+    id: "00000000-0000-4000-8000-000000000001",
+    actor: "actor",
+    sub: "target",
+    reason: "Leaving",
+    changes: [{ kind: "team" as const, team: "hr", role: null }],
+  };
+  const plan = planPeopleCommand(catalog, ["hr-lead", "hr-member"], command);
+  expect(plan.changes).toHaveLength(2);
+  expect(plan.result.held).toEqual([]);
+  const inherited = {
+    ...catalog,
+    roles: [...catalog.roles, role("wrapper", [], null, ["hr-lead"])],
+  };
+  expect(() => planPeopleCommand(inherited, ["wrapper"], command)).toThrow(/inherited/);
+});
+
+it("demotes an inherited member correctly after taking back its directly assigned Lead", () => {
+  const plan = planPeopleCommand(catalog, ["hr-lead"], {
+    id: "00000000-0000-4000-8000-000000000002",
+    actor: "actor",
+    sub: "target",
+    reason: "Demotion",
+    changes: [{ kind: "team", team: "hr", role: "member" }],
+  });
+  expect(plan.result.assigned).toEqual(["hr-member"]);
+});
+
+it("refuses missing and ambiguous assignment bindings instead of choosing a different role", () => {
+  const command = {
+    id: "00000000-0000-4000-8000-000000000003",
+    actor: "actor",
+    sub: "target",
+    reason: "Appointment",
+    changes: [{ kind: "team" as const, team: "design", role: "lead" as const }],
+  };
+  expect(() =>
+    planPeopleCommand(
+      { ...catalog, roles: catalog.roles.filter((r) => r.key !== "design-lead") },
+      [],
+      command,
+    ),
+  ).toThrow(/exactly one/);
+  expect(() =>
+    planPeopleCommand(
+      { ...catalog, roles: [...catalog.roles, role("another-lead", [], "team:design:lead")] },
+      [],
+      command,
+    ),
+  ).toThrow(/exactly one/);
 });

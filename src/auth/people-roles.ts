@@ -11,18 +11,30 @@ import {
   peopleBindingProblem,
   peopleRoleChangeProblem,
 } from "./people-binding";
+import {
+  type PeopleCommand,
+  type PeopleCommandResult,
+  PeopleCommandConflict,
+  planPeopleCommand,
+  peopleCommandResult,
+} from "./people-role-command";
 import { expandRoleKeys, resolveAccess } from "./rbac";
 import { RbacError, assignedRoleKeys, auditSnapshot, readCatalog } from "./rbac-store";
 
 export type PeopleDirectory = {
   /** Every role People manages, with what holding it means. */
   roles: { key: string; name: string; binding: string }[];
-  /** Everyone holding at least one of those roles, by hand or through a parent role. */
+  /**
+   * Everyone holding at least one of those roles, by hand or through a parent role, and
+   * everyone with a PoliNetwork Microsoft 365 account, whose `roles` may be empty.
+   */
   users: {
     sub: string;
     name: string;
     /** Their PoliNetwork address when they linked it, otherwise their sign-in address. */
     email: string | null;
+    /** Their PoliNetwork Microsoft 365 object ID, when they linked that account. */
+    azureId: string | null;
     telegramId: string | null;
     telegramUsername: string | null;
     /** The bound roles they hold, sorted, including through a parent role. */
@@ -65,9 +77,25 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
         const roles = expandRoleKeys(catalog, keys).filter((key) => boundKeys.has(key));
         if (roles.length) held.set(userId, roles);
       }
-      const ids = [...held.keys()];
+      // Also every PoliNetwork Microsoft 365 account, bound role or not: People matches its
+      // Microsoft 365 members to linked accounts by that stable ID instead of an address.
+      const entra = await transaction
+        .select({ userId: account.userId, azureId: identityEvidence.externalId })
+        .from(account)
+        .innerJoin(
+          identityEvidence,
+          and(
+            eq(account.issuer, identityEvidence.issuer),
+            eq(account.accountId, identityEvidence.subject),
+            eq(account.providerId, identityEvidence.providerId),
+          ),
+        )
+        .where(eq(account.providerId, "pn-entra"));
+      const azureByUser = new Map(
+        entra.flatMap((row) => (row.azureId ? [[row.userId, row.azureId] as const] : [])),
+      );
+      const ids = [...new Set([...held.keys(), ...azureByUser.keys()])];
       if (!ids.length) return { roles, users: [] };
-
       const people = await transaction
         .select({ id: user.id, name: user.name, email: user.email })
         .from(user)
@@ -98,9 +126,10 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
           sub: person.id,
           name: person.name,
           email: emails.get(person.id) ?? null,
+          azureId: azureByUser.get(person.id) ?? null,
           telegramId: telegramByUser.get(person.id)?.telegramId ?? null,
           telegramUsername: telegramByUser.get(person.id)?.telegramUsername ?? null,
-          roles: held.get(person.id)!,
+          roles: held.get(person.id) ?? [],
           assigned: (assigned.get(person.id) ?? []).filter((key) => boundKeys.has(key)).sort(),
         })),
       };
@@ -109,85 +138,141 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
   );
 }
 
-export type PeopleRoleChangeInput = {
-  /** The dashboard user the backend acts for, as authenticated by the backend. */
-  actorId: string;
-  targetId: string;
-  roleKey: string;
-  action: "assign" | "unassign";
-  reason: string;
-};
+type Reader = Pick<typeof db, "select">;
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Same command, same canonical form, whatever the key order jsonb stored it in. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object")
+    return `{${Object.entries(value)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`)
+      .join(",")}}`;
+  return JSON.stringify(value);
+}
 
 /**
- * Gives or takes back a role People manages, on behalf of a dashboard user. The backend is
- * trusted to name the actor it authenticated, never to decide what that actor may do: the
- * actor's own access is resolved here and checked by `peopleRoleChangeProblem`.
+ * Applies one People command on behalf of a dashboard user: every assignment it needs, or
+ * none. The backend names the desired organizational state; Auth plans the concrete
+ * assignments against its own graph and checks the actor's own access for each of them
+ * with `peopleRoleChangeProblem`. A receipt committed with the assignments makes a retry
+ * after a lost response safe: it returns the person's current roles without applying the
+ * command again, even if the actor's access has changed since.
  */
-export async function changePeopleRole(input: PeopleRoleChangeInput): Promise<void> {
-  // Before the membership refresh, which throws a plain error for an unknown person.
-  const [known] = await db.select({ id: user.id }).from(user).where(eq(user.id, input.actorId));
-  if (!known) throw new RbacError(403, "The acting person has no account here.");
-  await refreshIdentityMembership(input.actorId);
-  await db.transaction(
-    async (transaction) => {
-      await transaction.execute(authorizationMutationLock);
-      const catalog = await readCatalog(transaction);
-      const target = catalog.roles.find((entry) => entry.key === input.roleKey);
-      if (!target) throw new RbacError(404, "Role not found.");
-      const [actor] = await transaction
-        .select({ id: user.id })
-        .from(user)
-        .where(eq(user.id, input.actorId));
-      if (!actor) throw new RbacError(403, "The acting person has no account here.");
-      const [person] = await transaction
-        .select({ id: user.id })
-        .from(user)
-        .where(eq(user.id, input.targetId));
-      if (!person) throw new RbacError(404, "That person was not found.");
+export async function changePeopleRoles(input: PeopleCommand): Promise<PeopleCommandResult> {
+  const receiptId = `people-command:${input.id}`;
+  const current = async (reader: Reader) => {
+    const catalog = await readCatalog(reader);
+    return peopleCommandResult(catalog, await assignedRoleKeys(input.sub, catalog, reader));
+  };
+  // Must run after the lock: a concurrent attempt of the same command may be committing.
+  const replay = async (reader: Reader) => {
+    const [receipt] = await reader
+      .select({ operation: rbacAuditEvent.operation, before: rbacAuditEvent.before })
+      .from(rbacAuditEvent)
+      .where(eq(rbacAuditEvent.id, receiptId));
+    if (!receipt) return null;
+    if (receipt.operation !== "people.roles" || canonical(receipt.before) !== canonical(input))
+      throw new RbacError(409, "This command ID was already used with different input.");
+    // The current roles, not those of the receipt: a later change must not be undone in People.
+    return current(reader);
+  };
+  const transaction = <T>(fn: (transaction: Transaction) => Promise<T>) =>
+    db.transaction(
+      async (transaction) => {
+        await transaction.execute(authorizationMutationLock);
+        return fn(transaction);
+      },
+      { isolationLevel: "read committed" },
+    );
 
-      const subject = await readIdentitySubject(input.actorId, transaction);
-      const access = resolveAccess(catalog, [
-        ...(await assignedRoleKeys(input.actorId, catalog, transaction)),
-        ...subject.roleKeys,
-      ]);
+  const [receipt] = await db
+    .select({ id: rbacAuditEvent.id })
+    .from(rbacAuditEvent)
+    .where(eq(rbacAuditEvent.id, receiptId));
+  if (receipt) return transaction(async (tx) => (await replay(tx))!);
+
+  // Before the membership refresh, which throws a plain error for an unknown person.
+  const [known] = await db.select({ id: user.id }).from(user).where(eq(user.id, input.actor));
+  if (!known) throw new RbacError(403, "The acting person has no account here.");
+  await refreshIdentityMembership(input.actor);
+  return transaction(async (tx) => {
+    const replayed = await replay(tx);
+    if (replayed) return replayed;
+    const catalog = await readCatalog(tx);
+    const [actor] = await tx.select({ id: user.id }).from(user).where(eq(user.id, input.actor));
+    if (!actor) throw new RbacError(403, "The acting person has no account here.");
+    const [person] = await tx.select({ id: user.id }).from(user).where(eq(user.id, input.sub));
+    if (!person) throw new RbacError(404, "That person was not found.");
+
+    let plan;
+    try {
+      plan = planPeopleCommand(catalog, await assignedRoleKeys(input.sub, catalog, tx), input);
+    } catch (error) {
+      if (error instanceof PeopleCommandConflict) throw new RbacError(409, error.message);
+      throw error;
+    }
+    const subject = await readIdentitySubject(input.actor, tx);
+    const access = resolveAccess(catalog, [
+      ...(await assignedRoleKeys(input.actor, catalog, tx)),
+      ...subject.roleKeys,
+    ]);
+    // Every assignment is checked against the actor's access before the first write.
+    const steps = plan.changes.map((change) => ({
+      ...change,
+      target: catalog.roles.find((entry) => entry.key === change.role)!,
+    }));
+    for (const step of steps) {
       const problem = peopleRoleChangeProblem({
         catalog,
-        actorId: input.actorId,
+        actorId: input.actor,
         actor: access,
-        targetId: input.targetId,
-        role: target,
-        action: input.action,
+        targetId: input.sub,
+        role: step.target,
+        action: step.action,
       });
       if (problem) {
-        logAuthorizationDenial(input.actorId, "people-roles", [`${input.action}:${target.key}`]);
+        logAuthorizationDenial(input.actor, "people-roles", [`${step.action}:${step.target.key}`]);
         throw new RbacError(403, problem);
       }
+    }
 
-      const operation = input.action === "assign" ? "role.assign" : "role.unassign";
-      const before = await auditSnapshot(transaction, catalog, operation, target.id);
-      const changed =
-        input.action === "assign"
-          ? await transaction
-              .insert(userRole)
-              .values({ roleId: target.id, userId: input.targetId, assignedBy: input.actorId })
-              .onConflictDoNothing()
-              .returning({ userId: userRole.userId })
-          : await transaction
-              .delete(userRole)
-              .where(and(eq(userRole.roleId, target.id), eq(userRole.userId, input.targetId)))
-              .returning({ userId: userRole.userId });
-      // Already held, or held only through a parent role: nothing happened, so nothing is audited.
-      if (!changed.length) return;
-      const after = await auditSnapshot(transaction, catalog, operation, target.id);
-      await transaction.insert(rbacAuditEvent).values({
+    for (const step of steps) {
+      const operation = step.action === "assign" ? "role.assign" : "role.unassign";
+      const before = await auditSnapshot(tx, catalog, operation, step.target.id);
+      if (step.action === "assign")
+        await tx
+          .insert(userRole)
+          .values({ roleId: step.target.id, userId: input.sub, assignedBy: input.actor });
+      else
+        await tx
+          .delete(userRole)
+          .where(and(eq(userRole.roleId, step.target.id), eq(userRole.userId, input.sub)));
+      const after = await auditSnapshot(tx, catalog, operation, step.target.id);
+      await tx.insert(rbacAuditEvent).values({
         id: randomUUID(),
-        actorId: input.actorId,
+        actorId: input.actor,
         operation,
-        targetId: target.id,
+        targetId: step.target.id,
         before,
-        after: { ...after, via: "people", userId: input.targetId, reason: input.reason },
+        after: {
+          ...after,
+          via: "people",
+          userId: input.sub,
+          reason: input.reason,
+          commandId: input.id,
+        },
       });
-    },
-    { isolationLevel: "read committed" },
-  );
+    }
+    await tx.insert(rbacAuditEvent).values({
+      id: receiptId,
+      actorId: input.actor,
+      operation: "people.roles",
+      targetId: input.sub,
+      before: input,
+      after: plan.result,
+    });
+    return plan.result;
+  });
 }
