@@ -3,7 +3,7 @@
 **Status:** current as of RFC v3 Phase 6 (October 2026).
 **Scope:** every PoliNetwork service that signs people in, calls the backend, or authorizes requests with IdP permissions. This guide replaces RFC v3 §14 where they differ. The differences are listed at the end.
 
-The IdP is the only source of identity and permissions. A service never stores its own roles, never trusts a Telegram ID or an ID token as permission, and checks **permissions**, never role names (RFC v3 §4, decisions 1 and 4).
+The IdP is the only source of identity and permissions. A service never stores its own roles and never treats a Telegram ID, or the mere presence of an ID token, as permission. It checks **permissions**, never role names: a Level 1 service authorizes from the validated `polinetwork_permissions` claim (RFC v3 §4, decisions 1 and 4).
 
 ## 1. Choose the integration level
 

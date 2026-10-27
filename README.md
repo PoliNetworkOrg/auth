@@ -336,7 +336,7 @@ Master Admin registers the four Phase 1 clients on `/applications/new`, each wit
 
 During a sign-in the login page names the requesting application. The consent page at `/consent` shows the app, who is signed in (with a switch-account option), each requested scope in plain language, any requested profile claims, and where the browser will be sent; it supports allow and deny and explains expired or disabled requests.
 
-New services follow [docs/service-integration-guide.md](docs/service-integration-guide.md). Future consumers should use authorization code with PKCE, validate token signatures, issuer, audience, and expiration, and request `polinetwork:identity` only when needed. APIs must check their own permissions. An ID token or a linked Telegram ID alone is not permission to moderate a group.
+New services follow [docs/service-integration-guide.md](docs/service-integration-guide.md). Future clients that sign people in should use authorization code with PKCE; service clients use client credentials with `private_key_jwt`, as the guide describes. All of them validate token signatures, issuer, audience, and expiration, and request `polinetwork:identity` only when needed. APIs must check their own permissions. An ID token or a linked Telegram ID alone is not permission to moderate a group.
 
 ## MCP server
 
