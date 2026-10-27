@@ -30,6 +30,7 @@ vi.mock("./membership", () => ({
 }));
 
 import { db } from "../db/index";
+import { createPeoplePerson, linkPeoplePerson } from "./people-registration";
 import { changePeopleRoles, readPeopleDirectory } from "./people-roles";
 import { assignRole, saveRole, setRolePeopleBinding } from "./rbac-store";
 
@@ -145,6 +146,86 @@ describe.skipIf(!process.env.PEOPLE_ROLES_TEST_DATABASE_URL)(
         assigned: [`${team}-member`],
         since: { [`${team}-member`]: new Date().toISOString().slice(0, 10) },
       });
+    });
+    it("creates an Auth person before login and requires Master approval to bind the real account", async () => {
+      const id = randomUUID();
+      const input = {
+        operation: "create-person" as const,
+        id,
+        actor: hr,
+        firstName: "Pre",
+        lastName: "Login",
+        email: "pre-login@example.org",
+        phone: "",
+        telegramId: "",
+        telegramUsername: "",
+        changes: [{ kind: "team" as const, team, role: "member" as const }],
+      };
+      const created = await createPeoplePerson(input);
+      try {
+        expect(await createPeoplePerson(input)).toEqual(created);
+        await expect(
+          createPeoplePerson({ ...input, firstName: "Different" }),
+        ).rejects.toMatchObject({ status: 409 });
+        expect(
+          (await pool.query("SELECT id FROM account WHERE user_id = $1", [created.sub])).rows,
+        ).toEqual([]);
+        const preliminary = (await readPeopleDirectory()).users.find(
+          (entry) => entry.sub === created.sub,
+        );
+        expect(preliminary).toMatchObject({
+          provisional: true,
+          registrationId: created.sub,
+          roles: [`${team}-member`],
+          email: input.email,
+        });
+        await pool.query('UPDATE "user" SET email = $1, email_verified = true WHERE id = $2', [
+          input.email,
+          target,
+        ]);
+        await pool.query(
+          "INSERT INTO account (id, account_id, provider_id, issuer, user_id, updated_at) VALUES ($1, $2, $3, $4, $5, NOW())",
+          [randomUUID(), randomUUID(), "google", "https://accounts.google.com", target],
+        );
+        expect((await readPeopleDirectory()).proposals).toContainEqual(
+          expect.objectContaining({ personId: created.sub, sub: target, reason: "verified-email" }),
+        );
+        const link = {
+          operation: "link-person" as const,
+          id: randomUUID(),
+          actor: hr,
+          personId: created.sub,
+          userId: target,
+          reason: "Checked verified identity",
+        };
+        await expect(linkPeoplePerson(link)).rejects.toMatchObject({ status: 403 });
+        expect(
+          (await readPeopleDirectory()).users.find((entry) => entry.sub === created.sub)
+            ?.provisional,
+        ).toBe(true);
+        const approved = { ...link, actor: root };
+        expect(await linkPeoplePerson(approved)).toMatchObject({ sub: target });
+        expect(await linkPeoplePerson(approved)).toMatchObject({ sub: target });
+        expect(await linkPeoplePerson({ ...approved, id: randomUUID() })).toMatchObject({
+          sub: target,
+        });
+        expect(
+          (await readPeopleDirectory()).users.find((entry) => entry.sub === target),
+        ).toMatchObject({
+          registrationId: created.sub,
+          provisional: false,
+          previousSub: created.sub,
+          roles: expect.arrayContaining([`${team}-member`]),
+        });
+        expect((await readPeopleDirectory()).users.some((entry) => entry.sub === created.sub)).toBe(
+          false,
+        );
+        expect(
+          (await pool.query("SELECT id FROM account WHERE user_id = $1", [target])).rows,
+        ).toHaveLength(1);
+      } finally {
+        await pool.query('DELETE FROM "user" WHERE id = $1', [created.sub]);
+      }
     });
   },
 );

@@ -1,3 +1,14 @@
+import {
+  createPeoplePersonSchema,
+  updatePeoplePersonSchema,
+  linkPeoplePersonSchema,
+} from "@/auth/people-registration-command";
+import {
+  createPeoplePerson,
+  linkPeoplePerson,
+  updatePeoplePerson,
+} from "@/auth/people-registration";
+import { z } from "zod";
 import { createFileRoute } from "@tanstack/react-router";
 import { peopleCommandSchema } from "@/auth/people-role-command";
 import { serviceClientId } from "@/auth/access-snapshot-token";
@@ -35,11 +46,26 @@ export const Route = createFileRoute("/api/internal/people-roles")({
       POST: async ({ request }) => {
         const refused = await backendClient(request, "idp:people:roles");
         if (refused) return refused;
-        const parsed = peopleCommandSchema.safeParse(await request.json().catch(() => null));
+        const parsed = z
+          .union([
+            createPeoplePersonSchema,
+            updatePeoplePersonSchema,
+            linkPeoplePersonSchema,
+            peopleCommandSchema,
+          ])
+          .safeParse(await request.json().catch(() => null));
         if (!parsed.success)
           return Response.json({ error: "Invalid request" }, { status: 400, headers });
         try {
-          const result = await changePeopleRoles(parsed.data);
+          const command = parsed.data;
+          const result =
+            "operation" in command
+              ? command.operation === "create-person"
+                ? await createPeoplePerson(command)
+                : command.operation === "update-person"
+                  ? await updatePeoplePerson(command)
+                  : await linkPeoplePerson(command)
+              : await changePeopleRoles(command);
           return Response.json(result, { headers });
         } catch (error) {
           if (error instanceof RbacError)

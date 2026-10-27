@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { asc } from "drizzle-orm";
+import { asc, eq, isNull } from "drizzle-orm";
 import { snapshotClientId } from "@/auth/access-snapshot-token";
 import { contactEmails } from "@/auth/contact-email";
 import { projectionForClient } from "@/auth/access-projections";
 import { db } from "@/db";
-import { user } from "@/db/schema";
+import { user, peopleRegistration } from "@/db/schema";
 import { env } from "@/env";
 
 const headers = { "Cache-Control": "private, no-store", Vary: "Authorization" };
@@ -26,6 +26,8 @@ export const Route = createFileRoute("/api/internal/esign-users")({
         const people = await db
           .select({ id: user.id, name: user.name, email: user.email })
           .from(user)
+          .leftJoin(peopleRegistration, eq(peopleRegistration.id, user.id))
+          .where(isNull(peopleRegistration.id))
           .orderBy(asc(user.name), asc(user.id));
         const emails = await contactEmails(db, people, "everyone");
         return Response.json(

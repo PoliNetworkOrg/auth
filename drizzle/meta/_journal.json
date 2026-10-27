@@ -169,6 +169,13 @@
       "when": 1792927355527,
       "tag": "0023_role_people_binding",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793093534908,
+      "tag": "0024_people_registration",
+      "breakpoints": true
     }
   ]
 }
