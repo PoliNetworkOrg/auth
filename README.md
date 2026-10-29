@@ -1,6 +1,6 @@
 # PoliNetwork Auth prototype
 
-A standalone TanStack Start and Better Auth identity provider. The backend remains the active authentication provider for all existing PoliNetwork applications. This repository does not change backend authentication, migrate production data, or grant Telegram moderation access.
+A standalone TanStack Start and Better Auth identity provider. As of RFC v3 Phase 6 (October 2026), every PoliNetwork service signs people in through this IdP; no applications still use the backend's removed login (see [Backend login removal](#backend-login-removal)). This repository does not migrate production data or grant Telegram moderation access.
 
 ## Run locally
 
