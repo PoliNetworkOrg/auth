@@ -60,6 +60,9 @@ function RoleDetail() {
     !!role &&
     !role.managed &&
     canGrantRole(access, catalog, role.key);
+  // Binding hands the role's membership to People, so it is bounded the same way.
+  const canBind =
+    access.can("idp:people:bind") && !!role && canGrantRole(access, catalog, role.key);
 
   async function save(draft: RoleDraft) {
     setBusy(true);
@@ -170,7 +173,7 @@ function RoleDetail() {
         <PeopleBindingCard
           key={`people-${role.id}-${role.updatedAt ?? ""}`}
           role={role}
-          canEdit={access.isMasterAdmin}
+          canEdit={canBind}
           problem={peopleBindingProblem(catalog, role)}
         />
       )}

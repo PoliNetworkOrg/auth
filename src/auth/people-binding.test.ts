@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   type PeopleRoleChange,
+  PEOPLE_RULES,
+  describePeopleBinding,
   parsePeopleBinding,
   peopleBindingProblem,
   peopleRoleChangeProblem,
@@ -79,6 +81,9 @@ const catalog: RbacCatalog = {
     role("design-member", ["people:self"], "team:design:member"),
     role("design-lead", ["people:self"], "team:design:lead"),
     role("admin", ["tg:trusted"], "admin"),
+    role("capo-admin", ["people:self"], "capo", ["admin"]),
+    // Appoints Capo Admins, but can't add admins on its own.
+    role("appointer", ["admin:access", "people:appoint", "people:self", "tg:trusted"]),
     role("sneaky", ["idp:roles:write"], "team:it:member"),
     role("unbound", ["people:self"]),
   ],
@@ -103,8 +108,10 @@ function change(
 }
 
 describe("parsePeopleBinding", () => {
-  it("reads admin and team bindings", () => {
+  it("reads admin, capo and team bindings", () => {
     expect(parsePeopleBinding("admin")).toEqual({ kind: "admin" });
+    expect(parsePeopleBinding("capo")).toEqual({ kind: "capo" });
+    expect(describePeopleBinding({ kind: "capo" })).toBe("Capo Admin");
     expect(parsePeopleBinding("team:events:lead")).toEqual({
       kind: "team",
       team: "events",
@@ -113,7 +120,15 @@ describe("parsePeopleBinding", () => {
   });
 
   it("rejects anything else", () => {
-    for (const value of [null, "", "team:it", "team:IT:member", "team:it:owner", "admins"])
+    for (const value of [
+      null,
+      "",
+      "team:it",
+      "team:IT:member",
+      "team:it:owner",
+      "admins",
+      "capo:x",
+    ])
       expect(parsePeopleBinding(value)).toBeNull();
   });
 });
@@ -153,6 +168,24 @@ describe("peopleRoleChangeProblem", () => {
 
   it("keeps an HR member from making anyone the HR Lead", () => {
     expect(change(["hr-member"], "hr-lead")).toMatch(/people:appoint/);
+  });
+
+  it("needs people:appoint for Capo Admins, and people:write for the admin role they inherit", () => {
+    expect(change(["direttivo", "admin"], "capo-admin")).toBeNull();
+    expect(change(["direttivo", "admin"], "capo-admin", { action: "unassign" })).toBeNull();
+    expect(change(["hr-member", "admin"], "capo-admin")).toMatch(/Capo Admin needs people:appoint/);
+    expect(change(["appointer"], "capo-admin")).toMatch(/people:write/);
+    expect(change(["capo-admin"], "capo-admin")).toMatch(/people:appoint/);
+  });
+
+  it("has one delegation rule per binding kind", () => {
+    expect(Object.keys(PEOPLE_RULES).sort()).toEqual(["admin", "capo", "team"]);
+  });
+
+  it("lets whoever made an assignment apply it when the invitee accepts", () => {
+    // The backend sends the assigner as the actor: the invitee would be giving themselves a role.
+    expect(change(["direttivo"], "design-member", { actorId: "assigner" })).toBeNull();
+    expect(change(["direttivo"], "design-member", { actorId: "target" })).toMatch(/themselves/);
   });
 
   it("refuses roles granting permissions the actor lacks, except to Master Admin", () => {
@@ -231,4 +264,52 @@ it("refuses missing and ambiguous assignment bindings instead of choosing a diff
       command,
     ),
   ).toThrow(/exactly one/);
+});
+
+describe("planPeopleCommand with Capo Admins", () => {
+  const command = (changes: Parameters<typeof planPeopleCommand>[2]["changes"]) => ({
+    id: "00000000-0000-4000-8000-000000000004",
+    actor: "actor",
+    sub: "target",
+    reason: "Capo",
+    changes,
+  });
+
+  it("appoints and ends a Capo Admin, who holds admin through it", () => {
+    const appointed = planPeopleCommand(catalog, [], command([{ kind: "capo", active: true }]));
+    expect(appointed.changes).toEqual([{ role: "capo-admin", action: "assign" }]);
+    expect(appointed.result.held).toEqual(["admin", "capo-admin"]);
+    const ended = planPeopleCommand(
+      catalog,
+      ["admin", "capo-admin"],
+      command([{ kind: "capo", active: false }]),
+    );
+    expect(ended.changes).toEqual([{ role: "capo-admin", action: "unassign" }]);
+    expect(ended.result.held).toEqual(["admin"]);
+  });
+
+  it("refuses to end the admin role a Capo Admin still holds through Capo", () => {
+    expect(() =>
+      planPeopleCommand(catalog, ["capo-admin"], command([{ kind: "admin", active: false }])),
+    ).toThrow(/admin role is inherited/);
+    const both = planPeopleCommand(
+      catalog,
+      ["capo-admin"],
+      command([
+        { kind: "capo", active: false },
+        { kind: "admin", active: false },
+      ]),
+    );
+    expect(both.result.held).toEqual([]);
+  });
+
+  it("refuses an admin mapping made ambiguous by binding another admin role", () => {
+    const ambiguous = {
+      ...catalog,
+      roles: [...catalog.roles, role("trusted-admin", ["tg:trusted"], "admin", ["admin"])],
+    };
+    expect(() =>
+      planPeopleCommand(ambiguous, [], command([{ kind: "admin", active: true }])),
+    ).toThrow(/exactly one/);
+  });
 });

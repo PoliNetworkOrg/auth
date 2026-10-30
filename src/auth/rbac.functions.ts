@@ -34,9 +34,9 @@ export const saveRoleFn = createServerFn({ method: "POST" })
   .validator(validate(z.object({ roleId: z.string().min(1).optional(), draft: roleDraftSchema })))
   .handler(({ context, data }) => saveRole(context.session.userId, data.draft, data.roleId));
 
-/** Binds a role to People, or unbinds it with `null`. The store allows Master Admin only. */
+/** Binds a role to People, or unbinds it with `null`. */
 export const setRolePeopleBindingFn = createServerFn({ method: "POST" })
-  .middleware([permissionMiddleware("idp:roles:write")])
+  .middleware([permissionMiddleware("idp:people:bind")])
   .validator(
     validate(z.object({ roleId: z.string().min(1), binding: z.string().max(64).nullable() })),
   )

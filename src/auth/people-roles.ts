@@ -6,17 +6,14 @@ import { account, identityEvidence, rbacAuditEvent, role, user, userRole } from 
 import { contactEmails } from "./contact-email";
 import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
-import {
-  parsePeopleBinding,
-  peopleBindingProblem,
-  peopleRoleChangeProblem,
-} from "./people-binding";
+import { peopleRoleChangeProblem } from "./people-binding";
 import {
   type PeopleCommand,
   type PeopleCommandResult,
   PeopleCommandConflict,
-  planPeopleCommand,
+  peopleBoundRoles,
   peopleCommandResult,
+  planPeopleCommand,
 } from "./people-role-command";
 import { expandRoleKeys, resolveAccess } from "./rbac";
 import { RbacError, assignedRoleKeys, auditSnapshot, readCatalog } from "./rbac-store";
@@ -24,23 +21,23 @@ import { RbacError, assignedRoleKeys, auditSnapshot, readCatalog } from "./rbac-
 export type PeopleDirectory = {
   /** Every role People manages, with what holding it means. */
   roles: { key: string; name: string; binding: string }[];
-  /**
-   * Everyone holding at least one of those roles, by hand or through a parent role, and
-   * everyone with a PoliNetwork Microsoft 365 account, whose `roles` may be empty.
-   */
+  /** Everyone holding at least one of those roles, by hand or through a parent role. */
   users: {
     sub: string;
     name: string;
     /** Their PoliNetwork address when they linked it, otherwise their sign-in address. */
     email: string | null;
-    /** Their PoliNetwork Microsoft 365 object ID, when they linked that account. */
-    azureId: string | null;
     telegramId: string | null;
     telegramUsername: string | null;
     /** The bound roles they hold, sorted, including through a parent role. */
     roles: string[];
     /** Those of `roles` given to them directly: the only ones that can be taken back. */
     assigned: string[];
+    /**
+     * When they were first given each of `roles` (`YYYY-MM-DD`, UTC): the earliest of their
+     * current assignments that confers it, directly or through a parent role.
+     */
+    since: Record<string, string>;
   }[];
 };
 
@@ -53,9 +50,7 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
   return db.transaction(
     async (transaction) => {
       const catalog = await readCatalog(transaction);
-      const bound = catalog.roles.filter(
-        (entry) => parsePeopleBinding(entry.peopleBinding) && !peopleBindingProblem(catalog, entry),
-      );
+      const bound = peopleBoundRoles(catalog);
       const boundKeys = new Set(bound.map((entry) => entry.key));
       const roles = bound.map((entry) => ({
         key: entry.key,
@@ -65,36 +60,26 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
       if (!bound.length) return { roles, users: [] };
 
       const assignments = await transaction
-        .select({ userId: userRole.userId, roleKey: role.key })
+        .select({ userId: userRole.userId, roleKey: role.key, assignedAt: userRole.assignedAt })
         .from(userRole)
         .innerJoin(role, eq(userRole.roleId, role.id))
         .where(eq(role.managed, false));
       const assigned = new Map<string, string[]>();
-      for (const row of assignments)
+      const since = new Map<string, Record<string, string>>();
+      for (const row of assignments) {
         assigned.set(row.userId, [...(assigned.get(row.userId) ?? []), row.roleKey]);
+        const day = row.assignedAt.toISOString().slice(0, 10);
+        const dates = since.get(row.userId) ?? {};
+        for (const key of expandRoleKeys(catalog, [row.roleKey]))
+          if (boundKeys.has(key) && !(dates[key] && dates[key] <= day)) dates[key] = day;
+        since.set(row.userId, dates);
+      }
       const held = new Map<string, string[]>();
       for (const [userId, keys] of assigned) {
         const roles = expandRoleKeys(catalog, keys).filter((key) => boundKeys.has(key));
         if (roles.length) held.set(userId, roles);
       }
-      // Also every PoliNetwork Microsoft 365 account, bound role or not: People matches its
-      // Microsoft 365 members to linked accounts by that stable ID instead of an address.
-      const entra = await transaction
-        .select({ userId: account.userId, azureId: identityEvidence.externalId })
-        .from(account)
-        .innerJoin(
-          identityEvidence,
-          and(
-            eq(account.issuer, identityEvidence.issuer),
-            eq(account.accountId, identityEvidence.subject),
-            eq(account.providerId, identityEvidence.providerId),
-          ),
-        )
-        .where(eq(account.providerId, "pn-entra"));
-      const azureByUser = new Map(
-        entra.flatMap((row) => (row.azureId ? [[row.userId, row.azureId] as const] : [])),
-      );
-      const ids = [...new Set([...held.keys(), ...azureByUser.keys()])];
+      const ids = [...held.keys()];
       if (!ids.length) return { roles, users: [] };
       const people = await transaction
         .select({ id: user.id, name: user.name, email: user.email })
@@ -126,11 +111,14 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
           sub: person.id,
           name: person.name,
           email: emails.get(person.id) ?? null,
-          azureId: azureByUser.get(person.id) ?? null,
           telegramId: telegramByUser.get(person.id)?.telegramId ?? null,
           telegramUsername: telegramByUser.get(person.id)?.telegramUsername ?? null,
-          roles: held.get(person.id) ?? [],
-          assigned: (assigned.get(person.id) ?? []).filter((key) => boundKeys.has(key)).sort(),
+          roles: held.get(person.id)!,
+          assigned: assigned
+            .get(person.id)!
+            .filter((key) => boundKeys.has(key))
+            .sort(),
+          since: since.get(person.id)!,
         })),
       };
     },

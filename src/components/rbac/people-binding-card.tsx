@@ -17,18 +17,19 @@ import {
 } from "@/components/ui/select";
 import { errorMessage } from "@/lib/action-error";
 
-type Kind = "none" | "admin" | "member" | "lead";
+type Kind = "none" | "admin" | "capo" | "member" | "lead";
 
 const KINDS: { value: Kind; label: string }[] = [
   { value: "none", label: "Not managed from People" },
   { value: "admin", label: "Admin of the Telegram groups" },
+  { value: "capo", label: "Capo Admin" },
   { value: "member", label: "Team member" },
   { value: "lead", label: "Team Lead" },
 ];
 
 function bindingOf(kind: Kind, team: string) {
   if (kind === "none") return null;
-  if (kind === "admin") return "admin";
+  if (kind === "admin" || kind === "capo") return kind;
   return `team:${team.trim().toLowerCase()}:${kind}`;
 }
 
@@ -42,6 +43,7 @@ export function PeopleBindingCard({
   problem,
 }: {
   role: RoleSummary;
+  /** Whether the viewer holds `idp:people:bind` and every permission the role grants. */
   canEdit: boolean;
   /** Why the role can't be bound, if it can't. */
   problem: string | null;
@@ -84,8 +86,8 @@ export function PeopleBindingCard({
         {!canEdit ? (
           <p className="text-sm leading-6 text-muted-foreground">
             {KINDS.find((entry) => entry.value === kind)?.label}
-            {(kind === "member" || kind === "lead") && ` of team ${team}`}. Only Master Admin can
-            change this.
+            {(kind === "member" || kind === "lead") && ` of team ${team}`}. Changing this needs the
+            Bind roles to People permission and every permission this role grants.
           </p>
         ) : problem && !current ? (
           <p className="text-sm leading-6 text-muted-foreground">{problem}</p>

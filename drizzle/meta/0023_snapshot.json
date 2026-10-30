@@ -2127,7 +2127,7 @@
       "checkConstraints": {
         "role_people_binding_check": {
           "name": "role_people_binding_check",
-          "value": "\"role\".\"people_binding\" is null or (not \"role\".\"managed\" and \"role\".\"people_binding\" ~ '^(admin|team:[a-z0-9-]{1,32}:(member|lead))$')"
+          "value": "\"role\".\"people_binding\" is null or (not \"role\".\"managed\" and \"role\".\"people_binding\" ~ '^(admin|capo|team:[a-z0-9-]{1,32}:(member|lead))$')"
         }
       },
       "isRLSEnabled": false

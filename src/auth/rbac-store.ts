@@ -184,7 +184,7 @@ export async function withAuthorizedRbacWrite<T>(
   actorId: string,
   required: Extract<
     ManagedPermissionKey,
-    `${string}:write` | `${string}:assign` | `${string}:delete`
+    `${string}:write` | `${string}:assign` | `${string}:delete` | `${string}:bind`
   >,
   change: (transaction: Transaction, catalog: RbacCatalog, access: ResolvedAccess) => Promise<T>,
 ): Promise<T> {
@@ -239,9 +239,10 @@ export async function auditSnapshot(
 /** Editing role definitions and handing roles out are delegated separately. */
 function requiredForOperation(
   operation: string,
-): "idp:permissions:write" | "idp:roles:write" | "idp:roles:assign" {
+): "idp:permissions:write" | "idp:roles:write" | "idp:roles:assign" | "idp:people:bind" {
   if (operation.startsWith("permission.")) return "idp:permissions:write";
   if (operation === "role.assign" || operation === "role.unassign") return "idp:roles:assign";
+  if (operation === "role.people") return "idp:people:bind";
   return "idp:roles:write";
 }
 
@@ -427,23 +428,21 @@ export async function saveRole(
 
 /**
  * Binds a role to a People concept, or unbinds it with `null`. Binding hands the role's
- * membership to People writers (through the backend), so only Master Admin decides it.
+ * membership to People writers (through the backend), so it needs `idp:people:bind`, and,
+ * like editing a role, only a Master Admin may bind or unbind one granting permissions they
+ * don't hold (`mayDelegateMutation`).
  */
 export async function setRolePeopleBinding(
   actorId: string,
   roleId: string,
   binding: string | null,
 ) {
-  return withRbacWriteLock(actorId, "role.people", roleId, async (transaction, catalog, access) => {
-    if (!access.roles.includes(MASTER_ADMIN_ROLE_KEY)) {
-      logAuthorizationDenial(actorId, "rbac-store", [MASTER_ADMIN_ROLE_KEY]);
-      throw new RbacError(403, "Only Master Admin can choose which roles People manages.");
-    }
+  return withRbacWriteLock(actorId, "role.people", roleId, async (transaction, catalog) => {
     const current = requireRole(catalog, roleId);
     if (binding !== null) {
       if (!PEOPLE_BINDING_PATTERN.test(binding))
-        throw new RbacError(400, "Choose admin, or a team key with member or lead.", {
-          peopleBinding: "Use admin, team:<key>:member or team:<key>:lead.",
+        throw new RbacError(400, "Choose admin, capo, or a team key with member or lead.", {
+          peopleBinding: "Use admin, capo, team:<key>:member or team:<key>:lead.",
         });
       const problem = peopleBindingProblem(catalog, current);
       if (problem) throw new RbacError(400, problem);

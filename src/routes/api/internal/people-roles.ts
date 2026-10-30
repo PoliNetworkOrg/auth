@@ -20,7 +20,7 @@ async function backendClient(request: Request, scope: "idp:access:read" | "idp:p
 }
 
 /**
- * The roles Master Admin bound to People and who holds them (GET), and changes to them made
+ * The roles bound to People and who holds them (GET), and changes to them made
  * by the backend on behalf of a dashboard user (POST). See `src/auth/people-binding.ts` for
  * what the acting person needs.
  */

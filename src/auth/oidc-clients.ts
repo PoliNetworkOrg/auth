@@ -126,7 +126,7 @@ export const apiScopes = [
     id: "idp:people:roles",
     label: "People roles",
     description:
-      "Give and take back the roles Master Admin bound to People, on behalf of a signed-in person who may change them.",
+      "Give and take back the roles bound to People, on behalf of a signed-in person who may change them.",
     resource: "internal",
   },
 ] as const;

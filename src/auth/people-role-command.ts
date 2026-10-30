@@ -2,6 +2,12 @@ import { z } from "zod";
 import { parsePeopleBinding, peopleBindingProblem } from "./people-binding";
 import { expandRoleKeys, type RbacCatalog } from "./rbac";
 
+/**
+ * One People command from the backend. Each change names a desired state for one concept.
+ * Unknown fields are stripped, so a later optional field (for example the scope a Capo Admin
+ * acts in) can be sent before every Auth deployment reads it: an Auth that ignores it only
+ * applies the stricter rules it already has.
+ */
 export const peopleCommandSchema = z
   .object({
     id: z.uuid(),
@@ -12,6 +18,7 @@ export const peopleCommandSchema = z
       .array(
         z.discriminatedUnion("kind", [
           z.object({ kind: z.literal("admin"), active: z.boolean() }),
+          z.object({ kind: z.literal("capo"), active: z.boolean() }),
           z.object({
             kind: z.literal("team"),
             team: z.string().regex(/^[a-z0-9-]{1,32}$/),
@@ -23,7 +30,7 @@ export const peopleCommandSchema = z
       .max(64),
   })
   .superRefine((command, ctx) => {
-    const keys = command.changes.map((c) => (c.kind === "admin" ? "admin" : `team:${c.team}`));
+    const keys = command.changes.map((c) => (c.kind === "team" ? `team:${c.team}` : c.kind));
     if (new Set(keys).size !== keys.length)
       ctx.addIssue({ code: "custom", message: "Each concept may appear only once" });
   });
@@ -74,10 +81,10 @@ export function planPeopleCommand(
     next.add(keys[0]!);
   };
   for (const change of command.changes) {
-    if (change.kind === "admin") {
-      const keys = keysFor("admin");
+    if (change.kind !== "team") {
+      const keys = keysFor(change.kind);
       if (!keys.length) continue; // An unbound concept remains local to People.
-      if (change.active) give(keys, "admin");
+      if (change.active) give(keys, change.kind);
       else remove(keys);
     } else {
       const members = keysFor(`team:${change.team}:member`);
@@ -94,10 +101,10 @@ export function planPeopleCommand(
   for (const change of command.changes) {
     const has = (binding: string) =>
       bound.some((r) => r.peopleBinding === binding && result.held.includes(r.key));
-    if (change.kind === "admin") {
-      if (keysFor("admin").length && has("admin") !== change.active)
+    if (change.kind !== "team") {
+      if (keysFor(change.kind).length && has(change.kind) !== change.active)
         throw new PeopleCommandConflict(
-          "The admin role is inherited. Change its granting role in Auth.",
+          `The ${change.kind} role is inherited. Change its granting role in Auth.`,
         );
     } else {
       if (!bound.some((r) => r.peopleBinding?.startsWith(`team:${change.team}:`))) continue;

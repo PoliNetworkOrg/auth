@@ -835,13 +835,13 @@ export function createMcpServer(principal: McpPrincipal) {
     );
   }
 
-  if (masterAdmin) {
+  if (can("idp:people:bind")) {
     server.registerTool(
       offer("set_role_people_binding"),
       {
         title: "Manage a role from People",
         description:
-          "Binds a hand-made role to the admin dashboard's People register, or unbinds it with null. Holders of a bound role appear in People, and whoever may change that part of People can give or take it back, never to themselves and never beyond the permissions they hold. Roles carrying idp:* permissions can't be bound. Master Admin only.",
+          "Binds a hand-made role to the admin dashboard's People register, or unbinds it with null. Holders of a bound role appear in People, and whoever may change that part of People can give or take it back, never to themselves and never beyond the permissions they hold. Roles carrying idp:* permissions can't be bound, and only Master Admin can bind or unbind a role granting permissions you don't hold.",
         inputSchema: z.object({
           role: roleRef,
           binding: z
@@ -849,7 +849,7 @@ export function createMcpServer(principal: McpPrincipal) {
             .max(64)
             .nullable()
             .describe(
-              "admin (Telegram group admins), team:<key>:member or team:<key>:lead, with the dashboard's team key: it, hr, design, intl or events.",
+              "admin (Telegram group admins), capo (Capo Admins), team:<key>:member or team:<key>:lead, with the dashboard's team key: it, hr, design, intl or events.",
             ),
         }),
         annotations: { idempotentHint: true },
@@ -860,7 +860,9 @@ export function createMcpServer(principal: McpPrincipal) {
           return setRolePeopleBinding(actor, current.id, binding);
         }),
     );
+  }
 
+  if (masterAdmin) {
     server.registerTool(
       offer("list_audit_events"),
       {
