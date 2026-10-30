@@ -194,6 +194,10 @@ describe.skipIf(!process.env.PEOPLE_ROLES_TEST_DATABASE_URL)(
       expect(directory.roles.map((entry) => entry.binding)).toEqual(
         expect.arrayContaining(["admin", "capo", `team:${team}:member`, `team:${team}:lead`]),
       );
+      expect(directory.roles.find((entry) => entry.key === `${team}-capo`)).toMatchObject({
+        permissions: [],
+        bindings: ["capo", "admin"],
+      });
       const today = new Date().toISOString().slice(0, 10);
       const person = directory.users.find((entry) => entry.sub === target)!;
       expect(person).not.toHaveProperty("azureId");
