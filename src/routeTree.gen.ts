@@ -37,6 +37,7 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiDevLoginRouteImport } from './routes/api/dev/login'
 import { Route as ApiInternalAccessSnapshotRouteImport } from './routes/api/internal/access-snapshot'
 import { Route as ApiInternalEsignUsersRouteImport } from './routes/api/internal/esign-users'
+import { Route as ApiInternalPeopleRolesRouteImport } from './routes/api/internal/people-roles'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -183,6 +184,11 @@ const ApiInternalEsignUsersRoute = ApiInternalEsignUsersRouteImport.update({
   path: '/api/internal/esign-users',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiInternalPeopleRolesRoute = ApiInternalPeopleRolesRouteImport.update({
+  id: '/api/internal/people-roles',
+  path: '/api/internal/people-roles',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -211,6 +217,7 @@ export interface FileRoutesByFullPath {
   '/api/dev/login': typeof ApiDevLoginRoute
   '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
   '/api/internal/esign-users': typeof ApiInternalEsignUsersRoute
+  '/api/internal/people-roles': typeof ApiInternalPeopleRolesRoute
   '/access/permissions/': typeof AccessPermissionsIndexRoute
   '/access/roles/': typeof AccessRolesIndexRoute
 }
@@ -238,6 +245,7 @@ export interface FileRoutesByTo {
   '/api/dev/login': typeof ApiDevLoginRoute
   '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
   '/api/internal/esign-users': typeof ApiInternalEsignUsersRoute
+  '/api/internal/people-roles': typeof ApiInternalPeopleRolesRoute
   '/access/permissions': typeof AccessPermissionsIndexRoute
   '/access/roles': typeof AccessRolesIndexRoute
 }
@@ -269,6 +277,7 @@ export interface FileRoutesById {
   '/api/dev/login': typeof ApiDevLoginRoute
   '/api/internal/access-snapshot': typeof ApiInternalAccessSnapshotRoute
   '/api/internal/esign-users': typeof ApiInternalEsignUsersRoute
+  '/api/internal/people-roles': typeof ApiInternalPeopleRolesRoute
   '/access/permissions/': typeof AccessPermissionsIndexRoute
   '/access/roles/': typeof AccessRolesIndexRoute
 }
@@ -301,6 +310,7 @@ export interface FileRouteTypes {
     | '/api/dev/login'
     | '/api/internal/access-snapshot'
     | '/api/internal/esign-users'
+    | '/api/internal/people-roles'
     | '/access/permissions/'
     | '/access/roles/'
   fileRoutesByTo: FileRoutesByTo
@@ -328,6 +338,7 @@ export interface FileRouteTypes {
     | '/api/dev/login'
     | '/api/internal/access-snapshot'
     | '/api/internal/esign-users'
+    | '/api/internal/people-roles'
     | '/access/permissions'
     | '/access/roles'
   id:
@@ -358,6 +369,7 @@ export interface FileRouteTypes {
     | '/api/dev/login'
     | '/api/internal/access-snapshot'
     | '/api/internal/esign-users'
+    | '/api/internal/people-roles'
     | '/access/permissions/'
     | '/access/roles/'
   fileRoutesById: FileRoutesById
@@ -379,6 +391,7 @@ export interface RootRouteChildren {
   ApiDevLoginRoute: typeof ApiDevLoginRoute
   ApiInternalAccessSnapshotRoute: typeof ApiInternalAccessSnapshotRoute
   ApiInternalEsignUsersRoute: typeof ApiInternalEsignUsersRoute
+  ApiInternalPeopleRolesRoute: typeof ApiInternalPeopleRolesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -579,6 +592,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiInternalEsignUsersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/internal/people-roles': {
+      id: '/api/internal/people-roles'
+      path: '/api/internal/people-roles'
+      fullPath: '/api/internal/people-roles'
+      preLoaderRoute: typeof ApiInternalPeopleRolesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -655,6 +675,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiDevLoginRoute: ApiDevLoginRoute,
   ApiInternalAccessSnapshotRoute: ApiInternalAccessSnapshotRoute,
   ApiInternalEsignUsersRoute: ApiInternalEsignUsersRoute,
+  ApiInternalPeopleRolesRoute: ApiInternalPeopleRolesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
