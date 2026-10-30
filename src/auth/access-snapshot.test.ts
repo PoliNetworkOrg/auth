@@ -36,6 +36,7 @@ const role = (
   permissions,
   parents,
   memberCount: 0,
+  peopleBinding: null,
   createdAt: null,
   updatedAt: null,
 });
