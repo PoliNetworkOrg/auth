@@ -14,7 +14,7 @@ import {
   MASTER_ADMIN_ROLE_KEY,
   resolveAccess,
 } from "./rbac";
-import { planPeopleCommand } from "./people-role-command";
+import { describePeopleBoundRoles, planPeopleCommand } from "./people-role-command";
 
 function permission(key: string, managed = false): PermissionSummary {
   return {
@@ -312,4 +312,21 @@ describe("planPeopleCommand with Capo Admins", () => {
       planPeopleCommand(ambiguous, [], command([{ kind: "admin", active: true }])),
     ).toThrow(/exactly one/);
   });
+});
+
+it("describes each bound role with its effective permissions and inherited bindings", () => {
+  const described = describePeopleBoundRoles(catalog);
+  expect(described.find((entry) => entry.key === "capo-admin")).toEqual({
+    key: "capo-admin",
+    name: "capo-admin",
+    binding: "capo",
+    permissions: ["people:self", "tg:trusted"],
+    bindings: ["capo", "admin"],
+  });
+  expect(described.find((entry) => entry.key === "hr-lead")).toMatchObject({
+    permissions: ["admin:access", "people:read", "people:self", "people:write"],
+    bindings: ["team:hr:lead", "team:hr:member"],
+  });
+  // Roles People can't manage are left out, as everywhere else.
+  expect(described.map((entry) => entry.key)).not.toContain("sneaky");
 });

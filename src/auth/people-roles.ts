@@ -8,10 +8,11 @@ import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
 import { peopleRoleChangeProblem } from "./people-binding";
 import {
+  type PeopleBoundRole,
   type PeopleCommand,
   type PeopleCommandResult,
   PeopleCommandConflict,
-  peopleBoundRoles,
+  describePeopleBoundRoles,
   peopleCommandResult,
   planPeopleCommand,
 } from "./people-role-command";
@@ -20,7 +21,7 @@ import { RbacError, assignedRoleKeys, auditSnapshot, readCatalog } from "./rbac-
 
 export type PeopleDirectory = {
   /** Every role People manages, with what holding it means. */
-  roles: { key: string; name: string; binding: string }[];
+  roles: PeopleBoundRole[];
   /** Everyone holding at least one of those roles, by hand or through a parent role. */
   users: {
     sub: string;
@@ -50,14 +51,9 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
   return db.transaction(
     async (transaction) => {
       const catalog = await readCatalog(transaction);
-      const bound = peopleBoundRoles(catalog);
-      const boundKeys = new Set(bound.map((entry) => entry.key));
-      const roles = bound.map((entry) => ({
-        key: entry.key,
-        name: entry.name,
-        binding: entry.peopleBinding!,
-      }));
-      if (!bound.length) return { roles, users: [] };
+      const roles = describePeopleBoundRoles(catalog);
+      const boundKeys = new Set(roles.map((entry) => entry.key));
+      if (!roles.length) return { roles, users: [] };
 
       const assignments = await transaction
         .select({ userId: userRole.userId, roleKey: role.key, assignedAt: userRole.assignedAt })

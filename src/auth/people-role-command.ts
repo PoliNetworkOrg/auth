@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { parsePeopleBinding, peopleBindingProblem } from "./people-binding";
-import { expandRoleKeys, type RbacCatalog } from "./rbac";
+import { effectiveRolePermissions, expandRoleKeys, type RbacCatalog } from "./rbac";
 
 /**
  * One People command from the backend. Each change names a desired state for one concept.
@@ -35,8 +35,22 @@ export const peopleCommandSchema = z
       ctx.addIssue({ code: "custom", message: "Each concept may appear only once" });
   });
 export type PeopleCommand = z.infer<typeof peopleCommandSchema>;
+/**
+ * A role bound to People, as the backend sees it. `permissions` and `bindings` let it apply
+ * `peopleRoleChangeProblem`'s rules itself to assignments it keeps before a record is linked,
+ * which this identity provider only sees at link time.
+ */
+export type PeopleBoundRole = {
+  key: string;
+  name: string;
+  binding: string;
+  /** Every permission the role grants, including through parent roles, sorted. */
+  permissions: string[];
+  /** Its own binding, then those of the roles it inherits. */
+  bindings: string[];
+};
 export type PeopleCommandResult = {
-  roles: { key: string; name: string; binding: string }[];
+  roles: PeopleBoundRole[];
   held: string[];
   assigned: string[];
 };
@@ -49,11 +63,28 @@ export function peopleBoundRoles(catalog: RbacCatalog) {
   );
 }
 
+/** The bound roles, with what `peopleRoleChangeProblem` checks for each of them. */
+export function describePeopleBoundRoles(catalog: RbacCatalog): PeopleBoundRole[] {
+  return peopleBoundRoles(catalog).map((r) => {
+    const inherited = expandRoleKeys(catalog, [r.key]).flatMap((key) => {
+      const binding = catalog.roles.find((entry) => entry.key === key)?.peopleBinding;
+      return key !== r.key && parsePeopleBinding(binding) ? [binding!] : [];
+    });
+    return {
+      key: r.key,
+      name: r.name,
+      binding: r.peopleBinding!,
+      permissions: effectiveRolePermissions(catalog, r.key),
+      bindings: [r.peopleBinding!, ...inherited],
+    };
+  });
+}
+
 export function peopleCommandResult(catalog: RbacCatalog, assigned: string[]): PeopleCommandResult {
-  const roles = peopleBoundRoles(catalog);
+  const roles = describePeopleBoundRoles(catalog);
   const keys = new Set(roles.map((r) => r.key));
   return {
-    roles: roles.map((r) => ({ key: r.key, name: r.name, binding: r.peopleBinding! })),
+    roles,
     held: expandRoleKeys(catalog, assigned).filter((key) => keys.has(key)),
     assigned: assigned.filter((key) => keys.has(key)).sort(),
   };
