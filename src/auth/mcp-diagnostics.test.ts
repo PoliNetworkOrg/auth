@@ -188,6 +188,7 @@ function role(key: string, permissions: string[] = [], parents: string[] = []): 
     permissions,
     parents,
     memberCount: 0,
+    peopleBinding: null,
     createdAt: null,
     updatedAt: null,
   };

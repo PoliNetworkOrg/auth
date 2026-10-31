@@ -50,6 +50,7 @@ function role(
     permissions,
     parents,
     memberCount: 0,
+    peopleBinding: null,
     createdAt: null,
     updatedAt: null,
   };
@@ -282,6 +283,7 @@ describe("permissions the identity provider defines itself", () => {
       "idp:roles:read",
       "idp:roles:write",
       "idp:roles:assign",
+      "idp:people:bind",
       "idp:applications:read",
       "idp:applications:write",
       "idp:mcp",

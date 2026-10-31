@@ -13,7 +13,9 @@ import {
 import { deleteRoleFn, getCatalog, getRoleMembers, saveRoleFn } from "@/auth/rbac.functions";
 import { requireAccess, useAccess } from "@/components/access";
 import { ConfirmDelete } from "@/components/confirm-delete";
+import { peopleBindingProblem } from "@/auth/people-binding";
 import { KeyChip } from "@/components/rbac/fields";
+import { PeopleBindingCard } from "@/components/rbac/people-binding-card";
 import { RoleForm } from "@/components/rbac/role-form";
 import { RoleMembers } from "@/components/rbac/role-members";
 import { canGrantRole } from "@/components/rbac/delegation";
@@ -58,6 +60,9 @@ function RoleDetail() {
     !!role &&
     !role.managed &&
     canGrantRole(access, catalog, role.key);
+  // Binding hands the role's membership to People, so it is bounded the same way.
+  const canBind =
+    access.can("idp:people:bind") && !!role && canGrantRole(access, catalog, role.key);
 
   async function save(draft: RoleDraft) {
     setBusy(true);
@@ -163,6 +168,15 @@ function RoleDetail() {
           />
         </CardContent>
       </Card>
+
+      {!role.managed && (
+        <PeopleBindingCard
+          key={`people-${role.id}-${role.updatedAt ?? ""}`}
+          role={role}
+          canEdit={canBind}
+          problem={peopleBindingProblem(catalog, role)}
+        />
+      )}
 
       <Card>
         <CardHeader>

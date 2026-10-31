@@ -1,9 +1,18 @@
 import { createLocalJWKSet, jwtVerify, type JWK } from "jose";
 import { auth } from "./index";
 import { env } from "../env";
+import type { InternalScope } from "./oidc-clients";
 
 /** Verify the IdP's own resource-bound service token without trusting its claims before signature checks. */
 export async function snapshotClientId(authorization: string | null): Promise<string | null> {
+  return serviceClientId(authorization, "idp:access:read");
+}
+
+/** The client a valid service token for this IdP's internal resource belongs to, when it carries `scope`. */
+export async function serviceClientId(
+  authorization: string | null,
+  scope: InternalScope,
+): Promise<string | null> {
   const bearer = /^Bearer ([A-Za-z0-9._~-]+)$/.exec(authorization ?? "");
   const audience = env.OAUTH_INTERNAL_RESOURCE_URI;
   if (!bearer || !audience) return null;
@@ -27,7 +36,7 @@ export async function snapshotClientId(authorization: string | null): Promise<st
       payload.client_id !== payload.azp ||
       payload.client_id !== payload.sub ||
       typeof payload.scope !== "string" ||
-      !payload.scope.split(" ").includes("idp:access:read") ||
+      !payload.scope.split(" ").includes(scope) ||
       payload.cnf !== undefined
     )
       return null;
