@@ -1,3 +1,4 @@
+import { Hint } from "@/components/ui/tooltip";
 import { useEffect, useState } from "react";
 import { cn } from "cn";
 import { CopyButton } from "@/components/copy-button";
@@ -57,26 +58,28 @@ export function SecretText({
 
   return (
     <span className="inline-flex max-w-full min-w-0 items-center gap-1">
-      <button
-        type="button"
-        aria-label={shown ? `Hide ${label}` : `Show ${label}`}
-        title={shown ? "Click to hide" : "Click to reveal"}
-        onClick={() => setShown((value) => !value)}
-        className="min-w-0 cursor-pointer rounded-sm text-left font-mono text-xs break-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <span
-          aria-hidden={!revealed}
-          className={cn(
-            "transition-[filter,color] motion-reduce:transition-none",
-            // The value leaves faster than it arrives.
-            blurred
-              ? "text-muted-foreground blur-[4px] duration-100 ease-in"
-              : "text-foreground blur-0 duration-200 ease-out",
-          )}
+      <Hint content={shown ? "Click to hide" : "Click to reveal"}>
+        <button
+          type="button"
+          aria-label={shown ? `Hide ${label}` : `Show ${label}`}
+
+          onClick={() => setShown((value) => !value)}
+          className="min-w-0 cursor-pointer rounded-sm text-left font-mono text-xs break-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          {truncate(revealed ? value : scramble(value), maxChars)}
-        </span>
-      </button>
+          <span
+            aria-hidden={!revealed}
+            className={cn(
+              "transition-[filter,color] motion-reduce:transition-none",
+              // The value leaves faster than it arrives.
+              blurred
+                ? "text-muted-foreground blur-[4px] duration-100 ease-in"
+                : "text-foreground blur-0 duration-200 ease-out",
+            )}
+          >
+            {truncate(revealed ? value : scramble(value), maxChars)}
+          </span>
+        </button>
+      </Hint>
       <CopyButton value={value} label={`Copy ${label}`} className="shrink-0" />
     </span>
   );

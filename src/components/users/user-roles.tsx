@@ -1,3 +1,4 @@
+import { Hint } from "@/components/ui/tooltip";
 import { Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { LoaderCircle, ShieldCheck, Sparkles, UserMinus, UserPlus } from "lucide-react";
@@ -104,25 +105,30 @@ export function UserRoles({
                   </p>
                 </div>
                 {canWrite && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-destructive"
-                    disabled={busy !== "" || !mayGrant(entry.key)}
-                    title={
+                  <Hint
+                    content={
                       mayGrant(entry.key)
                         ? undefined
                         : "This role grants permissions you do not hold. Ask Master Admin."
                     }
-                    onClick={() => void change("unassign", entry.key)}
                   >
-                    {busy === entry.key ? (
-                      <LoaderCircle className="animate-spin" aria-hidden="true" />
-                    ) : (
-                      <UserMinus aria-hidden="true" />
-                    )}
-                    Remove
-                  </Button>
+                    <span className="inline-flex">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive"
+                        disabled={busy !== "" || !mayGrant(entry.key)}
+                        onClick={() => void change("unassign", entry.key)}
+                      >
+                        {busy === entry.key ? (
+                          <LoaderCircle className="animate-spin" aria-hidden="true" />
+                        ) : (
+                          <UserMinus aria-hidden="true" />
+                        )}
+                        Remove
+                      </Button>
+                    </span>
+                  </Hint>
                 )}
               </li>
             );

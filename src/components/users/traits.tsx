@@ -1,3 +1,4 @@
+import { Hint } from "@/components/ui/tooltip";
 import type { ComponentType } from "react";
 import { BadgeCheck, Crown, Fingerprint, GraduationCap, Send } from "lucide-react";
 import { cn } from "cn";
@@ -51,19 +52,19 @@ export function StatusBadges({
       {shown.map((trait) => {
         const Icon = TRAIT_ICONS[trait.key];
         return (
-          <Badge
-            key={trait.key}
-            title={trait.description}
-            className={cn(
-              "py-0.5",
-              trait.key === "student"
-                ? "border-transparent bg-secondary text-secondary-foreground"
-                : "border-primary/30 bg-primary/10 text-primary",
-            )}
-          >
-            <Icon className="size-3" aria-hidden="true" />
-            {trait.label}
-          </Badge>
+          <Hint content={trait.description} key={trait.key}>
+            <Badge
+              className={cn(
+                "py-0.5",
+                trait.key === "student"
+                  ? "border-transparent bg-secondary text-secondary-foreground"
+                  : "border-primary/30 bg-primary/10 text-primary",
+              )}
+            >
+              <Icon className="size-3" aria-hidden="true" />
+              {trait.label}
+            </Badge>
+          </Hint>
         );
       })}
     </div>
@@ -78,19 +79,22 @@ export function SignInIcons({ held }: { held: (trait: UserTrait) => boolean }) {
         const Icon = TRAIT_ICONS[trait.key];
         const has = held(trait.key);
         return (
-          <li
+          <Hint
+            content={has ? trait.description : `No ${trait.label.toLowerCase()}`}
             key={trait.key}
-            title={has ? trait.description : `No ${trait.label.toLowerCase()}`}
-            className={cn(
-              "flex",
-              has ? "text-foreground" : "text-muted-foreground opacity-30 grayscale",
-            )}
           >
-            <Icon className="size-4" aria-hidden="true" />
-            <span className="sr-only">
-              {trait.label}: {has ? "yes" : "no"}
-            </span>
-          </li>
+            <li
+              className={cn(
+                "flex",
+                has ? "text-foreground" : "text-muted-foreground opacity-30 grayscale",
+              )}
+            >
+              <Icon className="size-4" aria-hidden="true" />
+              <span className="sr-only">
+                {trait.label}: {has ? "yes" : "no"}
+              </span>
+            </li>
+          </Hint>
         );
       })}
     </ul>

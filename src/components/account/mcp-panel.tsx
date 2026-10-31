@@ -1,3 +1,4 @@
+import { Hint } from "@/components/ui/tooltip";
 import { useState } from "react";
 import { Bot, Unplug } from "lucide-react";
 import type { AccountDetails } from "@/auth/account.functions";
@@ -54,17 +55,19 @@ export function McpPanel({ mcp, actions }: { mcp: Mcp; actions: AccountActions }
                   Active <TimeAgo value={agent.lastUsedAt} />
                 </p>
               </div>
-              <Button
-                variant="destructive-soft"
-                size="icon-sm"
-                className="border-0"
-                aria-label={`Disconnect ${name}`}
-                title="Disconnect"
-                disabled={locked}
-                onClick={() => setPending({ clientId: agent.clientId, name })}
-              >
-                {actions.busy === agent.clientId ? <Spinner /> : <Unplug />}
-              </Button>
+              <Hint content="Disconnect">
+                <Button
+                  variant="destructive-soft"
+                  size="icon-sm"
+                  className="border-0"
+                  aria-label={`Disconnect ${name}`}
+
+                  disabled={locked}
+                  onClick={() => setPending({ clientId: agent.clientId, name })}
+                >
+                  {actions.busy === agent.clientId ? <Spinner /> : <Unplug />}
+                </Button>
+              </Hint>
             </li>
           );
         })}
