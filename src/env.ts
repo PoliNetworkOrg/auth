@@ -27,10 +27,6 @@ export const env = createEnv({
     // Optional Entra group whose direct members hold the built-in Direttivo role.
     // Unset: nobody is inferred as Direttivo.
     PN_ENTRA_DIRETTIVO_GROUP_ID: z.uuid().optional(),
-    // Optional Entra groups whose direct members hold the built-in Presidente and
-    // Segretario roles. Unset: nobody is inferred as holding that office.
-    PN_ENTRA_PRESIDENTE_GROUP_ID: z.uuid().optional(),
-    PN_ENTRA_SEGRETARIO_GROUP_ID: z.uuid().optional(),
     PN_ENTRA_MEMBER_REFRESH_HOURS: z.coerce.number().int().positive().default(24),
     // Optional stricter Entra group whose direct members hold the built-in Master Admin
     // role, and through it every permission.

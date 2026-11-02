@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { RbacCatalog } from "@/auth/rbac";
-import { canGrantPermission, canGrantRole } from "./delegation";
+import { canAssignRole, canGrantPermission, canGrantRole } from "./delegation";
 
 const catalog: RbacCatalog = {
   permissions: ["read", "write"].map((key) => ({
@@ -61,5 +61,22 @@ describe("delegation choices", () => {
     const access = { isMasterAdmin: true, permissions: [] };
     expect(canGrantPermission(access, catalog, "write")).toBe(true);
     expect(canGrantRole(access, catalog, "inherited-writer")).toBe(true);
+  });
+});
+
+describe("assigning the board offices", () => {
+  const office = { ...catalog.roles[0]!, id: "presidente", key: "presidente", managed: true };
+  const offices: RbacCatalog = { ...catalog, roles: [...catalog.roles, office] };
+  const direttivo = { ...office, id: "direttivo", key: "direttivo" };
+
+  it("is left to Master Admin, even for someone holding everything the office grants", () => {
+    expect(canAssignRole({ isMasterAdmin: true, permissions: [] }, offices, office)).toBe(true);
+    expect(
+      canAssignRole({ isMasterAdmin: false, permissions: ["read", "write"] }, offices, office),
+    ).toBe(false);
+  });
+
+  it("never covers built-in roles proven by evidence", () => {
+    expect(canAssignRole({ isMasterAdmin: true, permissions: [] }, offices, direttivo)).toBe(false);
   });
 });

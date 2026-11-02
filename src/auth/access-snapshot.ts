@@ -14,7 +14,7 @@ import { authorizationMutationLock } from "../db/security-lock";
 import { env } from "../env";
 import { listEntraGroupMembers } from "./membership";
 import { isManagedPermissionKey, resolveAccess, type RbacCatalog } from "./rbac";
-import { readCatalog } from "./rbac-store";
+import { handAssignableRole, readCatalog } from "./rbac-store";
 
 const ENTRA_GRACE_MS = 3_600_000;
 // The backend polls every 30 s; reusing a recent listing bounds Graph reads per group.
@@ -67,20 +67,6 @@ function configuredGroups(): Group[] {
           source: "entra:direttivo",
           roleKey: "direttivo",
           groupId: env.PN_ENTRA_DIRETTIVO_GROUP_ID,
-        }
-      : null,
-    env.PN_ENTRA_PRESIDENTE_GROUP_ID
-      ? {
-          source: "entra:presidente",
-          roleKey: "presidente",
-          groupId: env.PN_ENTRA_PRESIDENTE_GROUP_ID,
-        }
-      : null,
-    env.PN_ENTRA_SEGRETARIO_GROUP_ID
-      ? {
-          source: "entra:segretario",
-          roleKey: "segretario",
-          groupId: env.PN_ENTRA_SEGRETARIO_GROUP_ID,
         }
       : null,
     env.PN_ENTRA_OIDC_ADMIN_GROUP_ID
@@ -285,7 +271,7 @@ export async function buildBackendSnapshot(): Promise<string> {
       .select({ userId: userRole.userId, roleKey: role.key })
       .from(userRole)
       .innerJoin(role, eq(userRole.roleId, role.id))
-      .where(eq(role.managed, false));
+      .where(handAssignableRole());
     const proofs = await transaction
       .select({
         userId: account.userId,

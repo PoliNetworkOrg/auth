@@ -37,8 +37,6 @@ const schema = z
     OAUTH_BACKEND_EVENTS_URL: optional(z.url()),
     PN_ENTRA_MEMBER_GROUP_ID: optional(z.uuid()),
     PN_ENTRA_DIRETTIVO_GROUP_ID: optional(z.uuid()),
-    PN_ENTRA_PRESIDENTE_GROUP_ID: optional(z.uuid()),
-    PN_ENTRA_SEGRETARIO_GROUP_ID: optional(z.uuid()),
     PN_ENTRA_MEMBER_REFRESH_HOURS: optional(z.coerce.number().int().positive()),
     STUDENT_VERIFICATION_TTL_DAYS: optional(z.coerce.number().int().positive()),
     GOOGLE_CLIENT_ID: optional(z.string().trim().min(1)),
@@ -126,9 +124,7 @@ const schema = z
     if (
       (credentials.some(Boolean) ||
         config.PN_ENTRA_OIDC_ADMIN_GROUP_ID ||
-        config.PN_ENTRA_DIRETTIVO_GROUP_ID ||
-        config.PN_ENTRA_PRESIDENTE_GROUP_ID ||
-        config.PN_ENTRA_SEGRETARIO_GROUP_ID) &&
+        config.PN_ENTRA_DIRETTIVO_GROUP_ID) &&
       !credentials.every(Boolean)
     )
       context.addIssue({

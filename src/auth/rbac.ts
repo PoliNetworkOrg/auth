@@ -1,10 +1,11 @@
 // Shared by the server and the browser: keep this file free of server-only imports.
 
 /**
- * Roles the identity provider always defines itself. They exist without being created,
- * cannot be deleted or assigned by hand, and are conferred by the rest of the identity
- * provider rather than by an administrator: `state` names the identity state that proves
- * the role, and is null for a role conferred some other way.
+ * Roles the identity provider always defines itself. They exist without being created and
+ * cannot be deleted. Most are conferred by the rest of the identity provider rather than by
+ * an administrator: `state` names the identity state that proves the role, and is null for
+ * a role conferred some other way. The board offices are the exception: `masterAssigned`
+ * roles are given and taken back by hand, and only by a Master Admin.
  *
  * Administrators can still rename them, describe them, give them permissions, and place
  * them in the role hierarchy — only their membership is out of their hands. `parents` are
@@ -16,6 +17,7 @@ export const STATIC_ROLES = [
     state: null,
     /** Holds every permission that exists, including ones created later. */
     grantsAllPermissions: true,
+    masterAssigned: false,
     parents: [],
     name: "Master Admin",
     description: "Complete control of this identity provider.",
@@ -26,6 +28,7 @@ export const STATIC_ROLES = [
     key: "socio",
     state: "socio",
     grantsAllPermissions: false,
+    masterAssigned: false,
     parents: [],
     name: "Socio",
     description: "Member of PoliNetwork APS.",
@@ -36,6 +39,7 @@ export const STATIC_ROLES = [
     key: "direttivo",
     state: "direttivo",
     grantsAllPermissions: false,
+    masterAssigned: false,
     parents: [],
     name: "Direttivo",
     description: "Member of the PoliNetwork APS board.",
@@ -44,30 +48,31 @@ export const STATIC_ROLES = [
   },
   {
     key: "presidente",
-    state: "presidente",
+    state: null,
     grantsAllPermissions: false,
+    masterAssigned: true,
     /** The President is on the board, so holds everything Direttivo grants. */
     parents: ["direttivo"],
     name: "Presidente",
     description: "President of the PoliNetwork APS board.",
-    evidence:
-      "Direct membership of the Presidente group in PoliNetwork Entra ID. Membership checks expire after one minute.",
+    evidence: "Given by hand, and only by a Master Admin.",
   },
   {
     key: "segretario",
-    state: "segretario",
+    state: null,
     grantsAllPermissions: false,
+    masterAssigned: true,
     /** The Secretary is on the board, so holds everything Direttivo grants. */
     parents: ["direttivo"],
     name: "Segretario",
     description: "Secretary of the PoliNetwork APS board.",
-    evidence:
-      "Direct membership of the Segretario group in PoliNetwork Entra ID. Membership checks expire after one minute.",
+    evidence: "Given by hand, and only by a Master Admin.",
   },
   {
     key: "student",
     state: "student",
     grantsAllPermissions: false,
+    masterAssigned: false,
     parents: [],
     name: "Student",
     description: "Verified Politecnico di Milano student.",
@@ -101,6 +106,19 @@ export function staticRolesForStates(states: readonly string[]): string[] {
   return STATIC_ROLES.filter((entry) => entry.state !== null && states.includes(entry.state)).map(
     (entry) => entry.key,
   );
+}
+
+/** Built-in roles that a Master Admin gives and takes back by hand. */
+export const MASTER_ASSIGNED_ROLE_KEYS: string[] = STATIC_ROLES.filter(
+  (entry) => entry.masterAssigned,
+).map((entry) => entry.key);
+
+/**
+ * Whether people hold this role through hand-made assignments: every role an administrator
+ * created, plus the built-in roles a Master Admin assigns.
+ */
+export function takesHandAssignments(role: { key: string; managed: boolean }) {
+  return !role.managed || MASTER_ASSIGNED_ROLE_KEYS.includes(role.key);
 }
 
 /** The roles a built-in role always inherits from. */
@@ -251,14 +269,17 @@ export type RoleSummary = {
   key: string;
   name: string;
   description: string | null;
-  /** Managed roles are inferred from identity evidence and never assigned by hand. */
+  /**
+   * Managed roles are defined by the identity provider. Their holders come from identity
+   * evidence, except the ones only a Master Admin assigns; see `takesHandAssignments`.
+   */
   managed: boolean;
   sourceState: string | null;
   /** Keys of the permissions granted directly, before inheritance. */
   permissions: string[];
   /** Keys of the roles this role inherits permissions from. */
   parents: string[];
-  /** People holding a hand-made assignment. Always 0 for managed roles. */
+  /** People holding a hand-made assignment. Always 0 for roles that take none. */
   memberCount: number;
   /** What holding it means in the People register; see `people-binding.ts`. */
   peopleBinding: string | null;

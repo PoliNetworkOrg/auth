@@ -5,15 +5,15 @@ import { identityEvidence } from "../db/evidence";
 import { db } from "../db/index";
 import { appEmail, claimEmail } from "./contact-email";
 import type { IdentityClaims } from "./policy";
-import { STATIC_ROLES } from "./rbac";
+import { STATIC_ROLES, takesHandAssignments } from "./rbac";
 import { readCatalog } from "./rbac-store";
 import { isPlaceholderEmail } from "./users";
 
 /** The sign-in accounts whose address the account page shows on its card. */
 const EMAIL_PROVIDERS = ["google", "pn-entra"] as const;
 
-/** Socio, Direttivo and the board offices are groups in PoliNetwork's Entra tenant, so they read as groups. */
-const GROUP_STATES = ["socio", "direttivo", "presidente", "segretario"];
+/** Socio and Direttivo are groups in PoliNetwork's Entra tenant, so they read as groups. */
+const GROUP_STATES = ["socio", "direttivo"];
 
 /**
  * What the account page shows besides the linked accounts and passkeys: the address on each
@@ -94,7 +94,7 @@ export async function readAccountOverview(
   }));
   const assigned = identity.roles.flatMap((key) => {
     const role = roles.get(key);
-    return role && !role.managed
+    return role && takesHandAssignments(role)
       ? [{ key, name: role.name, description: role.description, automatic: false }]
       : [];
   });

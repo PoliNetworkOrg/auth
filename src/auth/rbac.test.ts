@@ -15,6 +15,7 @@ import {
   resolveAccess,
   roleParentWouldCycle,
   staticRolesForStates,
+  takesHandAssignments,
   validatePermissionDraft,
   validateRoleDraft,
   withIntrinsicImplications,
@@ -130,9 +131,16 @@ describe("roles the identity provider defines itself", () => {
     expect(isStaticRoleKey("chair")).toBe(false);
   });
 
-  it("confers the board offices from their own states", () => {
-    expect(staticRolesForStates(["presidente", "socio"])).toEqual(["socio", "presidente"]);
-    expect(staticRolesForStates(["segretario"])).toEqual(["segretario"]);
+  it("never confers the board offices from a state", () => {
+    expect(staticRolesForStates(["presidente", "segretario", "direttivo"])).toEqual(["direttivo"]);
+  });
+
+  it("takes hand assignments only for created roles and the board offices", () => {
+    for (const key of ["presidente", "segretario"])
+      expect(takesHandAssignments({ key, managed: true })).toBe(true);
+    for (const key of ["master-admin", "socio", "direttivo", "student"])
+      expect(takesHandAssignments({ key, managed: true })).toBe(false);
+    expect(takesHandAssignments({ key: "chair", managed: false })).toBe(true);
   });
 
   it("refuses a new role that would shadow one of them", () => {

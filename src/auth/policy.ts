@@ -9,8 +9,6 @@ export type IdentityEvidence = {
 const STATE_PROVIDERS: Record<string, string> = {
   socio: "pn-entra",
   direttivo: "pn-entra",
-  presidente: "pn-entra",
-  segretario: "pn-entra",
   student: "polimi-email",
 };
 
