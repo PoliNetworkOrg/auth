@@ -1,3 +1,4 @@
+import { Hint } from "@/components/ui/tooltip";
 // Fields shared by the new-application wizard and the application settings page.
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "cn";
@@ -136,27 +137,28 @@ export function LogoPreview({ url, dark }: { url: string; dark?: boolean }) {
   }, [url]);
   const broken = !!src && failed === src;
   return (
-    <div
-      title={broken ? "This image couldn't be loaded" : undefined}
-      className={cn(
-        // `dark` swaps in the dark theme tokens, whatever the page theme is.
-        "flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border p-1",
-        dark ? "dark bg-background" : "bg-white",
-      )}
-    >
-      {broken ? (
-        <ImageOff className="size-4 text-muted-foreground" aria-hidden="true" />
-      ) : src ? (
-        <img
-          key={src}
-          src={src}
-          alt=""
-          referrerPolicy="no-referrer"
-          className="size-full object-contain"
-          onError={() => setFailed(src)}
-        />
-      ) : null}
-    </div>
+    <Hint content={broken ? "This image couldn't be loaded" : undefined}>
+      <div
+        className={cn(
+          // `dark` swaps in the dark theme tokens, whatever the page theme is.
+          "flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border p-1",
+          dark ? "dark bg-background" : "bg-white",
+        )}
+      >
+        {broken ? (
+          <ImageOff className="size-4 text-muted-foreground" aria-hidden="true" />
+        ) : src ? (
+          <img
+            key={src}
+            src={src}
+            alt=""
+            referrerPolicy="no-referrer"
+            className="size-full object-contain"
+            onError={() => setFailed(src)}
+          />
+        ) : null}
+      </div>
+    </Hint>
   );
 }
 
@@ -535,36 +537,37 @@ export function IdentityScopeList({
           const checkboxId = `${id}-${scope.id}`;
           return (
             <li key={scope.id}>
-              <label
-                htmlFor={checkboxId}
-                title={dense ? scope.description : undefined}
-                className={cn(
-                  "flex gap-3 px-4",
-                  dense ? "items-center py-2.5" : "items-start py-3",
-                  !scope.required && "cursor-pointer",
-                )}
-              >
-                <Checkbox
-                  id={checkboxId}
-                  checked={scope.required || api.draft.scopes.includes(scope.id)}
-                  disabled={scope.required}
-                  className={dense ? undefined : "mt-0.5"}
-                  onCheckedChange={(value) => api.toggleScope("scopes", scope.id, value === true)}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                    {scope.label}
-                    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-normal text-muted-foreground">
-                      {scope.id}
-                    </code>
-                  </span>
-                  {!dense && (
-                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                      {scope.description}
-                    </span>
+              <Hint content={dense ? scope.description : undefined}>
+                <label
+                  htmlFor={checkboxId}
+                  className={cn(
+                    "flex gap-3 px-4",
+                    dense ? "items-center py-2.5" : "items-start py-3",
+                    !scope.required && "cursor-pointer",
                   )}
-                </span>
-              </label>
+                >
+                  <Checkbox
+                    id={checkboxId}
+                    checked={scope.required || api.draft.scopes.includes(scope.id)}
+                    disabled={scope.required}
+                    className={dense ? undefined : "mt-0.5"}
+                    onCheckedChange={(value) => api.toggleScope("scopes", scope.id, value === true)}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                      {scope.label}
+                      <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-normal text-muted-foreground">
+                        {scope.id}
+                      </code>
+                    </span>
+                    {!dense && (
+                      <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                        {scope.description}
+                      </span>
+                    )}
+                  </span>
+                </label>
+              </Hint>
             </li>
           );
         })}
@@ -742,37 +745,39 @@ export function ApiAccessTable({
             {apiScopes
               .filter((scope) => scope.resource === resource.id)
               .map((scope) => (
-                <tr key={scope.id} title={scope.description} className="border-t">
-                  <th scope="row" className="py-2.5 pr-3 text-left font-normal">
-                    <span className="flex flex-wrap items-center gap-2">
-                      {scope.label}
-                      <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-                        {scope.id}
-                      </code>
-                    </span>
-                  </th>
-                  {columns.map((column) => (
-                    <td key={column.list} className="py-1 text-center">
-                      <label
-                        htmlFor={`${id}-${column.list}-${scope.id}`}
-                        className={cn(
-                          "inline-flex size-10 items-center justify-center rounded-md",
-                          !locked && "cursor-pointer hover:bg-accent/50",
-                        )}
-                      >
-                        <Checkbox
-                          id={`${id}-${column.list}-${scope.id}`}
-                          checked={draft[column.list].includes(scope.id)}
-                          disabled={locked}
-                          aria-label={`${scope.label}, ${column.label.toLowerCase()}`}
-                          onCheckedChange={(value) =>
-                            api.toggleScope(column.list, scope.id, value === true)
-                          }
-                        />
-                      </label>
-                    </td>
-                  ))}
-                </tr>
+                <Hint content={scope.description} key={scope.id}>
+                  <tr className="border-t">
+                    <th scope="row" className="py-2.5 pr-3 text-left font-normal">
+                      <span className="flex flex-wrap items-center gap-2">
+                        {scope.label}
+                        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                          {scope.id}
+                        </code>
+                      </span>
+                    </th>
+                    {columns.map((column) => (
+                      <td key={column.list} className="py-1 text-center">
+                        <label
+                          htmlFor={`${id}-${column.list}-${scope.id}`}
+                          className={cn(
+                            "inline-flex size-10 items-center justify-center rounded-md",
+                            !locked && "cursor-pointer hover:bg-accent/50",
+                          )}
+                        >
+                          <Checkbox
+                            id={`${id}-${column.list}-${scope.id}`}
+                            checked={draft[column.list].includes(scope.id)}
+                            disabled={locked}
+                            aria-label={`${scope.label}, ${column.label.toLowerCase()}`}
+                            onCheckedChange={(value) =>
+                              api.toggleScope(column.list, scope.id, value === true)
+                            }
+                          />
+                        </label>
+                      </td>
+                    ))}
+                  </tr>
+                </Hint>
               ))}
           </tbody>
         ))}

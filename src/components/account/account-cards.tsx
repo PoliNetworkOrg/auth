@@ -1,3 +1,4 @@
+import { Hint } from "@/components/ui/tooltip";
 import { useRouter } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { cn } from "cn";
@@ -67,17 +68,19 @@ function UnlinkAction({
   onClick: () => void;
 }) {
   return (
-    <span title={reason} className="block">
-      <Button
-        variant="destructive-soft"
-        className={cardButton}
-        disabled={disabled}
-        onClick={onClick}
-      >
-        {busy ? <Spinner /> : <Unlink />}
-        Unlink
-      </Button>
-    </span>
+    <Hint content={reason}>
+      <span className="block">
+        <Button
+          variant="destructive-soft"
+          className={cardButton}
+          disabled={disabled}
+          onClick={onClick}
+        >
+          {busy ? <Spinner /> : <Unlink />}
+          Unlink
+        </Button>
+      </span>
+    </Hint>
   );
 }
 
@@ -295,6 +298,7 @@ function StudentVerification({ onDone }: { onDone: () => void }) {
 
   return (
     <form
+      noValidate
       className="grid gap-2"
       onSubmit={(event) => {
         event.preventDefault();
