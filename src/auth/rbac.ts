@@ -7,7 +7,8 @@
  * the role, and is null for a role conferred some other way.
  *
  * Administrators can still rename them, describe them, give them permissions, and place
- * them in the role hierarchy — only their membership is out of their hands.
+ * them in the role hierarchy — only their membership is out of their hands. `parents` are
+ * the roles each one always inherits from, whatever else the administrator adds.
  */
 export const STATIC_ROLES = [
   {
@@ -15,6 +16,7 @@ export const STATIC_ROLES = [
     state: null,
     /** Holds every permission that exists, including ones created later. */
     grantsAllPermissions: true,
+    parents: [],
     name: "Master Admin",
     description: "Complete control of this identity provider.",
     evidence:
@@ -24,6 +26,7 @@ export const STATIC_ROLES = [
     key: "socio",
     state: "socio",
     grantsAllPermissions: false,
+    parents: [],
     name: "Socio",
     description: "Member of PoliNetwork APS.",
     evidence:
@@ -33,15 +36,39 @@ export const STATIC_ROLES = [
     key: "direttivo",
     state: "direttivo",
     grantsAllPermissions: false,
+    parents: [],
     name: "Direttivo",
     description: "Member of the PoliNetwork APS board.",
     evidence:
       "Direct membership of the Direttivo group in PoliNetwork Entra ID. Membership checks expire after one minute.",
   },
   {
+    key: "presidente",
+    state: "presidente",
+    grantsAllPermissions: false,
+    /** The President is on the board, so holds everything Direttivo grants. */
+    parents: ["direttivo"],
+    name: "Presidente",
+    description: "President of the PoliNetwork APS board.",
+    evidence:
+      "Direct membership of the Presidente group in PoliNetwork Entra ID. Membership checks expire after one minute.",
+  },
+  {
+    key: "segretario",
+    state: "segretario",
+    grantsAllPermissions: false,
+    /** The Secretary is on the board, so holds everything Direttivo grants. */
+    parents: ["direttivo"],
+    name: "Segretario",
+    description: "Secretary of the PoliNetwork APS board.",
+    evidence:
+      "Direct membership of the Segretario group in PoliNetwork Entra ID. Membership checks expire after one minute.",
+  },
+  {
     key: "student",
     state: "student",
     grantsAllPermissions: false,
+    parents: [],
     name: "Student",
     description: "Verified Politecnico di Milano student.",
     evidence: "A verification code delivered to the person's @mail.polimi.it address.",
@@ -74,6 +101,11 @@ export function staticRolesForStates(states: readonly string[]): string[] {
   return STATIC_ROLES.filter((entry) => entry.state !== null && states.includes(entry.state)).map(
     (entry) => entry.key,
   );
+}
+
+/** The roles a built-in role always inherits from. */
+export function intrinsicParents(key: string): readonly string[] {
+  return staticRole(key)?.parents ?? [];
 }
 
 /**
@@ -525,6 +557,15 @@ export function validateRoleDraft(
     draft.parents.some((parent) => roleParentWouldCycle(catalog, currentKey, parent))
   )
     errors.parents = "That would make two roles inherit from each other.";
+  else {
+    const kept = currentKey
+      ? intrinsicParents(currentKey).filter(
+          (parent) => index.roles.has(parent) && !draft.parents.includes(parent),
+        )
+      : [];
+    if (kept.length)
+      errors.parents = `This role always inherits from ${kept.map((parent) => index.roles.get(parent)?.name ?? parent).join(" and ")}.`;
+  }
   return errors;
 }
 

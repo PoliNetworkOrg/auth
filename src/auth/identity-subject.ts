@@ -58,6 +58,8 @@ export async function readIdentitySubject(
     return [
       ["socio", env.PN_ENTRA_MEMBER_GROUP_ID],
       ["direttivo", env.PN_ENTRA_DIRETTIVO_GROUP_ID],
+      ["presidente", env.PN_ENTRA_PRESIDENTE_GROUP_ID],
+      ["segretario", env.PN_ENTRA_SEGRETARIO_GROUP_ID],
     ].map(async ([state, groupId]) => {
       if (groupId && (await check(groupId, objectId))) verifiedStates.add(state!);
     });

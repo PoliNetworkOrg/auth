@@ -65,6 +65,8 @@ The environment changes are:
 | Setting                         | RBAC behavior                                                                                                                                      |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PN_ENTRA_DIRETTIVO_GROUP_ID`   | New, optional group object ID for Direttivo. Unset grants nobody that evidence-backed role.                                                        |
+| `PN_ENTRA_PRESIDENTE_GROUP_ID`  | New, optional group object ID for Presidente. Unset grants nobody that evidence-backed role.                                                       |
+| `PN_ENTRA_SEGRETARIO_GROUP_ID`  | New, optional group object ID for Segretario. Unset grants nobody that evidence-backed role.                                                       |
 | `PN_ENTRA_OIDC_ADMIN_GROUP_ID`  | Existing setting now grants Master Admin. Without it, PN accounts are not administrators. Requires complete PN tenant/client credentials when set. |
 | `IDP_ADMIN_USER_IDS`            | Existing comma-separated local user IDs remain the explicit break-glass administrators. Configure at least this or the admin group before startup. |
 | `PN_ENTRA_MEMBER_REFRESH_HOURS` | Still controls persisted sign-in evidence, defaults to 24. It no longer determines authorization freshness.                                        |
@@ -112,7 +114,7 @@ inherit from each other or two permissions grant each other.
 
 ### Roles the identity provider defines itself
 
-Four roles always exist and are never created, deleted, or handed out by an administrator.
+Six roles always exist and are never created, deleted, or handed out by an administrator.
 Their membership is conferred by the identity provider itself:
 
 | Role           | Key            | Granted by                                                                                          |
@@ -120,27 +122,34 @@ Their membership is conferred by the identity provider itself:
 | `Master Admin` | `master-admin` | `IDP_ADMIN_USER_IDS`; otherwise the configured administrators group, never an unconfigured fallback |
 | `Socio`        | `socio`        | Direct membership of the `Soci` group in PoliNetwork Entra ID                                       |
 | `Direttivo`    | `direttivo`    | Direct membership of `PN_ENTRA_DIRETTIVO_GROUP_ID` in PoliNetwork Entra ID                          |
+| `Presidente`   | `presidente`   | Direct membership of `PN_ENTRA_PRESIDENTE_GROUP_ID` in PoliNetwork Entra ID                         |
+| `Segretario`   | `segretario`   | Direct membership of `PN_ENTRA_SEGRETARIO_GROUP_ID` in PoliNetwork Entra ID                         |
 | `Student`      | `student`      | A verification code delivered to an `@mail.polimi.it` address                                       |
 
 **Master Admin holds every permission that exists**, including ones created after it was
 last looked at, because it is a wildcard rather than a stored list. It therefore has no
 grant list of its own to edit, and no role may inherit from it: that would launder a
 wildcard nobody can be given into a role an administrator could hand to anyone.
-Unlike the other three it is not proven by identity evidence and never appears among the
+Unlike the others it is not proven by identity evidence and never appears among the
 `states`: it comes from the deployment's own configuration, which is what keeps the service
 from being locked out of its own administration. `IDP_ADMIN_USER_IDS` is always honored.
 Set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to limit everyone else to that Microsoft Entra group.
 If the group is unset, only the explicit allowlist can confer Master Admin. Startup fails
 without either an admin group plus complete PN Entra credentials or a nonempty allowlist.
 
-What the other three grant is still yours to choose: give them permissions, rename them,
+What the others grant is still yours to choose: give them permissions, rename them,
 describe them, and place them in the hierarchy like any other role. Only their key, their
 deletion, and who holds them are fixed. The checked-in migrations seed them alongside the
 two permissions this service already issued, so existing consumers keep working: `socio`
 grants `membership:read` and `student` grants `student:verified`.
 
+`Presidente` and `Segretario` are the board's offices, so they always inherit from
+`Direttivo`: whoever holds one gets everything Direttivo grants, and the editor refuses to
+remove that parent. Give them anything extra the office needs on top.
+
 `PN_ENTRA_DIRETTIVO_GROUP_ID` is optional and has no default. Until you set it to the
-board's Entra group object ID, nobody is inferred as Direttivo. Both group checks reuse the
+board's Entra group object ID, nobody is inferred as Direttivo. The same goes for
+`PN_ENTRA_PRESIDENTE_GROUP_ID` and `PN_ENTRA_SEGRETARIO_GROUP_ID`. All group checks reuse the
 `PN_ENTRA_*` Graph credentials. Authorization rechecks membership with a fixed 60-second
 cache measured from lookup start. Stored sign-in evidence and `PN_ENTRA_MEMBER_REFRESH_HOURS`
 do not extend authorization. Failed or overlong checks grant nothing.

@@ -119,6 +119,8 @@ export async function checkPnGroupStates(objectId: string): Promise<string[] | n
   const groups = [
     { state: "socio", groupId: env.PN_ENTRA_MEMBER_GROUP_ID },
     { state: "direttivo", groupId: env.PN_ENTRA_DIRETTIVO_GROUP_ID },
+    { state: "presidente", groupId: env.PN_ENTRA_PRESIDENTE_GROUP_ID },
+    { state: "segretario", groupId: env.PN_ENTRA_SEGRETARIO_GROUP_ID },
   ].filter((group): group is { state: string; groupId: string } => Boolean(group.groupId));
   const memberships = await Promise.all(
     groups.map((group) => checkEntraGroupMember(group.groupId, objectId)),

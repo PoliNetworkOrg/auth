@@ -69,6 +69,20 @@ function configuredGroups(): Group[] {
           groupId: env.PN_ENTRA_DIRETTIVO_GROUP_ID,
         }
       : null,
+    env.PN_ENTRA_PRESIDENTE_GROUP_ID
+      ? {
+          source: "entra:presidente",
+          roleKey: "presidente",
+          groupId: env.PN_ENTRA_PRESIDENTE_GROUP_ID,
+        }
+      : null,
+    env.PN_ENTRA_SEGRETARIO_GROUP_ID
+      ? {
+          source: "entra:segretario",
+          roleKey: "segretario",
+          groupId: env.PN_ENTRA_SEGRETARIO_GROUP_ID,
+        }
+      : null,
     env.PN_ENTRA_OIDC_ADMIN_GROUP_ID
       ? {
           source: "entra:admins",

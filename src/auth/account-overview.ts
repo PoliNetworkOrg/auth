@@ -12,8 +12,8 @@ import { isPlaceholderEmail } from "./users";
 /** The sign-in accounts whose address the account page shows on its card. */
 const EMAIL_PROVIDERS = ["google", "pn-entra"] as const;
 
-/** Socio and Direttivo are groups in PoliNetwork's Entra tenant, so they read as groups. */
-const GROUP_STATES = ["socio", "direttivo"];
+/** Socio, Direttivo and the board offices are groups in PoliNetwork's Entra tenant, so they read as groups. */
+const GROUP_STATES = ["socio", "direttivo", "presidente", "segretario"];
 
 /**
  * What the account page shows besides the linked accounts and passkeys: the address on each
