@@ -4,7 +4,7 @@ import { account, identityEvidence, passkey, user, userRole } from "../db/schema
 import { env } from "../env";
 import { matchesSearch } from "../lib/search";
 import { groupMembers } from "./group-listing";
-import type { RbacCatalog } from "./rbac";
+import { type RbacCatalog, takesHandAssignments } from "./rbac";
 import { type GroupTrait, type MembershipSource, type UserTrait, USER_TRAITS } from "./users";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -141,7 +141,8 @@ export function searchCondition(
       ? catalog.roles
           .filter(
             (role) =>
-              !role.managed && matchesSearch(query, [role.key, role.name, role.description]),
+              takesHandAssignments(role) &&
+              matchesSearch(query, [role.key, role.name, role.description]),
           )
           .map((role) =>
             exists(

@@ -112,8 +112,8 @@ inherit from each other or two permissions grant each other.
 
 ### Roles the identity provider defines itself
 
-Four roles always exist and are never created, deleted, or handed out by an administrator.
-Their membership is conferred by the identity provider itself:
+Six roles always exist and are never created or deleted by an administrator. Four of them
+are conferred by the identity provider itself and never handed out:
 
 | Role           | Key            | Granted by                                                                                          |
 | -------------- | -------------- | --------------------------------------------------------------------------------------------------- |
@@ -122,20 +122,27 @@ Their membership is conferred by the identity provider itself:
 | `Direttivo`    | `direttivo`    | Direct membership of `PN_ENTRA_DIRETTIVO_GROUP_ID` in PoliNetwork Entra ID                          |
 | `Student`      | `student`      | A verification code delivered to an `@mail.polimi.it` address                                       |
 
+The other two are the board offices, `Presidente` (`presidente`) and `Segretario`
+(`segretario`). They are given and taken back by hand, like a created role, but only by a
+Master Admin: holding `idp:roles:assign` is not enough. Both always inherit from
+`Direttivo`, so whoever holds one gets everything Direttivo grants, and the editor refuses
+to remove that parent. Holding an office does not add the `direttivo` state: that still
+comes only from the Entra group.
+
 **Master Admin holds every permission that exists**, including ones created after it was
 last looked at, because it is a wildcard rather than a stored list. It therefore has no
 grant list of its own to edit, and no role may inherit from it: that would launder a
 wildcard nobody can be given into a role an administrator could hand to anyone.
-Unlike the other three it is not proven by identity evidence and never appears among the
+Unlike Socio, Direttivo and Student it is not proven by identity evidence and never appears among the
 `states`: it comes from the deployment's own configuration, which is what keeps the service
 from being locked out of its own administration. `IDP_ADMIN_USER_IDS` is always honored.
 Set `PN_ENTRA_OIDC_ADMIN_GROUP_ID` to limit everyone else to that Microsoft Entra group.
 If the group is unset, only the explicit allowlist can confer Master Admin. Startup fails
 without either an admin group plus complete PN Entra credentials or a nonempty allowlist.
 
-What the other three grant is still yours to choose: give them permissions, rename them,
+What the other built-in roles grant is still yours to choose: give them permissions, rename them,
 describe them, and place them in the hierarchy like any other role. Only their key, their
-deletion, and who holds them are fixed. The checked-in migrations seed them alongside the
+deletion, and (except for the board offices) who holds them are fixed. The checked-in migrations seed them alongside the
 two permissions this service already issued, so existing consumers keep working: `socio`
 grants `membership:read` and `student` grants `student:verified`.
 
@@ -145,7 +152,7 @@ board's Entra group object ID, nobody is inferred as Direttivo. Both group check
 cache measured from lookup start. Stored sign-in evidence and `PN_ENTRA_MEMBER_REFRESH_HOURS`
 do not extend authorization. Failed or overlong checks grant nothing.
 
-Membership of the built-in roles is not a role assignment: nothing is written to
+Membership of the evidence-backed built-in roles is not a role assignment: nothing is written to
 `user_role` for them, and evidence contributes only when joined to an account owned by the
 user. States accumulate independently, so a socio is not automatically a student. Signature,
 issuer, audience, expiration, and Entra tenant are checked before evidence is recorded.

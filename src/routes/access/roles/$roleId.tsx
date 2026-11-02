@@ -9,6 +9,7 @@ import {
   effectiveRolePermissions,
   roleDraftFrom,
   staticRole,
+  takesHandAssignments,
 } from "@/auth/rbac";
 import { deleteRoleFn, getCatalog, getRoleMembers, saveRoleFn } from "@/auth/rbac.functions";
 import { requireAccess, useAccess } from "@/components/access";
@@ -18,7 +19,7 @@ import { KeyChip } from "@/components/rbac/fields";
 import { PeopleBindingCard } from "@/components/rbac/people-binding-card";
 import { RoleForm } from "@/components/rbac/role-form";
 import { RoleMembers } from "@/components/rbac/role-members";
-import { canGrantRole } from "@/components/rbac/delegation";
+import { canAssignRole, canGrantRole } from "@/components/rbac/delegation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { errorFields, errorMessage } from "@/lib/action-error";
@@ -56,10 +57,7 @@ function RoleDetail() {
     canGrantRole(access, catalog, role.key);
   // Handing a role out is delegated separately from changing what it grants.
   const canAssign =
-    access.can("idp:roles:assign") &&
-    !!role &&
-    !role.managed &&
-    canGrantRole(access, catalog, role.key);
+    access.can("idp:roles:assign") && !!role && canAssignRole(access, catalog, role);
   // Binding hands the role's membership to People, so it is bounded the same way.
   const canBind =
     access.can("idp:people:bind") && !!role && canGrantRole(access, catalog, role.key);
@@ -108,8 +106,9 @@ function RoleDetail() {
     );
   }
 
-  const inferred = role.managed ? staticRole(role.key) : undefined;
-  const grantsEverything = inferred?.grantsAllPermissions ?? false;
+  const builtIn = role.managed ? staticRole(role.key) : undefined;
+  const grantsEverything = builtIn?.grantsAllPermissions ?? false;
+  const inferred = takesHandAssignments(role) ? undefined : builtIn;
   const effective = effectiveRolePermissions(catalog, role.key);
 
   return (
@@ -180,7 +179,7 @@ function RoleDetail() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{role.managed ? "Who holds this role" : "People"}</CardTitle>
+          <CardTitle>{inferred ? "Who holds this role" : "People"}</CardTitle>
           <CardDescription>
             {inferred
               ? inferred.evidence
@@ -190,7 +189,7 @@ function RoleDetail() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {role.managed ? (
+          {inferred ? (
             <p className="text-sm leading-6 text-muted-foreground">
               Membership is worked out for each person as their tokens are issued, so there is no
               list to edit here.

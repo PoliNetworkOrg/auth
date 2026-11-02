@@ -15,6 +15,7 @@ import {
   resolveAccess,
   roleParentWouldCycle,
   staticRolesForStates,
+  takesHandAssignments,
   validatePermissionDraft,
   validateRoleDraft,
   withIntrinsicImplications,
@@ -123,16 +124,23 @@ describe("roles the identity provider defines itself", () => {
     expect(staticRolesForStates(["unrelated"])).toEqual([]);
   });
 
-  it("covers Master Admin, Socio, Direttivo, and Student", () => {
-    expect(STATIC_ROLES.map((entry) => entry.key)).toEqual([
-      "master-admin",
-      "socio",
-      "direttivo",
-      "student",
-    ]);
-    for (const key of ["master-admin", "socio", "direttivo", "student"])
-      expect(isStaticRoleKey(key)).toBe(true);
+  it("covers Master Admin, Socio, Direttivo, the board offices, and Student", () => {
+    const keys = ["master-admin", "socio", "direttivo", "presidente", "segretario", "student"];
+    expect(STATIC_ROLES.map((entry) => entry.key)).toEqual(keys);
+    for (const key of keys) expect(isStaticRoleKey(key)).toBe(true);
     expect(isStaticRoleKey("chair")).toBe(false);
+  });
+
+  it("never confers the board offices from a state", () => {
+    expect(staticRolesForStates(["presidente", "segretario", "direttivo"])).toEqual(["direttivo"]);
+  });
+
+  it("takes hand assignments only for created roles and the board offices", () => {
+    for (const key of ["presidente", "segretario"])
+      expect(takesHandAssignments({ key, managed: true })).toBe(true);
+    for (const key of ["master-admin", "socio", "direttivo", "student"])
+      expect(takesHandAssignments({ key, managed: true })).toBe(false);
+    expect(takesHandAssignments({ key: "chair", managed: false })).toBe(true);
   });
 
   it("refuses a new role that would shadow one of them", () => {
@@ -141,6 +149,37 @@ describe("roles the identity provider defines itself", () => {
       { catalog: { roles: [], permissions: [] } },
     );
     expect(errors.key).toBeTruthy();
+  });
+});
+
+describe("board offices", () => {
+  const offices: RbacCatalog = {
+    permissions: catalog.permissions,
+    roles: [
+      ...catalog.roles,
+      role("presidente", [], ["direttivo"], true),
+      role("segretario", [], ["direttivo"], true),
+    ],
+  };
+
+  it("give their holders everything Direttivo confers", () => {
+    for (const key of ["presidente", "segretario"])
+      expect(resolveAccess(offices, [key])).toEqual({
+        roles: [key, "direttivo", "socio"].sort(),
+        permissions: ["membership:read", "membership:write"],
+      });
+  });
+
+  it("refuse an edit that drops Direttivo as a parent", () => {
+    const draft = { key: "presidente", name: "Presidente", description: "", permissions: [] };
+    const context = { catalog: offices, currentKey: "presidente" };
+    expect(validateRoleDraft({ ...draft, parents: [] }, context).parents).toMatch(/direttivo/);
+    expect(
+      validateRoleDraft({ ...draft, parents: ["direttivo"] }, context).parents,
+    ).toBeUndefined();
+    expect(
+      validateRoleDraft({ ...draft, parents: ["direttivo", "student"] }, context).parents,
+    ).toBeUndefined();
   });
 });
 
