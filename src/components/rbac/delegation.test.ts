@@ -24,6 +24,7 @@ const catalog: RbacCatalog = {
     permissions: key === "writer" ? ["write"] : [],
     parents: key === "writer" ? [] : ["writer"],
     memberCount: 0,
+    peopleBinding: null,
     createdAt: null,
     updatedAt: null,
   })),

@@ -1,5 +1,5 @@
 {
-  "id": "f03ffe1c-595a-42ca-94f9-b114a0eba17a",
+  "id": "6e6dc4d1-22d0-44ab-a009-fd1f763786a3",
   "prevId": "7795fbb9-3c55-41e8-8e86-8bfa10bf099e",
   "version": "7",
   "dialect": "postgresql",
@@ -2082,6 +2082,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "people_binding": {
+          "name": "people_binding",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "createdAt": {
           "name": "createdAt",
           "type": "timestamp with time zone",
@@ -2118,7 +2124,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "role_people_binding_check": {
+          "name": "role_people_binding_check",
+          "value": "\"role\".\"people_binding\" is null or (not \"role\".\"managed\" and \"role\".\"people_binding\" ~ '^(admin|capo|team:[a-z0-9-]{1,32}:(member|lead))$')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.role_parent": {

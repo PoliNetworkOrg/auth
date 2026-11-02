@@ -135,6 +135,13 @@ export const MANAGED_PERMISSIONS = [
     implies: ["idp:roles:read", "idp:people:read"],
   },
   {
+    key: "idp:people:bind",
+    name: "Bind roles to People",
+    description:
+      "Choose which roles the admin dashboard's People register manages, and what holding each one means there.",
+    implies: ["idp:roles:read"],
+  },
+  {
     key: "idp:applications:read",
     name: "View applications",
     description: "See the applications that sign people in with PoliNetwork Identity.",
@@ -178,6 +185,8 @@ const INTRINSIC_IMPLICATIONS = new Map<string, readonly ManagedPermissionKey[]>(
   ["idp:permissions:write", ["idp:permissions:read"]],
   ["idp:roles:write", ["idp:roles:read"]],
   ["idp:roles:assign", ["idp:roles:read"]],
+  // Binding a role means seeing what it grants.
+  ["idp:people:bind", ["idp:roles:read"]],
   // Deleting someone without seeing who they are makes no sense either.
   ["idp:users:delete", ["idp:users:read"]],
 ]);
@@ -219,6 +228,8 @@ export type RoleSummary = {
   parents: string[];
   /** People holding a hand-made assignment. Always 0 for managed roles. */
   memberCount: number;
+  /** What holding it means in the People register; see `people-binding.ts`. */
+  peopleBinding: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 };

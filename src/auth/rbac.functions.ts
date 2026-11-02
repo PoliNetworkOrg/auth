@@ -11,6 +11,7 @@ import {
   savePermission,
   saveRole,
   searchUsers,
+  setRolePeopleBinding,
   unassignRole,
 } from "./rbac-store";
 
@@ -32,6 +33,16 @@ export const saveRoleFn = createServerFn({ method: "POST" })
   .middleware([permissionMiddleware("idp:roles:write")])
   .validator(validate(z.object({ roleId: z.string().min(1).optional(), draft: roleDraftSchema })))
   .handler(({ context, data }) => saveRole(context.session.userId, data.draft, data.roleId));
+
+/** Binds a role to People, or unbinds it with `null`. */
+export const setRolePeopleBindingFn = createServerFn({ method: "POST" })
+  .middleware([permissionMiddleware("idp:people:bind")])
+  .validator(
+    validate(z.object({ roleId: z.string().min(1), binding: z.string().max(64).nullable() })),
+  )
+  .handler(({ context, data }) =>
+    setRolePeopleBinding(context.session.userId, data.roleId, data.binding),
+  );
 
 export const deleteRoleFn = createServerFn({ method: "POST" })
   .middleware([permissionMiddleware("idp:roles:write")])

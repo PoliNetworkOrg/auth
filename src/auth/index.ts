@@ -32,7 +32,13 @@ import { hasIdpPermission } from "./idp-access";
 import { canAdministerIdp } from "./oidc-admin";
 import { validateClientJwks } from "./client-jwks";
 import { rawClientMutationPaths, refusedClientMutationPaths } from "./client-endpoints";
-import { apiScopes, isApiScope, OIDC_CLIENT_REFERENCE, parsePublicJwks } from "./oidc-clients";
+import {
+  apiScopes,
+  internalScopes,
+  isApiScope,
+  OIDC_CLIENT_REFERENCE,
+  parsePublicJwks,
+} from "./oidc-clients";
 import { isLinkOnlyProvider, standardIdTokenClaims } from "./policy";
 import { providers } from "./providers";
 import { clientIpOptions, oauthRateLimit, postgresRateLimitStorage } from "./rate-limit";
@@ -83,7 +89,7 @@ const serviceResources =
         {
           identifier: env.OAUTH_INTERNAL_RESOURCE_URI,
           accessTokenTtl: 300,
-          allowedScopes: ["idp:access:read"],
+          allowedScopes: internalScopes,
           signingAlgorithm: "EdDSA" as const,
         },
       ]
@@ -249,7 +255,7 @@ export const auth = betterAuth({
       loginPage: "/",
       consentPage: "/consent",
       scopes: serviceOAuthEnabled
-        ? ["polinetwork:identity", ...backendScopes, "idp:access:read", MCP_SCOPE]
+        ? ["polinetwork:identity", ...backendScopes, ...internalScopes, MCP_SCOPE]
         : ["openid", "profile", "email", "polinetwork:identity", "offline_access", MCP_SCOPE],
       grantTypes: serviceOAuthEnabled
         ? ["authorization_code", "refresh_token", "client_credentials"]

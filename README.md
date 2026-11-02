@@ -1,6 +1,6 @@
 # PoliNetwork Auth prototype
 
-A standalone TanStack Start and Better Auth identity provider. The backend remains the active authentication provider for all existing PoliNetwork applications. This repository does not change backend authentication, migrate production data, or grant Telegram moderation access.
+A standalone TanStack Start and Better Auth identity provider. As of RFC v3 Phase 6 (October 2026), every PoliNetwork service signs people in through this IdP; no applications still use the backend's removed login (see [Backend login removal](#backend-login-removal)). This repository does not migrate production data or grant Telegram moderation access.
 
 ## Run locally
 
@@ -158,30 +158,31 @@ when that is what you mean.
 ### Permissions the identity provider defines itself
 
 Administering this service is expressed as permissions like any other capability, so it can
-be delegated to a role instead of being wired to a single group. These eleven always exist
+be delegated to a role instead of being wired to a single group. These twelve always exist
 and can never be created, deleted, or rekeyed, because the code checks for these exact
 keys; which roles carry them is entirely up to you.
 
-| Permission               | Covers                                                       |
-| ------------------------ | ------------------------------------------------------------ |
-| `idp:people:read`        | Searching the people registered here                         |
-| `idp:users:read`         | Browsing the user directory at `/users`                      |
-| `idp:users:delete`       | Permanently deleting someone's account                       |
-| `idp:permissions:read`   | Seeing permissions in the `/access` section                  |
-| `idp:permissions:write`  | Creating, changing, and deleting permissions                 |
-| `idp:roles:read`         | Seeing roles, what they grant, and who holds them            |
-| `idp:roles:write`        | Creating, changing, and deleting roles                       |
-| `idp:roles:assign`       | Giving roles to people and taking them away                  |
-| `idp:applications:read`  | Seeing the OIDC applications at `/applications`              |
-| `idp:applications:write` | Registering and editing applications, and rotating secrets   |
-| `idp:mcp`                | Connecting an AI agent through the [MCP server](#mcp-server) |
+| Permission               | Covers                                                            |
+| ------------------------ | ----------------------------------------------------------------- |
+| `idp:people:read`        | Searching the people registered here                              |
+| `idp:users:read`         | Browsing the user directory at `/users`                           |
+| `idp:users:delete`       | Permanently deleting someone's account                            |
+| `idp:permissions:read`   | Seeing permissions in the `/access` section                       |
+| `idp:permissions:write`  | Creating, changing, and deleting permissions                      |
+| `idp:roles:read`         | Seeing roles, what they grant, and who holds them                 |
+| `idp:roles:write`        | Creating, changing, and deleting roles                            |
+| `idp:roles:assign`       | Giving roles to people and taking them away                       |
+| `idp:people:bind`        | Choosing which roles the [People register](#people-roles) manages |
+| `idp:applications:read`  | Seeing the OIDC applications at `/applications`                   |
+| `idp:applications:write` | Registering and editing applications, and rotating secrets        |
+| `idp:mcp`                | Connecting an AI agent through the [MCP server](#mcp-server)      |
 
 They use the permission hierarchy themselves: each `write` grants its `read`,
 `idp:roles:assign` grants `idp:roles:read` and `idp:people:read` so an assigner can see the
 role and find who to give it to, `idp:roles:write` also grants `idp:people:read`, `idp:users:read` grants `idp:people:read` because browsing everyone includes finding them, and `idp:roles:read` grants `idp:permissions:read` because a role is meaningless
 without seeing the permissions it carries. A role with `idp:roles:write` therefore ends up
 with four permissions and still cannot touch applications. `idp:roles:write` granting
-`idp:roles:read`, `idp:roles:assign` granting `idp:roles:read`, `idp:permissions:write`
+`idp:roles:read`, `idp:roles:assign` and `idp:people:bind` granting `idp:roles:read`, `idp:permissions:write`
 granting `idp:permissions:read` and
 `idp:users:delete` granting `idp:users:read` are fixed in code: they apply even if the stored edge is missing, and cannot be removed, because
 changing either without seeing what already exists makes no sense. The other implications
@@ -336,7 +337,55 @@ Master Admin registers the four Phase 1 clients on `/applications/new`, each wit
 
 During a sign-in the login page names the requesting application. The consent page at `/consent` shows the app, who is signed in (with a switch-account option), each requested scope in plain language, any requested profile claims, and where the browser will be sent; it supports allow and deny and explains expired or disabled requests.
 
-Future consumers should use authorization code with PKCE, validate token signatures, issuer, audience, and expiration, and request `polinetwork:identity` only when needed. APIs must check their own permissions. An ID token or a linked Telegram ID alone is not permission to moderate a group.
+New services follow [docs/service-integration-guide.md](docs/service-integration-guide.md). Future clients that sign people in should use authorization code with PKCE; service clients use client credentials, as the guide describes. All of them validate token signatures, issuer, audience, and expiration, and request `polinetwork:identity` only when needed. APIs must check their own permissions. An ID token or a linked Telegram ID alone is not permission to moderate a group.
+
+### People roles
+
+The admin dashboard's People register gives people predetermined roles: those bound, on the role's page (People register card), to what holding them means in People. A role's holders are admins of the Telegram groups (`admin`), Capo Admins (`capo`), or members or the Lead of a team (`team:<key>:member`, `team:<key>:lead`, where the key is the dashboard's team key: `it`, `hr`, `design`, `intl` or `events`). Binding a role needs `idp:people:bind`, and, as when editing a role, only Master Admin can bind or unbind a role granting permissions they don't hold. Managed roles, and roles that carry any `idp:*` permission directly, through a parent or through an implication, can't be bound, and saving a role or permission that would give a bound role one is refused. Bind only one role to each meaning: `trusted-admin` inherits `admin`, so binding it as `admin` too makes giving `admin` ambiguous (409).
+
+`GET /api/internal/people-roles` (backend client, `idp:access:read`) lists the bound roles, each with every permission it grants (`permissions`, through parent roles too) and its own binding followed by those it inherits (`bindings`), and everyone holding them by hand or through a parent role, with their name, directory email, Telegram ID and username, which of those roles they were given directly, and since when they hold each one (`since`, `YYYY-MM-DD`: the earliest of their current assignments conferring it). Unlike the access snapshot it includes roles that grant no permission. People without a login account are the backend's own: they never appear here.
+
+`POST /api/internal/people-roles` (backend client, `idp:people:roles`) applies one People command `{ id, actor, sub, reason, changes }` on behalf of the dashboard user the backend authenticated. `sub` is always a login account. Each change names a desired state: `{ kind: "admin" | "capo", active }` or `{ kind: "team", team, role: "member" | "lead" | null }`. This IdP plans the concrete assignments against its own role graph and applies all of them or none: a concept with no bound role stays People's own and is skipped; it refuses with 409 when the mapping is ambiguous (not exactly one bound role to give), or when the requested state would still be held through another role (ending `admin` for a Capo Admin, say), rather than reporting a change that did not happen.
+
+The backend only names the actor; this IdP resolves the actor's own access and refuses every assignment, before any write, unless:
+
+- the actor isn't giving themselves a role (giving one up is allowed). When an invitee accepts an invite, the backend sends whoever made each assignment as the actor;
+- the rule for the role's binding, and for every bound role it inherits, allows it (`PEOPLE_RULES` in `src/auth/people-binding.ts`):
+
+  | Binding             | Who may give or take it back                                             |
+  | ------------------- | ------------------------------------------------------------------------ |
+  | `admin`             | `admin:access` + `people:write`                                          |
+  | `capo`              | `admin:access` + `people:appoint` (and, through `admin`, `people:write`) |
+  | `team:<key>:member` | `admin:access` + `people:write`, or the Lead of that team                |
+  | `team:<key>:lead`   | `admin:access` + `people:appoint`                                        |
+
+- unless Master Admin, the actor holds every permission the role grants.
+
+The backend applies the same rules to assignments it keeps for records that aren't linked yet, which this IdP only sees when the record is linked: that is what each bound role's `permissions` and `bindings` are for.
+
+The response is the person's bound roles after the command (`held`, `assigned`) and the bound role list. Each assignment is audited as `role.assign`/`role.unassign` with `via: "people"`, the reason and the command ID, and the command itself as `people.roles` under `people-command:<id>`: repeating an ID with the same command, for example after a lost response, applies nothing again and returns the current roles, and repeating it with a different command is refused with 409.
+
+#### Deploying People roles
+
+Deploy this before the backend and dashboard that use it, then (PoliNetworkOrg/auth#79):
+
+1. Migrate (`0023_role_people_binding`). It adds the binding column and `idp:people:bind`, which only Master Admin holds until you grant it to a role.
+2. Grant `idp:people:bind` to whoever should configure People, if anyone besides Master Admin.
+3. Bind the roles. Team keys must match the backend's team list:
+
+   | Role                            | Binding                                   |
+   | ------------------------------- | ----------------------------------------- |
+   | `admin`                         | `admin`                                   |
+   | `capo-admin`                    | `capo`                                    |
+   | `hr-member` / `hr-lead`         | `team:hr:member` / `team:hr:lead`         |
+   | `design-member` / `design-lead` | `team:design:member` / `team:design:lead` |
+   | `intl-member` / `intl-lead`     | `team:intl:member` / `team:intl:lead`     |
+   | `events-member` / `events-lead` | `team:events:member` / `team:events:lead` |
+
+   Leave `trusted-admin` unbound: it inherits `admin` and stays assigned by hand. `it-core` and `it-lead` carry `idp:*` permissions, so they can't be bound; the IT team needs plain team roles of its own (see #79).
+
+4. Grant the internal scope `idp:people:roles` to the backend client on its application page. Reads work without it.
+5. Send one role command from the backend for a test account, and check that the audit log shows `via: people`.
 
 ## MCP server
 
@@ -371,6 +420,7 @@ Every tool calls the same code as the matching page, which checks the permission
 | `idp:roles:write`        | `create_role`, `update_role`, `delete_role`                                                                                                                                           |
 | `idp:roles:assign`       | `assign_role`, `unassign_role`                                                                                                                                                        |
 | `idp:permissions:write`  | `create_permission`, `update_permission`, `delete_permission`                                                                                                                         |
+| `idp:people:bind`        | `set_role_people_binding`                                                                                                                                                             |
 | Master Admin             | `list_audit_events`                                                                                                                                                                   |
 
 Deleting people is left to the website. Deletes ask the agent to repeat the name or key. New client secrets go back to the agent once, like on the page, so it can hand them over.
@@ -386,20 +436,13 @@ The server follows the MCP authorization spec. `/.well-known/oauth-protected-res
 
 Tokens are EdDSA JWTs addressed to `/api/mcp`, valid five minutes. Every request checks the token, that the agent's client still exists with your consent, and that you still hold `idp:mcp`, so taking the permission away or disconnecting the agent from your account page ends access on the next request. People without `idp:mcp` are stopped on the consent page. Registrations nobody approves within a day are deleted, and so are agents nobody has used for 60 days; each use is recorded on the agent's consent, at most hourly. Registration is rate-limited to five a minute per address.
 
-## Migration work before cutover
+## Backend login removal
 
-Inspection found backend auth in `../backend/src/auth/index.ts`, with custom email OTP, passkeys, shared subdomain cookies, and custom Telegram linking. `../admin` reads `user.telegramId` and calls backend Telegram permission routes. `../group-bot` also uses those backend assignments.
+The backend's own login (better-auth with email OTP, passkeys and Telegram link codes) was removed in RFC v3 Phase 6: every PoliNetwork service signs people in through this IdP. Browsers may still hold the backend's old `better-auth` cookies on `.polinetwork.org` until they expire; this service's `pn-identity` cookie prefix (`src/auth/cookies.ts`) keeps them from shadowing its session.
 
-The backend scopes its Better Auth cookies to `.polinetwork.org` with the default `better-auth` prefix, so browsers send them to this service too. This service uses its own `pn-identity` cookie prefix (`src/auth/cookies.ts`) so those cookies cannot shadow its session. Keep the prefixes different while both run.
+To connect a new service, follow [docs/service-integration-guide.md](docs/service-integration-guide.md).
 
-Keep these integrations running while testing this service. A later migration needs:
-
-1. Back up and inventory backend users, accounts, passkeys, Telegram links, roles, and foreign keys. Preserve user IDs or define a reviewed mapping. This prototype's schema is not a replacement migration for the backend's prefixed tables.
-2. Implement a bridge that proves ownership of the existing backend session before connecting an existing user here. Existing backend passkeys are not imported; users register new passkeys in this service. The prototype does not preserve email OTP login. Never import Telegram usernames as ownership proof or manufacture OIDC accounts from old links.
-3. Require official Telegram re-verification and reconcile the verified numeric ID with existing moderation assignments. Review conflicts instead of merging automatically.
-4. Confirm the PN membership rule and choose how often students must reverify their Polimi email.
-5. Test a downstream application in staging, including authorization code, consent, refresh, logout, account conflicts, and revoked permissions. The current shared-cookie clients cannot be pointed at this issuer without integration changes.
-6. Schedule a separate cutover and rollback plan. Retain the backend login until those checks pass.
+Still open: confirm the PN membership rule and how often students must reverify their Polimi email.
 
 ## Validation
 

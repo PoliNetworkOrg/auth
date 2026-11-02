@@ -2,6 +2,7 @@ import { groupListings, traitConditions, searchCondition } from "./people-search
 import type { FieldErrors } from "@/lib/action-error";
 import { contactEmails } from "./contact-email";
 import { mayDelegateMutation } from "./rbac-delegation";
+import { PEOPLE_BINDING_PATTERN, peopleBindingProblem } from "./people-binding";
 import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
 import type { IdentityClaims } from "./policy";
@@ -119,6 +120,7 @@ export async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
       permissions: permissionsByRole.get(row.id) ?? [],
       parents: parentsByRole.get(row.id) ?? [],
       memberCount: memberCounts.get(row.id) ?? 0,
+      peopleBinding: row.peopleBinding,
       createdAt: row.createdAt?.toISOString() ?? null,
       updatedAt: row.updatedAt?.toISOString() ?? null,
     })),
@@ -182,7 +184,7 @@ export async function withAuthorizedRbacWrite<T>(
   actorId: string,
   required: Extract<
     ManagedPermissionKey,
-    `${string}:write` | `${string}:assign` | `${string}:delete`
+    `${string}:write` | `${string}:assign` | `${string}:delete` | `${string}:bind`
   >,
   change: (transaction: Transaction, catalog: RbacCatalog, access: ResolvedAccess) => Promise<T>,
 ): Promise<T> {
@@ -206,7 +208,7 @@ export async function withAuthorizedRbacWrite<T>(
   );
 }
 
-async function auditSnapshot(
+export async function auditSnapshot(
   transaction: Transaction,
   catalog: RbacCatalog,
   operation: string,
@@ -237,9 +239,10 @@ async function auditSnapshot(
 /** Editing role definitions and handing roles out are delegated separately. */
 function requiredForOperation(
   operation: string,
-): "idp:permissions:write" | "idp:roles:write" | "idp:roles:assign" {
+): "idp:permissions:write" | "idp:roles:write" | "idp:roles:assign" | "idp:people:bind" {
   if (operation.startsWith("permission.")) return "idp:permissions:write";
   if (operation === "role.assign" || operation === "role.unassign") return "idp:roles:assign";
+  if (operation === "role.people") return "idp:people:bind";
   return "idp:roles:write";
 }
 
@@ -300,6 +303,17 @@ function idsForRoleKeys(catalog: RbacCatalog, keys: string[]) {
   });
 }
 
+/**
+ * A role People manages must never come to carry this identity provider's own rights, directly,
+ * through a parent or through an implication: People writers could then hand them out.
+ */
+function assertPeopleBindings(catalog: RbacCatalog) {
+  for (const entry of catalog.roles) {
+    const problem = entry.peopleBinding ? peopleBindingProblem(catalog, entry) : null;
+    if (problem) throw new RbacError(400, `${entry.name} is managed from People. ${problem}`);
+  }
+}
+
 function checked(errors: Record<string, string | undefined>) {
   if (hasDraftErrors(errors)) throw new RbacError(400, "Check the highlighted fields.", errors);
 }
@@ -338,7 +352,9 @@ export async function savePermission(
         .values(
           impliedIds.map((impliedPermissionId) => ({ permissionId: id, impliedPermissionId })),
         );
-    return (await readCatalog(transaction)).permissions.find((entry) => entry.id === id)!;
+    const next = await readCatalog(transaction);
+    assertPeopleBindings(next);
+    return next.permissions.find((entry) => entry.id === id)!;
   });
 }
 
@@ -404,7 +420,38 @@ export async function saveRole(
       await transaction
         .insert(roleParent)
         .values(parentIds.map((parentRoleId) => ({ roleId: id, parentRoleId })));
-    return (await readCatalog(transaction)).roles.find((entry) => entry.id === id)!;
+    const next = await readCatalog(transaction);
+    assertPeopleBindings(next);
+    return next.roles.find((entry) => entry.id === id)!;
+  });
+}
+
+/**
+ * Binds a role to a People concept, or unbinds it with `null`. Binding hands the role's
+ * membership to People writers (through the backend), so it needs `idp:people:bind`, and,
+ * like editing a role, only a Master Admin may bind or unbind one granting permissions they
+ * don't hold (`mayDelegateMutation`).
+ */
+export async function setRolePeopleBinding(
+  actorId: string,
+  roleId: string,
+  binding: string | null,
+) {
+  return withRbacWriteLock(actorId, "role.people", roleId, async (transaction, catalog) => {
+    const current = requireRole(catalog, roleId);
+    if (binding !== null) {
+      if (!PEOPLE_BINDING_PATTERN.test(binding))
+        throw new RbacError(400, "Choose admin, capo, or a team key with member or lead.", {
+          peopleBinding: "Use admin, capo, team:<key>:member or team:<key>:lead.",
+        });
+      const problem = peopleBindingProblem(catalog, current);
+      if (problem) throw new RbacError(400, problem);
+    }
+    await transaction
+      .update(role)
+      .set({ peopleBinding: binding, updatedAt: new Date() })
+      .where(eq(role.id, roleId));
+    return (await readCatalog(transaction)).roles.find((entry) => entry.id === roleId)!;
   });
 }
 

@@ -122,7 +122,19 @@ export const apiScopes = [
     description: "Pull every member's roles and permissions from this identity provider.",
     resource: "internal",
   },
+  {
+    id: "idp:people:roles",
+    label: "People roles",
+    description:
+      "Give and take back the roles bound to People, on behalf of a signed-in person who may change them.",
+    resource: "internal",
+  },
 ] as const;
+
+export type InternalScope = Extract<(typeof apiScopes)[number], { resource: "internal" }>["id"];
+export const internalScopes = apiScopes
+  .filter((scope) => scope.resource === "internal")
+  .map((scope) => scope.id);
 
 export type OidcResourceKey = (typeof apiScopes)[number]["resource"];
 
@@ -141,7 +153,7 @@ export const oidcResources: { id: OidcResourceKey; label: string; description: s
 
 /** Prefix match on purpose: a backend scope added later is privileged before it is listed. */
 export function isApiScope(scope: string) {
-  return scope.startsWith("backend:") || scope === "idp:access:read";
+  return scope.startsWith("backend:") || (internalScopes as string[]).includes(scope);
 }
 
 /** The resources the selected API scopes need, in a stable order. */

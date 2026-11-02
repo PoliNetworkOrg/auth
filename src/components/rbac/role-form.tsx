@@ -121,6 +121,7 @@ export function RoleForm({
           permissions: draft.permissions,
           parents: draft.parents,
           memberCount: 0,
+          peopleBinding: null,
           createdAt: null,
           updatedAt: null,
         },
