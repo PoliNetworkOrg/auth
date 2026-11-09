@@ -143,6 +143,9 @@ function byKey(held: Map<string, string | null>): Record<string, { validUntil: s
   );
 }
 
+// Remember only the latest ambiguity per provider in this process.
+const ambiguityFingerprints = new Map<string, string>();
+
 /**
  * Each account's single linked external ID. Someone linked to several IDs, or an ID linked to
  * several accounts, gets none: the backend must never act on the wrong person.
@@ -163,11 +166,27 @@ function uniqueLinks(
   const owners = new Map<string, number>();
   for (const ids of byUser.values())
     for (const id of ids) owners.set(id, (owners.get(id) ?? 0) + 1);
-  const ambiguous =
-    [...owners.values()].filter((count) => count > 1).length +
-    [...byUser.values()].filter((ids) => ids.size > 1).length;
-  if (ambiguous)
-    console.error(`Access snapshot excluded ambiguous ${label} links.`, { count: ambiguous });
+  const ambiguousUsers = [...byUser.values()].filter((ids) => ids.size > 1).length;
+  const ambiguousIds = [...owners.values()].filter((count) => count > 1).length;
+  if (ambiguousUsers || ambiguousIds) {
+    const links = [...byUser.entries()]
+      .map(
+        ([userId, ids]) =>
+          [userId, [...ids].filter((id) => ids.size > 1 || owners.get(id)! > 1).sort()] as const,
+      )
+      .filter(([, ids]) => ids.length > 0)
+      .sort(([a], [b]) => a.localeCompare(b));
+    const fingerprint = createHash("sha256").update(JSON.stringify(links)).digest("hex");
+    if (ambiguityFingerprints.get(label) !== fingerprint) {
+      console.error(`Access snapshot excluded ambiguous ${label} links.`, {
+        userCount: ambiguousUsers,
+        idCount: ambiguousIds,
+      });
+      ambiguityFingerprints.set(label, fingerprint);
+    }
+  } else {
+    ambiguityFingerprints.delete(label);
+  }
   const unique = new Map<string, string>();
   for (const [userId, ids] of byUser) {
     const [id] = ids;

@@ -212,6 +212,63 @@ describe("backend access projection", () => {
     });
   });
 
+  it("logs only changes to ambiguous links, with separate user and ID counts", () => {
+    const project = (proofs: Parameters<typeof projectBackendSubjects>[0]["proofs"]) =>
+      projectBackendSubjects({
+        users: [],
+        manualRoles: [],
+        proofs,
+        catalog,
+        groups: [],
+        observations: [],
+        now,
+      });
+    project([]);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const proofs = [
+        tgProof("a", "42"),
+        tgProof("b", "42"),
+        tgProof("c", "99"),
+        tgProof("c", "100"),
+      ];
+      project(proofs);
+      expect(error).toHaveBeenLastCalledWith("Access snapshot excluded ambiguous Telegram links.", {
+        userCount: 1,
+        idCount: 1,
+      });
+      project([...proofs].reverse().concat(proofs[0]!, tgProof("unique", "unique")));
+      expect(error).toHaveBeenCalledTimes(1);
+      // Changing an ID or an owner matters even when the counts stay the same.
+      const changedId = proofs.map((proof) =>
+        proof.telegramId === "42" ? { ...proof, telegramId: "43" } : proof,
+      );
+      project(changedId);
+      expect(error).toHaveBeenCalledTimes(2);
+      const changedUser = changedId.map((proof) =>
+        proof.userId === "a" ? { ...proof, userId: "d" } : proof,
+      );
+      project(changedUser);
+      expect(error).toHaveBeenCalledTimes(3);
+      project(
+        changedUser.map((proof) => ({
+          ...pnProof(proof.userId, proof.telegramId!),
+          telegramId: null,
+        })),
+      );
+      expect(error).toHaveBeenLastCalledWith(
+        "Access snapshot excluded ambiguous Microsoft 365 links.",
+        { userCount: 1, idCount: 1 },
+      );
+      project([]);
+      project(proofs);
+      expect(error).toHaveBeenCalledTimes(5);
+    } finally {
+      project([]);
+      error.mockRestore();
+    }
+  });
+
   it("carries permissions created in the dashboard but never the identity provider's own", () => {
     const subjects = projectBackendSubjects({
       users: ["signer"],
