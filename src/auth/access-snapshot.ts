@@ -29,6 +29,8 @@ export type AccessSource = {
 export type AccessSubject = {
   sub: string;
   telegramId: string | null;
+  /** Microsoft 365 (Entra) object ID of the linked PoliNetwork account; null when none or ambiguous. */
+  entraObjectId: string | null;
   /** Effective roles: those granted plus every role they inherit from. */
   roles: Record<string, { validUntil: string | null }>;
   permissions: Record<string, { validUntil: string | null }>;
@@ -141,6 +143,39 @@ function byKey(held: Map<string, string | null>): Record<string, { validUntil: s
   );
 }
 
+/**
+ * Each account's single linked external ID. Someone linked to several IDs, or an ID linked to
+ * several accounts, gets none: the backend must never act on the wrong person.
+ */
+function uniqueLinks(
+  proofs: Proof[],
+  idOf: (proof: Proof) => string | null,
+  label: string,
+): Map<string, string> {
+  const byUser = new Map<string, Set<string>>();
+  for (const proof of proofs) {
+    const id = idOf(proof);
+    if (!id) continue;
+    const ids = byUser.get(proof.userId) ?? new Set<string>();
+    ids.add(id);
+    byUser.set(proof.userId, ids);
+  }
+  const owners = new Map<string, number>();
+  for (const ids of byUser.values())
+    for (const id of ids) owners.set(id, (owners.get(id) ?? 0) + 1);
+  const ambiguous =
+    [...owners.values()].filter((count) => count > 1).length +
+    [...byUser.values()].filter((ids) => ids.size > 1).length;
+  if (ambiguous)
+    console.error(`Access snapshot excluded ambiguous ${label} links.`, { count: ambiguous });
+  const unique = new Map<string, string>();
+  for (const [userId, ids] of byUser) {
+    const [id] = ids;
+    if (ids.size === 1 && owners.get(id!) === 1) unique.set(userId, id!);
+  }
+  return unique;
+}
+
 /** Names for the backend's pickers: every role, and the permissions the projection carries. */
 export function projectBackendCatalog(catalog: RbacCatalog): AccessCatalog {
   const named = (entries: { key: string; name: string }[]) =>
@@ -216,38 +251,28 @@ export function projectBackendSubjects(input: {
     }
   }
 
-  const telegramIds = new Map<string, Set<string>>();
-  for (const proof of proofs) {
-    if (
-      proof.providerId !== "telegram" ||
-      proof.issuer !== "https://oauth.telegram.org" ||
-      !proof.telegramId
-    )
-      continue;
-    const ids = telegramIds.get(proof.userId) ?? new Set<string>();
-    ids.add(proof.telegramId);
-    telegramIds.set(proof.userId, ids);
-  }
-  const owners = new Map<string, number>();
-  for (const ids of telegramIds.values())
-    for (const id of ids) owners.set(id, (owners.get(id) ?? 0) + 1);
-  const ambiguous =
-    [...owners.values()].filter((count) => count > 1).length +
-    [...telegramIds.values()].filter((ids) => ids.size > 1).length;
-  if (ambiguous)
-    console.error("Access snapshot excluded ambiguous Telegram links.", { count: ambiguous });
+  const telegramIds = uniqueLinks(
+    proofs.filter(
+      (proof) => proof.providerId === "telegram" && proof.issuer === "https://oauth.telegram.org",
+    ),
+    (proof) => proof.telegramId,
+    "Telegram",
+  );
+  const entraObjectIds = uniqueLinks(
+    proofs.filter((proof) => proof.providerId === "pn-entra" && proof.issuer === entraIssuer),
+    (proof) => proof.externalId,
+    "Microsoft 365",
+  );
 
   return users
     .flatMap((sub): AccessSubject[] => {
       const access = held.get(sub);
       if (!access?.permissions.size) return [];
-      const ids = telegramIds.get(sub);
-      const id = ids?.size === 1 ? [...ids][0]! : null;
-      const telegramId = id && owners.get(id) === 1 ? id : null;
       return [
         {
           sub,
-          telegramId,
+          telegramId: telegramIds.get(sub) ?? null,
+          entraObjectId: entraObjectIds.get(sub) ?? null,
           roles: byKey(access.roles),
           permissions: byKey(access.permissions),
         },

@@ -111,12 +111,14 @@ describe("backend access projection", () => {
       {
         sub: "entra-user",
         telegramId: null,
+        entraObjectId: "e",
         roles: { socio: { validUntil: "2026-10-08T10:30:00.000Z" } },
         permissions: { "tg:read": { validUntil: "2026-10-08T10:30:00.000Z" } },
       },
       {
         sub: "manual-user",
         telegramId: "123456",
+        entraObjectId: "m",
         roles: {
           manual: { validUntil: null },
           socio: { validUntil: "2026-10-08T10:30:00.000Z" },
@@ -129,6 +131,7 @@ describe("backend access projection", () => {
       {
         sub: "root",
         telegramId: null,
+        entraObjectId: null,
         roles: { "master-admin": { validUntil: null } },
         permissions: {
           "admin:access": { validUntil: null },
@@ -139,6 +142,7 @@ describe("backend access projection", () => {
       {
         sub: "student-user",
         telegramId: null,
+        entraObjectId: null,
         roles: { student: { validUntil: "2026-10-08T10:30:00.000Z" } },
         permissions: {
           "tg:moderate": { validUntil: "2026-10-08T10:30:00.000Z" },
@@ -169,6 +173,45 @@ describe("backend access projection", () => {
     expect(subjects[0]?.permissions["tg:read"]).toEqual({ validUntil: null });
   });
 
+  it("carries each account's Microsoft 365 object ID unless the link is ambiguous", () => {
+    const subjects = projectBackendSubjects({
+      users: ["single", "relinked", "twice", "shared-a", "shared-b", "foreign", "none"],
+      manualRoles: ["single", "relinked", "twice", "shared-a", "shared-b", "foreign", "none"].map(
+        (userId) => ({ userId, roleKey: "manual" }),
+      ),
+      proofs: [
+        pnProof("single", "oid-single"),
+        // The same Microsoft 365 account signed in twice is still one link.
+        pnProof("relinked", "oid-relinked"),
+        pnProof("relinked", "oid-relinked"),
+        pnProof("twice", "oid-twice-1"),
+        pnProof("twice", "oid-twice-2"),
+        pnProof("shared-a", "oid-shared"),
+        pnProof("shared-b", "oid-shared"),
+        {
+          ...pnProof("foreign", "oid-foreign"),
+          issuer: "https://login.microsoftonline.com/other/v2.0",
+        },
+        tgProof("none", "77"),
+      ],
+      catalog,
+      groups: [],
+      observations: [],
+      now,
+    });
+    expect(
+      Object.fromEntries(subjects.map(({ sub, entraObjectId }) => [sub, entraObjectId])),
+    ).toEqual({
+      foreign: null,
+      none: null,
+      relinked: "oid-relinked",
+      "shared-a": null,
+      "shared-b": null,
+      single: "oid-single",
+      twice: null,
+    });
+  });
+
   it("carries permissions created in the dashboard but never the identity provider's own", () => {
     const subjects = projectBackendSubjects({
       users: ["signer"],
@@ -186,6 +229,7 @@ describe("backend access projection", () => {
       {
         sub: "signer",
         telegramId: null,
+        entraObjectId: null,
         roles: { secretary: { validUntil: null } },
         permissions: { "esign:sign": { validUntil: null } },
       },
