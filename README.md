@@ -297,7 +297,7 @@ snapshot for the future backend integration; no current caller uses it yet.
 
 The production issuer is `https://auth.polinetwork.org/api/auth`. Discovery is available at `https://auth.polinetwork.org/api/auth/.well-known/openid-configuration`.
 
-Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_access`. The custom scope adds the identity endpoint URL from `BETTER_AUTH_URL` to ID tokens, access tokens, and UserInfo. It also adds top-level string claims for consumers that cannot read arrays. With the default public origin, the claims are:
+Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_access`. The custom scope adds the identity endpoint URL from `BETTER_AUTH_URL` to ID tokens, access tokens, and UserInfo. It also adds top-level claims for consumers that cannot read the URL-named object. Access tokens carry them only when they are JWTs, which happens when the request names a resource (audience); without one the access token is opaque and clients cannot read it, so read the claims from the ID token (request `openid`) or from UserInfo instead. With the default public origin, the claims are:
 
 ```json
 {
@@ -310,6 +310,7 @@ Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_a
   "polinetwork_states": "socio student",
   "polinetwork_roles": "socio student",
   "polinetwork_permissions": "membership:read student:verified",
+  "polinetwork_permission_list": ["membership:read", "student:verified"],
   "polinetwork_telegram_id": "123456789",
   "groups": ["socio", "student"]
 }
@@ -323,6 +324,10 @@ capability and treat `roles` as a coarser label. The string `polinetwork_*` clai
 spaces between values and are empty strings when no values apply, as is
 `polinetwork_telegram_id` when no Telegram account is linked. The `/api/identity` response
 keeps the object format shown inside the URL-named claim.
+
+`polinetwork_permission_list` repeats `permissions` as a top-level array for consumers
+that can match only a flat list claim, such as oauth2-proxy (`--oidc-groups-claim`), which
+can neither split a string nor reach into the URL-named claim.
 
 `groups` repeats `roles` as an array under the claim name that apps such as Cloudflare
 Access read for group-based policies. It holds role keys, not display names. Built-in role
