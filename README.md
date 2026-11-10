@@ -297,7 +297,7 @@ snapshot for the future backend integration; no current caller uses it yet.
 
 The production issuer is `https://auth.polinetwork.org/api/auth`. Discovery is available at `https://auth.polinetwork.org/api/auth/.well-known/openid-configuration`.
 
-Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_access`. The custom scope adds the identity endpoint URL from `BETTER_AUTH_URL` to ID tokens, access tokens, and UserInfo. It also adds top-level string claims for consumers that cannot read arrays. With the default public origin, the claims are:
+Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_access`. The custom scope adds the identity endpoint URL from `BETTER_AUTH_URL` to ID tokens, access tokens, and UserInfo. It also adds top-level claims for consumers that cannot read the URL-named object. Access tokens carry them only when they are JWTs, which happens when the request names a resource (audience); without one the access token is opaque and clients cannot read it, so read the claims from the ID token (request `openid`) or from UserInfo instead. With the default public origin, the claims are:
 
 ```json
 {
