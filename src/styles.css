@@ -96,6 +96,8 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted-foreground) var(--muted);
   }
   body {
     @apply m-0 bg-background font-sans text-foreground antialiased;
@@ -116,6 +118,63 @@
     color: #152347;
   }
 }
+/* Theme every scrolling surface, including the document, portals, editors and tables.
+   Firefox uses the standard properties above; WebKit exposes arrow buttons too. */
+@supports selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: var(--muted);
+  }
+  ::-webkit-scrollbar-thumb {
+    min-height: 32px;
+    border: 2px solid var(--muted);
+    border-radius: 999px;
+    background: var(--muted-foreground);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--foreground);
+  }
+  ::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+}
+
+input::-webkit-search-decoration,
+input::-webkit-search-cancel-button,
+input::-webkit-search-results-button,
+input::-webkit-search-results-decoration {
+  appearance: none;
+}
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
+}
+
+@media (forced-colors: active) {
+  * {
+    scrollbar-color: auto;
+    scrollbar-width: auto;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: ButtonText;
+    border-color: Canvas;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: Canvas;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

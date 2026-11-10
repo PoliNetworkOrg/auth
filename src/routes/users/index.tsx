@@ -1,3 +1,4 @@
+import { Hint } from "@/components/ui/tooltip";
 import {
   createFileRoute,
   Link,
@@ -36,7 +37,7 @@ import { SignInIcons, STATUS_TRAITS, TRAIT_ICONS } from "@/components/users/trai
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   Select,
   SelectContent,
@@ -70,18 +71,20 @@ const ANY_ROLE = "any";
 function HeldMark({ label, held }: { label: string; held: boolean }) {
   const Mark = held ? Check : X;
   return (
-    <span className="flex justify-center" title={held ? label : `Not ${label}`}>
-      <Mark
-        className={cn(
-          "size-4",
-          held ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/40",
-        )}
-        aria-hidden="true"
-      />
-      <span className="sr-only">
-        {label}: {held ? "yes" : "no"}
+    <Hint content={held ? label : `Not ${label}`}>
+      <span className="flex justify-center">
+        <Mark
+          className={cn(
+            "size-4",
+            held ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/40",
+          )}
+          aria-hidden="true"
+        />
+        <span className="sr-only">
+          {label}: {held ? "yes" : "no"}
+        </span>
       </span>
-    </span>
+    </Hint>
   );
 }
 
@@ -141,25 +144,27 @@ function TraitFilter({
   const state = presenceState(value);
   const next = presenceState(cyclePresence(value, false));
   return (
-    <button
-      type="button"
-      onClick={(event) => onChange(cyclePresence(value, event.shiftKey))}
-      aria-label={`${trait.label}: ${state.label}`}
-      title={`${trait.description}. Click for “${next.label}”, Shift-click to go back.`}
-      className={cn(
-        "inline-flex h-7 items-center gap-1.5 rounded-full border py-0 pr-2.5 pl-1 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-        state.pill,
-      )}
-    >
-      <span
-        className={cn("flex size-5 items-center justify-center rounded-full", state.glyph)}
-        aria-hidden="true"
+    <Hint content={`${trait.description}. Click for “${next.label}”, Shift-click to go back.`}>
+      <button
+        type="button"
+        onClick={(event) => onChange(cyclePresence(value, event.shiftKey))}
+        aria-label={`${trait.label}: ${state.label}`}
+
+        className={cn(
+          "inline-flex h-7 items-center gap-1.5 rounded-full border py-0 pr-2.5 pl-1 text-xs font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+          state.pill,
+        )}
       >
-        <state.Glyph className="size-3" strokeWidth={3} />
-      </span>
-      <Icon className="size-3.5" aria-hidden="true" />
-      {trait.label}
-    </button>
+        <span
+          className={cn("flex size-5 items-center justify-center rounded-full", state.glyph)}
+          aria-hidden="true"
+        >
+          <state.Glyph className="size-3" strokeWidth={3} />
+        </span>
+        <Icon className="size-3.5" aria-hidden="true" />
+        {trait.label}
+      </button>
+    </Hint>
   );
 }
 
@@ -279,10 +284,9 @@ function UsersIndex() {
               className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
               aria-hidden="true"
             />
-            <Input
-              type="search"
+            <SearchInput
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onValueChange={setQuery}
               placeholder="Name, email, @Telegram, ID, role, or account status"
               aria-label="Search users"
               className="pl-9"
