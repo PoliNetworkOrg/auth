@@ -28,6 +28,7 @@ Most new services are level 1, or level 1 + 2. Level 3 needs changes to the IdP'
 3. **Validate every token:** signature, `iss`, `aud`, `exp`. Use an OIDC library, not hand-written checks.
 4. **Authorize with permissions.** `polinetwork:identity` adds:
    - **`polinetwork_permissions`:** space-separated, empty when the person has none.
+   - **`polinetwork_permission_list`:** the same permissions as an array, for tools that match a list claim (oauth2-proxy).
    - **`polinetwork_telegram_id`:** empty when no Telegram account is linked.
    - **The URL-named object claim**, described in the [README](../README.md#oidc-clients).
 

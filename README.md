@@ -310,6 +310,7 @@ Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_a
   "polinetwork_states": "socio student",
   "polinetwork_roles": "socio student",
   "polinetwork_permissions": "membership:read student:verified",
+  "polinetwork_permission_list": ["membership:read", "student:verified"],
   "polinetwork_telegram_id": "123456789",
   "groups": ["socio", "student"]
 }
@@ -323,6 +324,10 @@ capability and treat `roles` as a coarser label. The string `polinetwork_*` clai
 spaces between values and are empty strings when no values apply, as is
 `polinetwork_telegram_id` when no Telegram account is linked. The `/api/identity` response
 keeps the object format shown inside the URL-named claim.
+
+`polinetwork_permission_list` repeats `permissions` as a top-level array for consumers
+that can match only a flat list claim, such as oauth2-proxy (`--oidc-groups-claim`), which
+can neither split a string nor reach into the URL-named claim.
 
 `groups` repeats `roles` as an array under the claim name that apps such as Cloudflare
 Access read for group-based policies. It holds role keys, not display names. Built-in role
