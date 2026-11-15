@@ -4,15 +4,15 @@ A standalone TanStack Start and Better Auth identity provider. As of RFC v3 Phas
 
 ## Run locally
 
-Use Node and pnpm through Vite+.
+Use Node and pnpm through Vite+. [CONTRIBUTING.md](CONTRIBUTING.md) walks through the setup step by step, including how to run Auth together with the backend and the admin dashboard.
 
 The quickest way in needs only Docker and no provider credentials:
 
 1. Run `vp install` and copy `.env.local.example` to `.env.local`.
 2. Run `vp run dev:setup`. It starts PostgreSQL with `compose.yaml` (on `localhost:55432`), applies the migrations, and seeds four test personas plus 60 fake people. Run `vp run dev:seed` again whenever you want them back; it updates them in place.
-3. Run `vp run dev`, open `http://localhost:3000`, and pick a persona under **Dev sign-in** on the login page.
+3. Run `vp run dev`, open `http://localhost:3003`, and pick a persona under **Dev sign-in** on the login page.
 
-The personas are Ada Admin (Master Admin, through `IDP_ADMIN_USER_IDS=dev-admin`), Sam Staff (a role with only `idp:users:read` and `idp:roles:read`), Stella Student (a verified Polimi student with Telegram linked) and Nico Newcomer (Google only, nothing else). Socio and Direttivo cannot be personas: they are always checked live against Entra, never trusted from the database. Scripts and agents can skip the page: opening `/api/dev/login?as=staff&redirect=/users` signs in and redirects, `/api/dev/login` alone lists the personas, and with curl `curl -c jar 'localhost:3000/api/dev/login?as=admin'` stores the session cookie. An OpenID Connect sign-in started from an application resumes after picking a persona.
+The personas are Ada Admin (Master Admin, through `IDP_ADMIN_USER_IDS=dev-admin`), Sam Staff (a role with only `idp:users:read` and `idp:roles:read`), Stella Student (a verified Polimi student with Telegram linked) and Nico Newcomer (Google only, nothing else). Socio and Direttivo cannot be personas: they are always checked live against Entra, never trusted from the database. Scripts and agents can skip the page: opening `/api/dev/login?as=staff&redirect=/users` signs in and redirects, `/api/dev/login` alone lists the personas, and with curl `curl -c jar 'localhost:3003/api/dev/login?as=admin'` stores the session cookie. An OpenID Connect sign-in started from an application resumes after picking a persona.
 
 The dev sign-in exists only in `vp dev`. Production builds do not contain it, and `vp run build` fails if they ever do. It also stays off unless `.env.local` sets `DEV_LOGIN=1`, which startup refuses unless `BETTER_AUTH_URL` is localhost. Startup likewise refuses the public example secret from `.env.local.example` anywhere but localhost.
 
@@ -22,7 +22,7 @@ To use your own database or real providers instead:
 
 1. Run `vp install`.
 2. Copy `.env.example` to `.env.local`, set a random secret, point `DB_*` at a **new, separate PostgreSQL database**, and configure an explicit admin group or `IDP_ADMIN_USER_IDS` bootstrap allowlist.
-3. Set `BETTER_AUTH_URL=http://localhost:3000` for local development.
+3. Set `BETTER_AUTH_URL=http://localhost:3003` for local development.
 4. Run `vp run db:migrate` to apply the checked-in migration to that database.
 5. Run `vp run dev` and open the origin set in `BETTER_AUTH_URL`.
 
