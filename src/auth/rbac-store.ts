@@ -1,7 +1,7 @@
 import { groupListings, traitConditions, searchCondition } from "./people-search";
 import type { FieldErrors } from "@/lib/action-error";
 import { contactEmails } from "./contact-email";
-import { mayDelegateMutation } from "./rbac-delegation";
+import { inheritedBuiltInRoleChanges, mayDelegateMutation } from "./rbac-delegation";
 import { PEOPLE_BINDING_PATTERN, peopleBindingProblem } from "./people-binding";
 import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
@@ -35,9 +35,11 @@ import {
   MASTER_ASSIGNED_ROLE_KEYS,
   takesHandAssignments,
   catalogForIdpPermissions,
+  inheritedBuiltInRoles,
   normalizePermissionDraft,
   normalizeRoleDraft,
   resolveAccess,
+  roleNames,
   validatePermissionDraft,
   validateRoleDraft,
   withIntrinsicImplications,
@@ -263,9 +265,12 @@ async function withRbacWriteLock<T>(
       const next = await readCatalog(transaction);
       if (!mayDelegateMutation(catalog, next, access, operation, targetId)) {
         logAuthorizationDenial(actorId, "rbac-store", ["bounded-delegation"]);
+        const builtIn = inheritedBuiltInRoleChanges(catalog, next);
         throw new RbacError(
           403,
-          "This change exceeds your delegated authority. Ask a Master Admin.",
+          builtIn.length
+            ? `Only a Master Admin can change which roles give ${roleNames(next, builtIn)}.`
+            : "This change exceeds your delegated authority. Ask a Master Admin.",
         );
       }
       const after = await auditSnapshot(transaction, next, operation, targetId);
@@ -511,17 +516,26 @@ export function handAssignableRole() {
 /** Refuses a hand-made change to a role that takes none, or that only a Master Admin makes. */
 function requireHandAssignment(
   actorId: string,
+  catalog: RbacCatalog,
   target: RoleSummary,
   access: ResolvedAccess,
   verb: "assigned" | "revoked",
 ) {
   if (!takesHandAssignments(target))
     throw new RbacError(400, `Managed roles cannot be ${verb} by hand.`);
-  if (target.managed && !access.roles.includes(MASTER_ADMIN_ROLE_KEY)) {
+  if (access.roles.includes(MASTER_ADMIN_ROLE_KEY)) return;
+  const action = verb === "assigned" ? "assign" : "revoke";
+  if (target.managed) {
+    logAuthorizationDenial(actorId, "rbac-store", ["master-admin"]);
+    throw new RbacError(403, `Only a Master Admin can ${action} ${target.name}.`);
+  }
+  // Holding the role means holding the built-in roles it inherits.
+  const builtIn = inheritedBuiltInRoles(catalog, target.key);
+  if (builtIn.length) {
     logAuthorizationDenial(actorId, "rbac-store", ["master-admin"]);
     throw new RbacError(
       403,
-      `Only a Master Admin can ${verb === "assigned" ? "assign" : "revoke"} ${target.name}.`,
+      `Only a Master Admin can ${action} ${target.name}, because it also gives ${roleNames(catalog, builtIn)}.`,
     );
   }
 }
@@ -529,7 +543,7 @@ function requireHandAssignment(
 export async function assignRole(actorId: string, roleId: string, userId: string) {
   await withRbacWriteLock(actorId, "role.assign", roleId, async (transaction, catalog, access) => {
     const target = requireRole(catalog, roleId);
-    requireHandAssignment(actorId, target, access, "assigned");
+    requireHandAssignment(actorId, catalog, target, access, "assigned");
     const [found] = await transaction.select({ id: user.id }).from(user).where(eq(user.id, userId));
     if (!found) throw new RbacError(404, "That person was not found.");
     await transaction
@@ -546,7 +560,7 @@ export async function unassignRole(actorId: string, roleId: string, userId: stri
     roleId,
     async (transaction, catalog, access) => {
       const target = requireRole(catalog, roleId);
-      requireHandAssignment(actorId, target, access, "revoked");
+      requireHandAssignment(actorId, catalog, target, access, "revoked");
       await transaction
         .delete(userRole)
         .where(and(eq(userRole.roleId, roleId), eq(userRole.userId, userId)));

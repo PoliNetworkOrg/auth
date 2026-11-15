@@ -4,8 +4,29 @@ import {
   MASTER_ADMIN_ROLE_KEY,
   effectiveRolePermissions,
   expandPermissionKeys,
+  inheritedBuiltInRoles,
   resolveAccess,
 } from "./rbac";
+
+/**
+ * The built-in roles that some role, matched by id, gives through inheritance in one graph
+ * but not in the other, sorted. A role missing from a graph gives none there, so a new role
+ * that inherits a built-in role counts, and so does deleting one.
+ */
+export function inheritedBuiltInRoleChanges(before: RbacCatalog, after: RbacCatalog): string[] {
+  const reached = (catalog: RbacCatalog, id: string) => {
+    const found = catalog.roles.find((entry) => entry.id === id);
+    return new Set(found ? inheritedBuiltInRoles(catalog, found.key) : []);
+  };
+  const changed = new Set<string>();
+  for (const id of new Set([...before.roles, ...after.roles].map((entry) => entry.id))) {
+    const was = reached(before, id);
+    const is = reached(after, id);
+    for (const key of was) if (!is.has(key)) changed.add(key);
+    for (const key of is) if (!was.has(key)) changed.add(key);
+  }
+  return [...changed].sort();
+}
 
 /** Compare both committed and proposed graphs. Called under the mutation lock; a false
  * result rolls back the entire transaction, including edge replacements and assignments. */
@@ -39,8 +60,19 @@ export function mayDelegateMutation(
     if (old?.managed || next?.managed) return false;
     if (old && !subset(effectiveRolePermissions(before, old.key))) return false;
     if (next && !subset(effectiveRolePermissions(after, next.key))) return false;
+    // Giving or taking back a role that inherits a built-in role gives or takes back the
+    // built-in role too, which only a Master Admin does.
+    if (
+      (operation === "role.assign" || operation === "role.unassign") &&
+      old &&
+      inheritedBuiltInRoles(before, old.key).length
+    )
+      return false;
   }
   if (!subset(resolveAccess(after, access.roles).permissions)) return false;
+  // Only a Master Admin confers a built-in role, so nobody else may change which built-in
+  // roles any role inherits, directly or through another role.
+  if (inheritedBuiltInRoleChanges(before, after).length) return false;
   // Custom ancestors/implications cannot act as a backdoor for editing managed or
   // more privileged roles, including roles the writer does not themselves hold.
   for (const old of before.roles) {

@@ -82,6 +82,7 @@ import {
 } from "./rbac.functions";
 import { updateOidcClientFn } from "./oidc.functions";
 import { callServerFn } from "./server-fn-harness";
+import { effectiveRolePermissions } from "./rbac";
 
 const root = "security-root";
 const ordinary = "security-ordinary";
@@ -320,6 +321,44 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
       expect((await getIdentity(ordinary)).roles).not.toContain(key);
     }
     await expect(assignRole(root, direttivo.id, ordinary)).rejects.toThrow(/Managed roles/);
+  });
+
+  it("leaves giving a built-in role through inheritance to Master Admin", async () => {
+    const catalog = await loadCatalog(root);
+    // The actor holds everything Presidente and Socio grant, so only the rule refuses them.
+    const granted = ["presidente", "socio"].flatMap((key) =>
+      effectiveRolePermissions(catalog, key),
+    );
+    const actor = await delegate([...new Set(["idp:roles:write", "idp:roles:assign", ...granted])]);
+    const refused = unique("helper");
+    expect(
+      (await call(saveRoleFn, actor.id, { draft: draftRole(refused, [], ["presidente"]) })).status,
+    ).toBe(403);
+    expect((await pool.query("SELECT id FROM role WHERE key = $1", [refused])).rows).toEqual([]);
+
+    const helper = await saveRole(root, draftRole(unique("helper"), [], ["presidente"]));
+    const change = (action) =>
+      call(changeRoleMemberFn, actor.id, { action, roleId: helper.id, userId: ordinary });
+    expect((await change("assign")).status).toBe(403);
+    await expect(assignRole(actor.id, helper.id, ordinary)).rejects.toThrow(/Presidente/);
+    await assignRole(root, helper.id, ordinary);
+    try {
+      expect((await getIdentity(ordinary)).roles).toEqual(
+        expect.arrayContaining(["presidente", "direttivo"]),
+      );
+      expect((await change("unassign")).status).toBe(403);
+    } finally {
+      await unassignRole(root, helper.id, ordinary);
+    }
+
+    // An existing role can't gain a built-in parent either, directly or through `helper`.
+    const plain = await saveRole(actor.id, draftRole(unique("plain")));
+    for (const parent of ["socio", helper.key])
+      await expect(
+        saveRole(actor.id, draftRole(plain.key, [], [parent]), plain.id),
+      ).rejects.toThrow(/Only a Master Admin/);
+    await assignRole(actor.id, plain.id, ordinary);
+    await unassignRole(actor.id, plain.id, ordinary);
   });
 
   it("preserves bounded delegation while refusing direct and indirect managed-role edits", async () => {

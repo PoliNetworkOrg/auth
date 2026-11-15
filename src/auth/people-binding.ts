@@ -6,7 +6,9 @@ import {
   MASTER_ADMIN_ROLE_KEY,
   effectiveRolePermissions,
   expandRoleKeys,
+  inheritedBuiltInRoles,
   isManagedPermissionKey,
+  roleNames,
 } from "./rbac";
 
 /**
@@ -116,6 +118,8 @@ function ruleProblem(context: PeopleRuleContext): string | null {
  *
  * - Only bound roles, and only while they carry no `idp:*` permission.
  * - Nobody gives themselves a role. Giving one up is always allowed: it only removes access.
+ * - Unless Master Admin, nobody gives or takes back a role that inherits a built-in role:
+ *   holding it means holding the built-in role, which only a Master Admin confers.
  * - The rule of the role's binding kind, and of every binding it inherits: a member role
  *   wrapping a Lead role needs what the Lead role needs. See `PEOPLE_RULES`.
  * - Bounded delegation, as in the dashboard: unless Master Admin, the actor must already hold
@@ -128,6 +132,9 @@ export function peopleRoleChangeProblem(change: PeopleRoleChange): string | null
   if (problem) return problem;
   if (actorId === targetId)
     return action === "unassign" ? null : "Nobody can give themselves a role.";
+  const builtIn = inheritedBuiltInRoles(catalog, role.key);
+  if (builtIn.length && !actor.roles.includes(MASTER_ADMIN_ROLE_KEY))
+    return `Only a Master Admin can give or take back ${role.name}, because it also gives ${roleNames(catalog, builtIn)}.`;
 
   const holds = (key: string) => actor.permissions.includes(key);
   const general = (key: string) => holds(ADMIN_ACCESS_PERMISSION) && holds(key);

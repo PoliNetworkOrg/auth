@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { RbacCatalog } from "@/auth/rbac";
-import { canAssignRole, canGrantPermission, canGrantRole } from "./delegation";
+import {
+  canAssignRole,
+  canGrantPermission,
+  canGrantRole,
+  canInheritFrom,
+  confersBuiltInRole,
+} from "./delegation";
 
 const catalog: RbacCatalog = {
   permissions: ["read", "write"].map((key) => ({
@@ -78,5 +84,37 @@ describe("assigning the board offices", () => {
 
   it("never covers built-in roles proven by evidence", () => {
     expect(canAssignRole({ isMasterAdmin: true, permissions: [] }, offices, direttivo)).toBe(false);
+  });
+});
+
+describe("roles that inherit a built-in role", () => {
+  const writer = catalog.roles[0]!;
+  const presidente = { ...writer, id: "presidente", key: "presidente", managed: true };
+  const helper = {
+    ...writer,
+    id: "helper",
+    key: "helper",
+    permissions: [],
+    parents: ["presidente"],
+  };
+  const roles: RbacCatalog = { ...catalog, roles: [...catalog.roles, presidente, helper] };
+  const delegate = { isMasterAdmin: false, permissions: ["read", "write"] };
+  const master = { isMasterAdmin: true, permissions: [] };
+
+  it("are not offered as parents to anyone but Master Admin", () => {
+    expect(confersBuiltInRole(roles, helper)).toBe(true);
+    expect(confersBuiltInRole(roles, writer)).toBe(false);
+    for (const parent of [presidente, helper]) {
+      expect(canGrantRole(delegate, roles, parent.key)).toBe(true);
+      expect(canInheritFrom(delegate, roles, parent)).toBe(false);
+      expect(canInheritFrom(master, roles, parent)).toBe(true);
+    }
+    expect(canInheritFrom(delegate, roles, writer)).toBe(true);
+  });
+
+  it("are given and taken back by Master Admin only", () => {
+    expect(canAssignRole(delegate, roles, helper)).toBe(false);
+    expect(canAssignRole(master, roles, helper)).toBe(true);
+    expect(canAssignRole(delegate, roles, writer)).toBe(true);
   });
 });

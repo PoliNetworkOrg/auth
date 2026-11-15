@@ -10,6 +10,7 @@ import {
   effectiveRolePermissions,
   expandPermissionKeys,
   expandRoleKeys,
+  inheritedBuiltInRoles,
   isManagedPermissionKey,
   isStaticRoleKey,
   resolveAccess,
@@ -20,6 +21,7 @@ import {
   validateRoleDraft,
   withIntrinsicImplications,
 } from "./rbac";
+import { inheritedBuiltInRoleChanges, mayDelegateMutation } from "./rbac-delegation";
 
 function permission(key: string, implies: string[] = [], managed = false): PermissionSummary {
   return {
@@ -436,3 +438,124 @@ describe("administration catalog visibility", () => {
     expect(visible).toEqual(catalog);
   });
 });
+
+describe("built-in roles given through inheritance", () => {
+  const ROLE_ADMIN = ["idp:roles:write", "idp:roles:assign", "idp:roles:read", "idp:people:read"];
+  // The six built-in roles as production has them, with a delegated role administrator.
+  const base: RbacCatalog = {
+    permissions: [
+      ...MANAGED_PERMISSIONS.map((entry) => permission(entry.key, [...entry.implies], true)),
+      permission("board:read"),
+      permission("team:read"),
+    ],
+    roles: [
+      ...STATIC_ROLES.map((entry) =>
+        role(
+          entry.key,
+          entry.key === "direttivo" ? ["board:read"] : [],
+          entry.key === "direttivo" ? ["socio"] : [...entry.parents],
+          true,
+        ),
+      ),
+      role("role-admin", ROLE_ADMIN),
+      role("team", ["team:read"]),
+      role("team-lead", [], ["team"]),
+    ],
+  };
+  const actor = resolveAccess(base, ["direttivo", "role-admin", "team"]);
+  const master = resolveAccess(base, [MASTER_ADMIN_ROLE_KEY]);
+  const withRole = (catalog: RbacCatalog, entry: RoleSummary): RbacCatalog => ({
+    ...catalog,
+    roles: [...catalog.roles.filter((other) => other.id !== entry.id), entry],
+  });
+  const helper = role("helper", [], ["presidente"]);
+  const withHelper = withRole(base, helper);
+
+  it("lists the built-in roles a role gives, without the role itself", () => {
+    expect(inheritedBuiltInRoles(withHelper, "helper")).toEqual([
+      "direttivo",
+      "presidente",
+      "socio",
+    ]);
+    expect(inheritedBuiltInRoles(base, "presidente")).toEqual(["direttivo", "socio"]);
+    expect(inheritedBuiltInRoles(base, "socio")).toEqual([]);
+    expect(inheritedBuiltInRoles(base, "team-lead")).toEqual([]);
+  });
+
+  it("refuses a delegated writer who creates a role inheriting Presidente, then assigns it", () => {
+    const draft = { key: "helper", name: "helper", description: "", parents: ["presidente"] };
+    // The draft itself is valid: the refusal comes from who is making the change.
+    expect(validateRoleDraft({ ...draft, permissions: [] }, { catalog: base })).toEqual({});
+    expect(resolveAccess(withHelper, ["helper"]).roles).toEqual([
+      "direttivo",
+      "helper",
+      "presidente",
+      "socio",
+    ]);
+    expect(mayDelegateMutation(base, withHelper, actor, "role.save", helper.id)).toBe(false);
+    expect(mayDelegateMutation(withHelper, withHelper, actor, "role.assign", helper.id)).toBe(
+      false,
+    );
+    expect(mayDelegateMutation(withHelper, withHelper, actor, "role.unassign", helper.id)).toBe(
+      false,
+    );
+  });
+
+  it("refuses inheriting any built-in role, by a new role or an existing one", () => {
+    for (const parent of ["socio", "direttivo", "presidente", "segretario", "student"]) {
+      const created = withRole(base, role("helper", [], [parent]));
+      expect(mayDelegateMutation(base, created, actor, "role.save", "r-helper")).toBe(false);
+      const edited = withRole(base, role("team", ["team:read"], [parent]));
+      expect(mayDelegateMutation(base, edited, actor, "role.save", "r-team")).toBe(false);
+    }
+  });
+
+  it("refuses giving a built-in role through another role", () => {
+    // A Master Admin made `helper`; inheriting it gives Presidente just the same.
+    const edited = withRole(withHelper, role("team", ["team:read"], ["helper"]));
+    expect(mayDelegateMutation(withHelper, edited, actor, "role.save", "r-team")).toBe(false);
+    // Adding Presidente to `team` also changes what `team-lead` gives.
+    const parent = withRole(base, role("team", ["team:read"], ["presidente"]));
+    expect(inheritedBuiltInRoles(parent, "team-lead")).toContain("presidente");
+    expect(inheritedBuiltInRoleChanges(base, parent)).toEqual(["direttivo", "presidente", "socio"]);
+  });
+
+  it("refuses taking a built-in role back through the graph", () => {
+    const dropped = withRole(withHelper, role("helper", [], []));
+    expect(mayDelegateMutation(withHelper, dropped, actor, "role.save", helper.id)).toBe(false);
+    const deleted = { ...withHelper, roles: withHelper.roles.filter((e) => e.id !== helper.id) };
+    expect(mayDelegateMutation(withHelper, deleted, actor, "role.delete", helper.id)).toBe(false);
+  });
+
+  it("leaves Master Admin free to do all of it", () => {
+    expect(mayDelegateMutation(base, withHelper, master, "role.save", helper.id)).toBe(true);
+    expect(mayDelegateMutation(withHelper, withHelper, master, "role.assign", helper.id)).toBe(
+      true,
+    );
+    expect(
+      validateRoleDraft(
+        { ...roleDraft("helper"), parents: [MASTER_ADMIN_ROLE_KEY] },
+        {
+          catalog: base,
+        },
+      ).parents,
+    ).toMatch(/Master Admin/);
+  });
+
+  it("still allows ordinary edits and assignments, built-in parents included", () => {
+    const created = withRole(base, role("helper", ["team:read"], ["team"]));
+    expect(mayDelegateMutation(base, created, actor, "role.save", "r-helper")).toBe(true);
+    expect(mayDelegateMutation(created, created, actor, "role.assign", "r-helper")).toBe(true);
+    expect(mayDelegateMutation(created, created, actor, "role.unassign", "r-helper")).toBe(true);
+    const deleted = { ...base, roles: base.roles.filter((e) => e.key !== "team-lead") };
+    expect(mayDelegateMutation(base, deleted, actor, "role.delete", "r-team-lead")).toBe(true);
+    // Changing what a Master-made `helper` grants leaves what it inherits alone.
+    const granted = withRole(withHelper, role("helper", ["team:read"], ["presidente"]));
+    expect(inheritedBuiltInRoleChanges(withHelper, granted)).toEqual([]);
+    expect(mayDelegateMutation(withHelper, granted, actor, "role.save", helper.id)).toBe(true);
+  });
+});
+
+function roleDraft(key: string) {
+  return { key, name: key, description: "", parents: [] as string[], permissions: [] as string[] };
+}

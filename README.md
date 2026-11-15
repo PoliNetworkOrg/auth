@@ -162,6 +162,10 @@ inherit from `Socio`, everyone holding your role also reports the `socio` role a
 permissions, whether or not Entra says they are a member. Inherit from a built-in role only
 when that is what you mean.
 
+So only a Master Admin can make a role inherit from a built-in role, directly or through
+another role, and only a Master Admin can give or take back a role that does, here or from
+People. Holding `idp:roles:write` and `idp:roles:assign` is not enough.
+
 ### Permissions the identity provider defines itself
 
 Administering this service is expressed as permissions like any other capability, so it can
@@ -373,7 +377,7 @@ The backend only names the actor; this IdP resolves the actor's own access and r
   | `team:<key>:member` | `admin:access` + `people:write`, or the Lead of that team                |
   | `team:<key>:lead`   | `admin:access` + `people:appoint`                                        |
 
-- unless Master Admin, the actor holds every permission the role grants.
+- unless Master Admin, the actor holds every permission the role grants, and the role does not inherit a built-in role.
 
 The backend applies the same rules to assignments it keeps for records that aren't linked yet, which this IdP only sees when the record is linked: that is what each bound role's `permissions` and `bindings` are for.
 

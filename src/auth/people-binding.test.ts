@@ -330,3 +330,26 @@ it("describes each bound role with its effective permissions and inherited bindi
   // Roles People can't manage are left out, as everywhere else.
   expect(described.map((entry) => entry.key)).not.toContain("sneaky");
 });
+
+it("leaves bound roles that inherit a built-in role to Master Admin", () => {
+  const socio = { ...role("socio", ["people:self"]), managed: true };
+  const member = role("socio-member", ["people:self"], "team:events:member", ["socio"]);
+  const extended = { ...catalog, roles: [...catalog.roles, socio, member] };
+  const problem = (actorRoles: string[], overrides: Partial<PeopleRoleChange> = {}) =>
+    peopleRoleChangeProblem({
+      catalog: extended,
+      actorId: "actor",
+      actor: resolveAccess(extended, actorRoles),
+      targetId: "target",
+      role: member,
+      action: "assign",
+      ...overrides,
+    });
+  // Direttivo holds every permission the role grants, and may give ordinary team roles.
+  expect(problem(["direttivo"])).toMatch(/Only a Master Admin.*socio/);
+  expect(problem(["direttivo"], { action: "unassign" })).toMatch(/Only a Master Admin/);
+  expect(problem([MASTER_ADMIN_ROLE_KEY])).toBeNull();
+  expect(problem([MASTER_ADMIN_ROLE_KEY], { action: "unassign" })).toBeNull();
+  // Giving up one's own role stays allowed.
+  expect(problem([], { targetId: "actor", action: "unassign" })).toBeNull();
+});
