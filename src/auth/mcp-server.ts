@@ -842,7 +842,7 @@ export function createMcpServer(principal: McpPrincipal) {
       {
         title: "Manage a role from People",
         description:
-          "Binds a hand-made role to the admin dashboard's People register, or unbinds it with null. Holders of a bound role appear in People, and whoever may change that part of People can give or take it back, never to themselves and never beyond the permissions they hold. Roles carrying idp:* permissions can't be bound, and only Master Admin can bind or unbind a role granting permissions you don't hold.",
+          "Binds a hand-made role to the admin dashboard's People register, or unbinds it with null. Holders of a bound role appear in People, and whoever may change that part of People can give or take it back, never to themselves and never beyond the permissions they hold. Roles carrying idp:* permissions can't be bound, and only Master Admin can bind or unbind a role granting permissions you don't hold. A role inheriting a built-in role is given and taken back only by Master Admin.",
         inputSchema: z.object({
           role: roleRef,
           binding: z
