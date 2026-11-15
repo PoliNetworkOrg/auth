@@ -53,3 +53,18 @@ export const studentVerificationChallenge = pgTable(
     index("studentVerificationChallenge_expiresAt_idx").on(table.expiresAt),
   ],
 );
+
+// One row per verification code sent, kept apart from the challenge row so that replacing,
+// confirming or failing a challenge, or another person asking for the same address, never
+// resets the daily count.
+export const studentVerificationSend = pgTable(
+  "student_verification_send",
+  {
+    id: text().primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("studentVerificationSend_userId_sentAt_idx").on(table.userId, table.sentAt)],
+);

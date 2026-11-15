@@ -71,6 +71,139 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)(
       );
     }
 
+    async function sendsToday(id) {
+      const { rows } = await pool.query(
+        "SELECT count(*)::int AS total FROM student_verification_send WHERE user_id = $1 AND sent_at > now() - interval '24 hours'",
+        [id],
+      );
+      return rows[0].total;
+    }
+
+    async function passDay(id) {
+      await pool.query(
+        "UPDATE student_verification_send SET sent_at = sent_at - interval '24 hours 1 second' WHERE user_id = $1",
+        [id],
+      );
+      await allowResend(id);
+    }
+
+    it("refuses a sixth code within 24 hours and allows codes again a day later", async () => {
+      const actor = await subject();
+      for (let sent = 0; sent < 5; sent++) {
+        await requestStudentVerification(actor.id, actor.email);
+        await allowResend(actor.id);
+      }
+      await expect(requestStudentVerification(actor.id, actor.email)).rejects.toMatchObject({
+        status: 429,
+        message: "You asked for too many codes. Try again tomorrow.",
+      });
+      const other = await subject();
+      await expect(requestStudentVerification(actor.id, other.email)).rejects.toMatchObject({
+        status: 429,
+      });
+      expect(mocks.sendEmail).toHaveBeenCalledTimes(5);
+
+      await passDay(actor.id);
+      await requestStudentVerification(actor.id, actor.email);
+      expect(mocks.sendEmail).toHaveBeenCalledTimes(6);
+      await expect(
+        confirmStudentVerification(actor.id, {
+          email: actor.email,
+          code: mocks.sendEmail.mock.lastCall[1],
+        }),
+      ).resolves.toMatchObject({ email: actor.email });
+      // Older sends are pruned, so only the new one is left.
+      const { rows } = await pool.query(
+        "SELECT count(*)::int AS total FROM student_verification_send WHERE user_id = $1",
+        [actor.id],
+      );
+      expect(rows[0].total).toBe(1);
+    });
+
+    it("keeps counting codes after successful confirmations", async () => {
+      const actor = await subject();
+      for (let sent = 0; sent < 5; sent++) {
+        await requestStudentVerification(actor.id, actor.email);
+        await expect(
+          confirmStudentVerification(actor.id, {
+            email: actor.email,
+            code: mocks.sendEmail.mock.lastCall[1],
+          }),
+        ).resolves.toMatchObject({ email: actor.email });
+        await allowResend(actor.id);
+      }
+      await expect(requestStudentVerification(actor.id, actor.email)).rejects.toMatchObject({
+        status: 429,
+      });
+      expect(mocks.sendEmail).toHaveBeenCalledTimes(5);
+    });
+
+    it("counts codes whose delivery failed", async () => {
+      const actor = await subject();
+      for (let sent = 0; sent < 5; sent++) {
+        mocks.sendEmail.mockRejectedValueOnce(new Error("mail unavailable"));
+        await expect(requestStudentVerification(actor.id, actor.email)).rejects.toMatchObject({
+          status: 502,
+        });
+        await allowResend(actor.id);
+      }
+      await expect(requestStudentVerification(actor.id, actor.email)).rejects.toMatchObject({
+        status: 429,
+      });
+      expect(mocks.sendEmail).toHaveBeenCalledTimes(5);
+    });
+
+    it("keeps counting when another person asks for a code for the same address", async () => {
+      const actor = await subject();
+      const other = await subject();
+      for (let sent = 0; sent < 5; sent++) {
+        await requestStudentVerification(actor.id, actor.email);
+        await allowResend(actor.id);
+        // This replaces the first person's challenge row for the address.
+        await requestStudentVerification(other.id, actor.email);
+        await allowResend(other.id);
+      }
+      await expect(requestStudentVerification(actor.id, actor.email)).rejects.toMatchObject({
+        status: 429,
+      });
+      await expect(requestStudentVerification(other.id, other.email)).rejects.toMatchObject({
+        status: 429,
+      });
+      expect(mocks.sendEmail).toHaveBeenCalledTimes(10);
+    });
+
+    it("does not exceed the daily limit with concurrent requests", async () => {
+      const actor = await subject();
+      for (let sent = 0; sent < 4; sent++) {
+        await requestStudentVerification(actor.id, actor.email);
+        await allowResend(actor.id);
+      }
+      const targets = await Promise.all(Array.from({ length: 6 }, () => subject()));
+      const results = await Promise.allSettled(
+        targets.map((target) => requestStudentVerification(actor.id, target.email)),
+      );
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      for (const result of results.filter((entry) => entry.status === "rejected"))
+        expect(result.reason).toMatchObject({ status: 429 });
+      expect(mocks.sendEmail).toHaveBeenCalledTimes(5);
+      expect(await sendsToday(actor.id)).toBe(5);
+
+      await allowResend(actor.id);
+      await expect(
+        Promise.all(targets.map((target) => requestStudentVerification(actor.id, target.email))),
+      ).rejects.toMatchObject({ status: 429 });
+      expect(mocks.sendEmail).toHaveBeenCalledTimes(5);
+      expect(await sendsToday(actor.id)).toBe(5);
+    });
+
+    it("removes the sent-code count when the person is deleted", async () => {
+      const actor = await subject();
+      await requestStudentVerification(actor.id, actor.email);
+      expect(await sendsToday(actor.id)).toBe(1);
+      await pool.query('DELETE FROM "user" WHERE id = $1', [actor.id]);
+      expect(await sendsToday(actor.id)).toBe(0);
+    });
+
     it("keeps the cooldown and original code after an email mismatch", async () => {
       const actor = await requested();
       const other = await subject();
