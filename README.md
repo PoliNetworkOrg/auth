@@ -297,7 +297,7 @@ snapshot for the future backend integration; no current caller uses it yet.
 
 The production issuer is `https://auth.polinetwork.org/api/auth`. Discovery is available at `https://auth.polinetwork.org/api/auth/.well-known/openid-configuration`.
 
-Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_access`. The custom scope adds the identity endpoint URL from `BETTER_AUTH_URL` to ID tokens, access tokens, and UserInfo. It also adds top-level string claims for consumers that cannot read arrays. With the default public origin, the claims are:
+Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_access`. The custom scope adds the identity endpoint URL from `BETTER_AUTH_URL` to ID tokens, access tokens, and UserInfo. It also adds top-level claims for consumers that cannot read the URL-named object. Access tokens carry them only when they are JWTs, which happens when the request names a resource (audience); without one the access token is opaque and clients cannot read it, so read the claims from the ID token (request `openid`) or from UserInfo instead. With the default public origin, the claims are:
 
 ```json
 {
@@ -310,6 +310,7 @@ Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_a
   "polinetwork_states": "socio student",
   "polinetwork_roles": "socio student",
   "polinetwork_permissions": "membership:read student:verified",
+  "polinetwork_permission_list": ["membership:read", "student:verified"],
   "polinetwork_telegram_id": "123456789",
   "groups": ["socio", "student"]
 }
@@ -324,6 +325,10 @@ spaces between values and are empty strings when no values apply, as is
 `polinetwork_telegram_id` when no Telegram account is linked. The `/api/identity` response
 keeps the object format shown inside the URL-named claim.
 
+`polinetwork_permission_list` repeats `permissions` as a top-level array for consumers
+that can match only a flat list claim, such as oauth2-proxy (`--oidc-groups-claim`), which
+can neither split a string nor reach into the URL-named claim.
+
 `groups` repeats `roles` as an array under the claim name that apps such as Cloudflare
 Access read for group-based policies. It holds role keys, not display names. Built-in role
 keys cannot change; renaming a custom role's key breaks policies that match the old key.
@@ -334,9 +339,11 @@ Dynamic registration is open to AI agents only, for the [MCP server](#mcp-server
 
 ### Phase 1 backend access snapshot
 
-Set `OAUTH_BACKEND_RESOURCE_URI` and `OAUTH_INTERNAL_RESOURCE_URI` to distinct HTTPS audience identifiers, then set `OAUTH_BACKEND_CLIENT_ID` to the registered backend snapshot-pull client's ID. A client-credentials token for the internal resource needs `idp:access:read`; the authenticated client ID selects the reviewed `backend` projection. `GET /api/internal/access-snapshot` returns a versioned list of subjects with backend permissions and effective roles, their individual expiry times, and linked Telegram IDs, plus the names of every role and backend permission. An exact `If-None-Match` match returns `304`; a new Graph observation changes the ETag even if membership is unchanged. Unknown clients and missing audience or scope are rejected.
+Set `OAUTH_BACKEND_RESOURCE_URI` and `OAUTH_INTERNAL_RESOURCE_URI` to distinct HTTPS audience identifiers, then set `OAUTH_BACKEND_CLIENT_ID` to the registered backend snapshot-pull client's ID. A client-credentials token for the internal resource needs `idp:access:read`; the authenticated client ID selects the reviewed `backend` projection. `GET /api/internal/access-snapshot` returns a versioned list of subjects with backend permissions and effective roles, their individual expiry times, linked Telegram IDs and Microsoft 365 object IDs, plus the names of every role and backend permission. An exact `If-None-Match` match returns `304`; a new Graph observation changes the ETag even if membership is unchanged. Unknown clients and missing audience or scope are rejected.
 
 Entra direct-membership observations are stored by group. A pull lists a group through Graph only if no replica has observed it in the last 15 seconds, and concurrent pulls on one replica share that listing. A failed Graph request preserves the last observation, marks that source degraded, and lets its permissions expire one hour after the last success. Student rights expire at the verification timestamp. Manual assignments do not expire. Telegram IDs are included only while the linked account exists, regardless of the Telegram ID token's expiry. Duplicate Telegram IDs are excluded from the projection.
+
+Each subject's `entraObjectId` is the Entra object ID (`oid`) of the PoliNetwork Microsoft 365 account it signed in with: the `externalId` of its `pn-entra` proof, the same ID that proves `socio` and `direttivo`. The backend uses it to find the person's own register entry. Like `telegramId`, it is `null` when the account has no Microsoft 365 sign-in, when it is linked to several Microsoft 365 accounts, or when one Microsoft 365 account is linked to several accounts here. It stays while the linked account exists, whatever the group membership, so it identifies former soci too, but only subjects holding a backend permission appear in the snapshot.
 
 Database triggers enqueue changes to the snapshot's inputs in `access_outbox`. Rewrites that leave the projected columns unchanged, such as sign-ins, are ignored, and at most one undelivered row is kept per projection, so the table stays small while no receiver is configured. Once the backend receiver exists, set `OAUTH_BACKEND_EVENTS_URL` to its `/internal/events` endpoint. The production server then claims the queued rows, sends one IdP-signed security-event token for them and retries with backoff until the receiver replies `202`; the backend must still poll the snapshot because push delivery is best-effort. Leave the URL unset until the receiver is deployed. JWT signing keys rotate every seven days and public keys overlap for thirty days. Audit rows record Telegram links, client changes and student verification without storing client secrets.
 
