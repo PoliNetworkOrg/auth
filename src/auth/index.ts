@@ -31,6 +31,7 @@ import { finishMcpRegistration, mcpAuthorizationRequest, mcpResource } from "./m
 import { hasIdpPermission } from "./idp-access";
 import { canAdministerIdp } from "./oidc-admin";
 import { validateClientJwks } from "./client-jwks";
+import { unusedAccountPaths } from "./account-endpoints";
 import { rawClientMutationPaths, refusedClientMutationPaths } from "./client-endpoints";
 import {
   apiScopes,
@@ -106,7 +107,7 @@ export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, { provider: "pg", schema }),
   trustedOrigins: [new URL(env.BETTER_AUTH_URL).origin],
-  disabledPaths: ["/token", "/unlink-account", ...rawClientMutationPaths],
+  disabledPaths: ["/token", "/unlink-account", ...unusedAccountPaths, ...rawClientMutationPaths],
   socialProviders:
     env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
       ? {
