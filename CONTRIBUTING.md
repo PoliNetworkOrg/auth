@@ -60,6 +60,10 @@ on them with real data, run all three and register two applications in your loca
 [backend](https://github.com/PoliNetworkOrg/backend/blob/main/CONTRIBUTING.md) and
 [admin](https://github.com/PoliNetworkOrg/admin/blob/main/CONTRIBUTING.md) guides link here.
 
+If you only work on the backend or the dashboard, the backend also has a stand-in for Auth with fixed accounts that
+needs none of this:
+[Or use the stand-in for Auth](https://github.com/PoliNetworkOrg/backend/blob/main/CONTRIBUTING.md#or-use-the-stand-in-for-auth).
+
 | Service | URL                   | Its own services (Docker)                               |
 | ------- | --------------------- | ------------------------------------------------------- |
 | Auth    | http://localhost:3003 | PostgreSQL on 55432                                     |
