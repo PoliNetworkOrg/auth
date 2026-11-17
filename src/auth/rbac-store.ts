@@ -7,7 +7,7 @@ import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
 import type { IdentityClaims } from "./policy";
 import { randomUUID } from "node:crypto";
-import { and, countDistinct, eq, exists, gt, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, countDistinct, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import { authorizationMutationLock } from "../db/security-lock";
 import {

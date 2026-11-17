@@ -176,6 +176,13 @@
       "when": 1793645548698,
       "tag": "0024_presidente_segretario_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794929007856,
+      "tag": "0025_role_permission_overrides",
+      "breakpoints": true
     }
   ]
 }

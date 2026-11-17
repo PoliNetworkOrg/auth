@@ -421,6 +421,7 @@ export function roleDraftPermissions(catalog: RbacCatalog, draft: RoleDraft, cur
           deniedPermissions: draft.deniedPermissions ?? [],
           parents: draft.parents,
           memberCount: 0,
+          peopleBinding: null,
           createdAt: null,
           updatedAt: null,
         },
