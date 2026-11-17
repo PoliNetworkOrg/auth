@@ -19,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "cn";
-import { emptyCatalog } from "@/auth/rbac";
+import { emptyCatalog, takesHandAssignments } from "@/auth/rbac";
 import { getCatalog } from "@/auth/rbac.functions";
 import { getUsers } from "@/auth/users.functions";
 import {
@@ -247,7 +247,7 @@ function UsersIndex() {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const customRoles = catalog.roles.filter((role) => !role.managed);
+  const customRoles = catalog.roles.filter(takesHandAssignments);
   const roleName = (key: string) => catalog.roles.find((role) => role.key === key)?.name ?? key;
   const filtered = hasUserFilters(search);
   const first = (data.page - 1) * data.pageSize + 1;

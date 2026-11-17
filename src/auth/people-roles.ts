@@ -17,7 +17,13 @@ import {
   planPeopleCommand,
 } from "./people-role-command";
 import { expandRoleKeys, resolveAccess } from "./rbac";
-import { RbacError, assignedRoleKeys, auditSnapshot, readCatalog } from "./rbac-store";
+import {
+  RbacError,
+  assignedRoleKeys,
+  auditSnapshot,
+  handAssignableRole,
+  readCatalog,
+} from "./rbac-store";
 
 export type PeopleDirectory = {
   /** Every role People manages, with what holding it means. */
@@ -59,7 +65,7 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
         .select({ userId: userRole.userId, roleKey: role.key, assignedAt: userRole.assignedAt })
         .from(userRole)
         .innerJoin(role, eq(userRole.roleId, role.id))
-        .where(eq(role.managed, false));
+        .where(handAssignableRole());
       const assigned = new Map<string, string[]>();
       const since = new Map<string, Record<string, string>>();
       for (const row of assignments) {

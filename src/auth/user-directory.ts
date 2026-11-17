@@ -5,7 +5,7 @@ import { contactEmails } from "./contact-email";
 import { logAuthorizationDenial } from "./denial-log";
 import { groupListings, traitConditions, searchCondition } from "./people-search";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
-import { resolveAccess } from "./rbac";
+import { resolveAccess, takesHandAssignments } from "./rbac";
 import { RbacError, assignedRoleKeys, withAuthorizedRbacRead } from "./rbac-store";
 import {
   type UserDetail,
@@ -49,7 +49,9 @@ export async function listUsers(actorId: string, search: UserSearch): Promise<Us
       if (search.role) {
         requireRoleRead(actorId, access.permissions);
         // Only roles given by hand have holders to list; built-in ones have their own filters.
-        const target = catalog.roles.find((entry) => entry.key === search.role && !entry.managed);
+        const target = catalog.roles.find(
+          (entry) => entry.key === search.role && takesHandAssignments(entry),
+        );
         filters.push(
           target
             ? exists(

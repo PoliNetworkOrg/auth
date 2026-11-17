@@ -173,8 +173,15 @@
     {
       "idx": 24,
       "version": "7",
-      "when": 1793634158885,
-      "tag": "0024_audit_read_permission",
+      "when": 1793645548698,
+      "tag": "0024_presidente_segretario_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794935775731,
+      "tag": "0025_audit_read_permission",
       "breakpoints": true
     }
   ]

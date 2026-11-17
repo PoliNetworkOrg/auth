@@ -54,7 +54,7 @@ export const permissionImplication = pgTable(
 /**
  * A named bundle of permissions.
  *
- * `managed` roles (Master Admin, Socio, Direttivo, Student) are seeded by the application
+ * `managed` roles (Master Admin, Socio, Direttivo, Presidente, Segretario, Student) are seeded by the application
  * and their membership is conferred by the identity provider: through `source_state` for
  * the roles proven by identity evidence, and through the configured administrator
  * allowlist for Master Admin, which has no state. They cannot be created, deleted,

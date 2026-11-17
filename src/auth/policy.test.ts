@@ -68,6 +68,7 @@ describe("identity states", () => {
       polinetwork_states: "socio student",
       polinetwork_roles: "socio student",
       polinetwork_permissions: "membership:read student:verified",
+      polinetwork_permission_list: ["membership:read", "student:verified"],
       polinetwork_telegram_id: "123456789",
       groups: ["socio", "student"],
     });
@@ -83,6 +84,7 @@ describe("identity states", () => {
       polinetwork_states: "",
       polinetwork_roles: "",
       polinetwork_permissions: "",
+      polinetwork_permission_list: [],
       polinetwork_telegram_id: "",
       groups: [],
     });

@@ -8,7 +8,7 @@ import { env } from "../env";
 export const ACCESS_PROJECTIONS = {
   backend: {
     clients: env.OAUTH_BACKEND_CLIENT_ID ? [env.OAUTH_BACKEND_CLIENT_ID] : [],
-    fields: ["telegramId"],
+    fields: ["telegramId", "entraObjectId"],
   },
 } as const;
 

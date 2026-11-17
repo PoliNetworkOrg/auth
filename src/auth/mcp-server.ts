@@ -41,6 +41,7 @@ import {
   permissionDraftFrom,
   roleDraftFrom,
   staticRolesForStates,
+  takesHandAssignments,
   type ManagedPermissionKey,
   type RbacCatalog,
 } from "./rbac";
@@ -679,9 +680,9 @@ export function createMcpServer(principal: McpPrincipal) {
             inheritedBy: catalog.roles
               .filter((entry) => entry.parents.includes(found.key))
               .map((entry) => entry.key),
-            members: found.managed
-              ? "Built-in roles are held through identity evidence, not by hand."
-              : await listRoleMembers(actor, found.id, after),
+            members: takesHandAssignments(found)
+              ? await listRoleMembers(actor, found.id, after)
+              : "Built-in roles are held through identity evidence, not by hand.",
           };
         }),
     );

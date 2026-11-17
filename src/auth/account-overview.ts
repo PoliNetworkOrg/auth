@@ -5,7 +5,7 @@ import { identityEvidence } from "../db/evidence";
 import { db } from "../db/index";
 import { appEmail, claimEmail } from "./contact-email";
 import type { IdentityClaims } from "./policy";
-import { STATIC_ROLES } from "./rbac";
+import { STATIC_ROLES, takesHandAssignments } from "./rbac";
 import { readCatalog } from "./rbac-store";
 import { isPlaceholderEmail } from "./users";
 
@@ -94,7 +94,7 @@ export async function readAccountOverview(
   }));
   const assigned = identity.roles.flatMap((key) => {
     const role = roles.get(key);
-    return role && !role.managed
+    return role && takesHandAssignments(role)
       ? [{ key, name: role.name, description: role.description, automatic: false }]
       : [];
   });

@@ -39,6 +39,9 @@ export function oidcIdentityClaims(claimName: string, claims: IdentityClaims) {
     polinetwork_states: claims.states.join(" "),
     polinetwork_roles: claims.roles.join(" "),
     polinetwork_permissions: claims.permissions.join(" "),
+    // The same permissions as an array, for consumers that match a list claim, such as
+    // oauth2-proxy's groups claim. Unlike `groups`, these are permissions, not roles.
+    polinetwork_permission_list: claims.permissions,
     polinetwork_telegram_id: claims.telegramId ?? "",
     // The conventional claim for apps that map groups to policies, such as Cloudflare Access.
     groups: claims.roles,

@@ -2,11 +2,11 @@ import { Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { LoaderCircle, ShieldCheck, Sparkles, UserMinus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import type { RbacCatalog } from "@/auth/rbac";
+import { type RbacCatalog, takesHandAssignments } from "@/auth/rbac";
 import type { UserRoleAssignment } from "@/auth/users";
 import { changeRoleMemberFn } from "@/auth/rbac.functions";
 import { useAccess } from "@/components/access";
-import { canGrantRole } from "@/components/rbac/delegation";
+import { canAssignRole } from "@/components/rbac/delegation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,9 +48,17 @@ export function UserRoles({
   const [busy, setBusy] = useState("");
 
   const roleByKey = (key: string) => catalog.roles.find((role) => role.key === key);
-  const mayGrant = (key: string) => canGrantRole(access, catalog, key);
+  const mayGrant = (key: string) => {
+    const role = roleByKey(key);
+    return !!role && canAssignRole(access, catalog, role);
+  };
   const available = catalog.roles
-    .filter((role) => !role.managed && !assigned.some((entry) => entry.key === role.key))
+    .filter(
+      (role) =>
+        takesHandAssignments(role) &&
+        (access.isMasterAdmin || !role.managed) &&
+        !assigned.some((entry) => entry.key === role.key),
+    )
     .sort((a, b) => a.name.localeCompare(b.name));
   // Held through a built-in role or inheritance rather than given by hand.
   const other = held.filter((key) => !assigned.some((entry) => entry.key === key));

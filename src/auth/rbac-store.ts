@@ -7,7 +7,7 @@ import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
 import type { IdentityClaims } from "./policy";
 import { randomUUID } from "node:crypto";
-import { and, count, eq, gt, sql } from "drizzle-orm";
+import { and, count, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import { authorizationMutationLock } from "../db/security-lock";
 import {
@@ -32,6 +32,8 @@ import {
   type UserSearchResult,
   MASTER_ADMIN_ROLE_KEY,
   hasDraftErrors,
+  MASTER_ASSIGNED_ROLE_KEYS,
+  takesHandAssignments,
   catalogForIdpPermissions,
   normalizePermissionDraft,
   normalizeRoleDraft,
@@ -501,10 +503,33 @@ export async function listRoleMembers(
   });
 }
 
+/** Roles whose `user_role` rows count: the same rule as `takesHandAssignments`, in SQL. */
+export function handAssignableRole() {
+  return or(eq(role.managed, false), inArray(role.key, MASTER_ASSIGNED_ROLE_KEYS));
+}
+
+/** Refuses a hand-made change to a role that takes none, or that only a Master Admin makes. */
+function requireHandAssignment(
+  actorId: string,
+  target: RoleSummary,
+  access: ResolvedAccess,
+  verb: "assigned" | "revoked",
+) {
+  if (!takesHandAssignments(target))
+    throw new RbacError(400, `Managed roles cannot be ${verb} by hand.`);
+  if (target.managed && !access.roles.includes(MASTER_ADMIN_ROLE_KEY)) {
+    logAuthorizationDenial(actorId, "rbac-store", ["master-admin"]);
+    throw new RbacError(
+      403,
+      `Only a Master Admin can ${verb === "assigned" ? "assign" : "revoke"} ${target.name}.`,
+    );
+  }
+}
+
 export async function assignRole(actorId: string, roleId: string, userId: string) {
-  await withRbacWriteLock(actorId, "role.assign", roleId, async (transaction, catalog) => {
+  await withRbacWriteLock(actorId, "role.assign", roleId, async (transaction, catalog, access) => {
     const target = requireRole(catalog, roleId);
-    if (target.managed) throw new RbacError(400, "Managed roles cannot be assigned by hand.");
+    requireHandAssignment(actorId, target, access, "assigned");
     const [found] = await transaction.select({ id: user.id }).from(user).where(eq(user.id, userId));
     if (!found) throw new RbacError(404, "That person was not found.");
     await transaction
@@ -515,13 +540,18 @@ export async function assignRole(actorId: string, roleId: string, userId: string
 }
 
 export async function unassignRole(actorId: string, roleId: string, userId: string) {
-  await withRbacWriteLock(actorId, "role.unassign", roleId, async (transaction, catalog) => {
-    const target = requireRole(catalog, roleId);
-    if (target.managed) throw new RbacError(400, "Managed roles cannot be revoked by hand.");
-    await transaction
-      .delete(userRole)
-      .where(and(eq(userRole.roleId, roleId), eq(userRole.userId, userId)));
-  });
+  await withRbacWriteLock(
+    actorId,
+    "role.unassign",
+    roleId,
+    async (transaction, catalog, access) => {
+      const target = requireRole(catalog, roleId);
+      requireHandAssignment(actorId, target, access, "revoked");
+      await transaction
+        .delete(userRole)
+        .where(and(eq(userRole.roleId, roleId), eq(userRole.userId, userId)));
+    },
+  );
 }
 
 /**
@@ -581,7 +611,7 @@ export async function searchUsers(
   );
 }
 
-/** The role keys a person has been given by hand, ignoring anything managed. */
+/** The role keys a person has been given by hand, ignoring roles that take no assignments. */
 export async function assignedRoleKeys(
   userId: string,
   catalog: RbacCatalog,
@@ -592,7 +622,7 @@ export async function assignedRoleKeys(
     .from(userRole)
     .where(eq(userRole.userId, userId));
   const assignable = new Map(
-    catalog.roles.filter((entry) => !entry.managed).map((entry) => [entry.id, entry.key]),
+    catalog.roles.filter(takesHandAssignments).map((entry) => [entry.id, entry.key]),
   );
   return rows.flatMap((row) => {
     const key = assignable.get(row.roleId);
