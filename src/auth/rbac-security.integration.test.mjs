@@ -299,6 +299,29 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     ).toBe(403);
   });
 
+  it("leaves the board offices to Master Admin and gives their holders Direttivo", async () => {
+    const actor = await delegate(["idp:roles:assign"]);
+    const roles = (await loadCatalog(root)).roles;
+    const direttivo = roles.find((entry) => entry.key === "direttivo");
+    for (const key of ["presidente", "segretario"]) {
+      const office = roles.find((entry) => entry.key === key);
+      const change = (action) =>
+        call(changeRoleMemberFn, actor.id, { action, roleId: office.id, userId: ordinary });
+      expect((await change("assign")).status).toBe(403);
+      await assignRole(root, office.id, ordinary);
+      try {
+        expect((await getIdentity(ordinary)).roles).toEqual(
+          expect.arrayContaining([key, "direttivo"]),
+        );
+        expect((await change("unassign")).status).toBe(403);
+      } finally {
+        await unassignRole(root, office.id, ordinary);
+      }
+      expect((await getIdentity(ordinary)).roles).not.toContain(key);
+    }
+    await expect(assignRole(root, direttivo.id, ordinary)).rejects.toThrow(/Managed roles/);
+  });
+
   it("preserves bounded delegation while refusing direct and indirect managed-role edits", async () => {
     const own = await savePermission(root, draftPermission(unique("own")));
     const actor = await delegate(["idp:roles:write", "idp:roles:assign", own.key]);

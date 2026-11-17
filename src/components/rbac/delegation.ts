@@ -1,4 +1,10 @@
-import { effectiveRolePermissions, expandPermissionKeys, type RbacCatalog } from "@/auth/rbac";
+import {
+  effectiveRolePermissions,
+  expandPermissionKeys,
+  type RbacCatalog,
+  type RoleSummary,
+  takesHandAssignments,
+} from "@/auth/rbac";
 
 type DelegationAccess = { isMasterAdmin: boolean; permissions: readonly string[] };
 
@@ -18,5 +24,13 @@ export function canGrantRole(access: DelegationAccess, catalog: RbacCatalog, key
     effectiveRolePermissions(catalog, key).every((permission) =>
       access.permissions.includes(permission),
     )
+  );
+}
+
+/** Built-in roles that take assignments are given and taken back by Master Admin only. */
+export function canAssignRole(access: DelegationAccess, catalog: RbacCatalog, role: RoleSummary) {
+  return (
+    takesHandAssignments(role) &&
+    (access.isMasterAdmin || (!role.managed && canGrantRole(access, catalog, role.key)))
   );
 }

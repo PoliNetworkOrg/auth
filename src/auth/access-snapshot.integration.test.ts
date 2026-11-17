@@ -117,6 +117,7 @@ describe.skipIf(!baseURL || !databaseURL || !clientId || !audience)(
           {
             sub: "snapshot-integration-user",
             telegramId: "987654321",
+            entraObjectId: null,
             roles: { "snapshot-integration-role": { validUntil: null } },
             permissions: { "tg:snapshot:test": { validUntil: null } },
           },
