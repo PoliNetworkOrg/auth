@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import type { RoleMemberPage, UserSearchResult } from "@/auth/rbac";
 import { changeRoleMemberFn, searchPeople } from "@/auth/rbac.functions";
 import { useAccess } from "@/components/access";
+import { holdsRoleAfterUnassign } from "@/components/rbac/role-membership";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/user-avatar";
@@ -96,19 +97,11 @@ export function RoleMembers({
       // they may just have changed. The button stays busy until the list shows the change,
       // so the person is never missing from both the search and the list.
       await router.invalidate({ sync: true });
-      // Keep search results in sync without retyping. Removing a direct assignment
-      // leaves inherited holders marked as members.
+      // Keep search results in sync without retyping. Removing a direct assignment leaves
+      // someone who still inherits the role marked as holding it.
+      const holdsRole = action === "assign" || (await holdsRoleAfterUnassign(roleId, userId));
       setResults((found) =>
-        found.map((person) =>
-          person.id === userId
-            ? {
-                ...person,
-                holdsRole:
-                  action === "assign" ||
-                  !!members.find((member) => member.userId === userId)?.inheritedFrom?.length,
-              }
-            : person,
-        ),
+        found.map((person) => (person.id === userId ? { ...person, holdsRole } : person)),
       );
       if (action === "assign") setQuery("");
     } catch (cause) {
