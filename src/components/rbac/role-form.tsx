@@ -18,7 +18,11 @@ import {
 } from "@/auth/rbac";
 import { Field } from "@/components/rbac/fields";
 import { useAccess } from "@/components/access";
-import { canGrantPermission, canGrantRole } from "@/components/rbac/delegation";
+import {
+  canGrantPermission,
+  canGrantRole,
+  canTogglePermission,
+} from "@/components/rbac/delegation";
 import { PickList } from "@/components/rbac/pick-list";
 import { useDraftErrors } from "@/components/rbac/use-draft-errors";
 import { Button } from "@/components/ui/button";
@@ -126,6 +130,13 @@ export function RoleForm({
         )
         .map((permission) => permission.name);
       const outsideAuthority = !canGrantPermission(access, catalog, entry.key);
+      // Unchecking only narrows this role; the server still refuses anything wider.
+      const cannotToggle = !canTogglePermission(
+        access,
+        catalog,
+        entry.key,
+        preview.includes(entry.key),
+      );
       return {
         key: entry.key,
         label: entry.name,
@@ -150,15 +161,17 @@ export function RoleForm({
             : !direct && preview.includes(entry.key)
               ? "Granted by another permission of this role."
               : undefined,
-        disabled: outsideAuthority || requiredBy.length > 0,
-        disabledReason: outsideAuthority
+        disabled: cannotToggle || requiredBy.length > 0,
+        disabledReason: cannotToggle
           ? "You do not hold this permission or everything it grants."
           : `Required by ${requiredBy.join(", ")}. Remove that permission first.`,
         action:
           excluded || (direct && fromParents)
             ? {
                 label: fromParents ? "Use inherited" : "Reset override",
-                disabled: outsideAuthority,
+                // Restoring an exclusion adds access; dropping a direct grant that is also
+                // inherited does not.
+                disabled: excluded && outsideAuthority,
                 onClick: () =>
                   change({
                     permissions: draft.permissions.filter((key) => key !== entry.key),
