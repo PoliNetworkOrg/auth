@@ -173,6 +173,36 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     expect((await getIdentity(actor.id)).permissions).toEqual([read.key, write.key].sort());
   });
 
+  it("lets a delegated writer exclude an inherited permission they cannot grant whole", async () => {
+    const read = await savePermission(root, draftPermission(unique("read")));
+    const write = await savePermission(root, draftPermission(unique("write"), [read.key]));
+    // The writer holds `write` without the `read` it implies, so cannot grant `write` itself.
+    const parent = await saveRole(root, {
+      ...draftRole(unique("parent"), [write.key]),
+      deniedPermissions: [read.key],
+    });
+    const actor = await delegate(["idp:roles:write"]);
+    await assignRole(root, parent.id, actor.id);
+    const child = await saveRole(root, draftRole(unique("child"), [], [parent.key]));
+    const save = (permissions, deniedPermissions) =>
+      call(saveRoleFn, actor.id, {
+        roleId: child.id,
+        draft: { ...draftRole(child.key, permissions, [parent.key]), deniedPermissions },
+      });
+
+    expect((await save([], [write.key])).status).toBe(200);
+    expect(
+      (await loadCatalog(root)).roles.find((entry) => entry.id === child.id).deniedPermissions,
+    ).toEqual([write.key]);
+    // Widening past the writer's own access is still refused.
+    expect((await save([read.key], [write.key])).status).toBe(403);
+    expect((await save([write.key, read.key], [])).status).toBe(403);
+    expect((await loadCatalog(root)).roles.find((entry) => entry.id === child.id)).toMatchObject({
+      permissions: [],
+      deniedPermissions: [write.key],
+    });
+  });
+
   it("does not let a delegated writer remove an override to gain permissions", async () => {
     const high = await savePermission(root, draftPermission(unique("high")));
     const parent = await saveRole(root, draftRole(unique("parent"), [high.key]));
@@ -610,6 +640,36 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("RBAC security with Postgre
     await deleteRole(root, alternate.id);
     expect(await countFor(admin)).toBe(0);
     expect((await listRoleMembers(root, admin.id)).members).toEqual([]);
+  });
+
+  it("keeps evidence-managed roles at zero members while counting through them", async () => {
+    const before = (await loadCatalog(root)).roles.find((entry) => entry.key === "student");
+    const above = await saveRole(root, draftRole(unique("above-student")));
+    const child = await saveRole(root, draftRole(unique("student-child"), [], ["student"]));
+    const person = await delegate([]);
+    await assignRole(root, child.id, person.id);
+    await saveRole(
+      root,
+      { ...draftRole("student", before.permissions, [above.key]), name: before.name },
+      before.id,
+    );
+    try {
+      const catalog = await loadCatalog(root);
+      const countFor = (key) => catalog.roles.find((entry) => entry.key === key).memberCount;
+      expect(countFor(child.key)).toBe(1);
+      expect(countFor("student")).toBe(0);
+      expect(countFor(above.key)).toBe(1);
+    } finally {
+      await saveRole(
+        root,
+        {
+          ...draftRole("student", before.permissions, before.parents),
+          name: before.name,
+          description: before.description ?? "",
+        },
+        before.id,
+      );
+    }
   });
 
   it("terminates inherited membership cycles without double-counting", async () => {

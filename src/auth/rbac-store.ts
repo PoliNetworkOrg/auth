@@ -104,9 +104,13 @@ export async function readCatalog(db: CatalogReader): Promise<RbacCatalog> {
     .select({ permissionId: permissionImplication.permissionId, impliedKey: permission.key })
     .from(permissionImplication)
     .innerJoin(permission, eq(permission.id, permissionImplication.impliedPermissionId));
+  // Paths still pass through roles that take no assignments, so their ancestors are counted,
+  // but those roles themselves keep the zero count `RoleSummary.memberCount` promises.
   const members = await db
     .select({ roleId: membershipRoleId, members: countDistinct(membershipUserId) })
     .from(effectiveRoleAssignments)
+    .innerJoin(role, eq(role.id, membershipRoleId))
+    .where(handAssignableRole())
     .groupBy(membershipRoleId);
 
   const collect = <T>(rows: T[], keyOf: (row: T) => string, valueOf: (row: T) => string) => {
