@@ -7,6 +7,7 @@ export function ScrollArea({
   children,
   className,
   viewportLabel,
+  "aria-describedby": describedBy,
   ...props
 }: ComponentProps<typeof ScrollAreaPrimitive.Root> & { viewportLabel?: string }) {
   return (
@@ -20,6 +21,7 @@ export function ScrollArea({
         data-slot="scroll-area-viewport"
         role="region"
         aria-label={viewportLabel}
+        aria-describedby={describedBy}
         tabIndex={0}
         className="size-full max-h-[inherit] rounded-[inherit] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:ring-inset"
       >
