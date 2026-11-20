@@ -71,7 +71,7 @@ const ANY_ROLE = "any";
 function HeldMark({ label, held }: { label: string; held: boolean }) {
   const Mark = held ? Check : X;
   return (
-    <Hint content={held ? label : `Not ${label}`}>
+    <Hint content={held ? label : `Not ${label}`} focusable={false}>
       <span className="flex justify-center">
         <Mark
           className={cn(

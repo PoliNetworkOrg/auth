@@ -81,6 +81,7 @@ export function SignInIcons({ held }: { held: (trait: UserTrait) => boolean }) {
         return (
           <Hint
             content={has ? trait.description : `No ${trait.label.toLowerCase()}`}
+            focusable={false}
             key={trait.key}
           >
             <li

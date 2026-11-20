@@ -51,14 +51,27 @@ function TooltipContent({
   );
 }
 
-/** Preserves the child's layout and HTML semantics, including list items and table rows. */
-function Hint({ content, children }: { content?: string; children: React.ReactElement }) {
+/**
+ * Preserves the child's layout and HTML semantics, including list items and table rows.
+ * A plain child becomes a tab stop so keyboard users can open the hint. Pass
+ * `focusable={false}` for a mark whose meaning screen readers already get from its own
+ * text, such as a repeated table cell, so it does not add a tab stop of its own.
+ */
+function Hint({
+  content,
+  focusable = true,
+  children,
+}: {
+  content?: string;
+  focusable?: boolean;
+  children: React.ReactElement;
+}) {
   if (!content) return children;
   return (
     <Tooltip>
       <TooltipTrigger
         asChild
-        tabIndex={0}
+        tabIndex={focusable ? 0 : undefined}
         className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         {children}
