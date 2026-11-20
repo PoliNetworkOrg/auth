@@ -1,3 +1,5 @@
+import { SearchInput } from "@/components/ui/search-input";
+import { Hint } from "@/components/ui/tooltip";
 import { useState, type ReactNode } from "react";
 import { cn } from "cn";
 import { BadgeCheck, Fingerprint, Plus, Search, Trash2 } from "lucide-react";
@@ -73,20 +75,20 @@ export function GroupsPanel({ groups }: { groups: AccountDetails["groups"] }) {
       {groups.length ? (
         <ul className="flex flex-wrap gap-2 px-5 py-4">
           {groups.map((group) => (
-            <li
-              key={group.key}
-              title={group.description ?? undefined}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full py-1.5 text-sm font-medium",
-                group.automatic
-                  ? "bg-primary pr-3 pl-2 text-primary-foreground"
-                  : "border bg-muted/40 px-3",
-              )}
-            >
-              {group.automatic && <BadgeCheck className="size-4" aria-hidden="true" />}
-              {group.name}
-              {group.automatic && <span className="sr-only">(automatic)</span>}
-            </li>
+            <Hint content={group.description ?? undefined} key={group.key}>
+              <li
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full py-1.5 text-sm font-medium",
+                  group.automatic
+                    ? "bg-primary pr-3 pl-2 text-primary-foreground"
+                    : "border bg-muted/40 px-3",
+                )}
+              >
+                {group.automatic && <BadgeCheck className="size-4" aria-hidden="true" />}
+                {group.name}
+                {group.automatic && <span className="sr-only">(automatic)</span>}
+              </li>
+            </Hint>
           ))}
         </ul>
       ) : (
@@ -146,18 +148,14 @@ export function PermissionsPanel({ permissions }: { permissions: Permission[] })
             className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden="true"
           />
-          <input
-            type="search"
+          <SearchInput
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") setSearch("");
-            }}
+            onValueChange={setSearch}
             aria-label="Search permissions"
             placeholder="Search"
             autoComplete="off"
             spellCheck={false}
-            className="h-9 w-full rounded-md border bg-background pr-2.5 pl-8 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-sm dark:bg-input/30"
+            className="h-9 w-full rounded-md border bg-background pl-8 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-sm dark:bg-input/30"
           />
         </div>
         {matching.length ? (
