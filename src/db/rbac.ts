@@ -114,6 +114,8 @@ export const rolePermission = pgTable(
     permissionId: text("permission_id")
       .notNull()
       .references(() => permission.id, { onDelete: "cascade" }),
+    // False is a role-local override of an inherited or implied permission.
+    granted: boolean().default(true).notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.roleId, table.permissionId] }),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { RbacCatalog } from "@/auth/rbac";
-import { canAssignRole, canGrantPermission, canGrantRole } from "./delegation";
+import { canAssignRole, canGrantPermission, canGrantRole, canTogglePermission } from "./delegation";
 
 const catalog: RbacCatalog = {
   permissions: ["read", "write"].map((key) => ({
@@ -42,6 +42,13 @@ describe("delegation choices", () => {
         "write",
       ),
     ).toBe(true);
+  });
+
+  it("lets an effective permission be excluded without the authority to grant it", () => {
+    // A parent excluded `read`, so the writer holds `write` without what it implies.
+    const access = { isMasterAdmin: false, permissions: ["write"] };
+    expect(canTogglePermission(access, catalog, "write", true)).toBe(true);
+    expect(canTogglePermission(access, catalog, "write", false)).toBe(false);
   });
 
   it("includes inherited role permissions in the boundary", () => {

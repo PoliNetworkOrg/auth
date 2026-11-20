@@ -15,6 +15,8 @@ export function mayDelegateMutation(
   access: ResolvedAccess,
   operation: string,
   targetId: string,
+  // Expanded roles would independently restore grants excluded by a child role.
+  heldRoleKeys: readonly string[],
 ): boolean {
   if (access.roles.includes(MASTER_ADMIN_ROLE_KEY)) return true;
   const held = new Set(access.permissions);
@@ -40,7 +42,7 @@ export function mayDelegateMutation(
     if (old && !subset(effectiveRolePermissions(before, old.key))) return false;
     if (next && !subset(effectiveRolePermissions(after, next.key))) return false;
   }
-  if (!subset(resolveAccess(after, access.roles).permissions)) return false;
+  if (!subset(resolveAccess(after, heldRoleKeys).permissions)) return false;
   // Custom ancestors/implications cannot act as a backdoor for editing managed or
   // more privileged roles, including roles the writer does not themselves hold.
   for (const old of before.roles) {

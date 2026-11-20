@@ -18,6 +18,19 @@ export function canGrantPermission(access: DelegationAccess, catalog: RbacCatalo
   );
 }
 
+/**
+ * Whether a role's permission checkbox may be flipped. Unchecking only narrows the role, so
+ * only checking (adding or restoring access) is bounded by what the writer can grant.
+ */
+export function canTogglePermission(
+  access: DelegationAccess,
+  catalog: RbacCatalog,
+  key: string,
+  checked: boolean,
+) {
+  return checked || canGrantPermission(access, catalog, key);
+}
+
 export function canGrantRole(access: DelegationAccess, catalog: RbacCatalog, key: string) {
   return (
     access.isMasterAdmin ||
