@@ -1,3 +1,4 @@
+import { Hint } from "@/components/ui/tooltip";
 import { useEffect, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,24 +21,30 @@ export function CopyButton({
     return () => clearTimeout(timer);
   }, [copied]);
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size={size}
-      className={className}
-      aria-label={copied ? "Copied" : label}
-      title={copied ? "Copied" : label}
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
-          setCopied(true);
-        } catch {
-          /* Clipboard unavailable: the value stays visible for manual copy. */
-        }
-      }}
-    >
-      {copied ? <Check className="text-primary" aria-hidden="true" /> : <Copy aria-hidden="true" />}
-      {size === "sm" && (copied ? "Copied" : "Copy")}
-    </Button>
+    <Hint content={copied ? "Copied" : label}>
+      <Button
+        type="button"
+        variant="ghost"
+        size={size}
+        className={className}
+        aria-label={copied ? "Copied" : label}
+
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(value);
+            setCopied(true);
+          } catch {
+            /* Clipboard unavailable: the value stays visible for manual copy. */
+          }
+        }}
+      >
+        {copied ? (
+          <Check className="text-primary" aria-hidden="true" />
+        ) : (
+          <Copy aria-hidden="true" />
+        )}
+        {size === "sm" && (copied ? "Copied" : "Copy")}
+      </Button>
+    </Hint>
   );
 }

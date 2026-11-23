@@ -1,9 +1,8 @@
-import { useRef, type ReactNode } from "react";
-import { Search, X } from "lucide-react";
+import { type ReactNode } from "react";
+import { Search } from "lucide-react";
 import { cn } from "cn";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 
 /** The search box on its own, for pages that lay out the rest of the toolbar themselves. */
 export function SearchField({
@@ -19,40 +18,19 @@ export function SearchField({
   className?: string;
   inputClassName?: string;
 }) {
-  const input = useRef<HTMLInputElement>(null);
-
   return (
     <div className={cn("relative min-w-0", className)}>
       <Search
         className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
         aria-hidden="true"
       />
-      <Input
-        ref={input}
-        type="search"
+      <SearchInput
         value={query}
-        onChange={(event) => onQueryChange(event.target.value)}
+        onValueChange={onQueryChange}
         placeholder={`Search ${kind}…`}
         aria-label={`Search ${kind}`}
-        className={cn(
-          "pr-10 pl-9 [&::-webkit-search-cancel-button]:appearance-none",
-          inputClassName,
-        )}
+        className={cn("pr-10 pl-9", inputClassName)}
       />
-      {query && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute top-1/2 right-1 size-7 -translate-y-1/2 text-muted-foreground"
-          aria-label="Clear search"
-          onClick={() => {
-            onQueryChange("");
-            input.current?.focus();
-          }}
-        >
-          <X className="size-3.5" aria-hidden="true" />
-        </Button>
-      )}
     </div>
   );
 }

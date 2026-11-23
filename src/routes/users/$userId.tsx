@@ -1,3 +1,4 @@
+import { Hint } from "@/components/ui/tooltip";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { ArrowLeft, Clock, KeyRound, Mail, RefreshCw } from "lucide-react";
 import { emptyCatalog } from "@/auth/rbac";
@@ -190,9 +191,11 @@ function UserDetailPage() {
                 {person.permissions.length ? (
                   <ul className="flex flex-wrap gap-2" aria-label="Permissions">
                     {person.permissions.map((key) => (
-                      <li key={key} title={permissionName(key)}>
-                        <KeyChip>{key}</KeyChip>
-                      </li>
+                      <Hint content={permissionName(key)} key={key}>
+                        <li>
+                          <KeyChip>{key}</KeyChip>
+                        </li>
+                      </Hint>
                     ))}
                   </ul>
                 ) : (
@@ -236,9 +239,9 @@ function UserDetailPage() {
                   <KeyRound className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <dt className="text-muted-foreground">User ID</dt>
                   <dd className="ml-auto flex min-w-0 items-center gap-1">
-                    <span className="truncate font-mono text-xs" title={person.id}>
-                      {person.id}
-                    </span>
+                    <Hint content={person.id}>
+                      <span className="truncate font-mono text-xs">{person.id}</span>
+                    </Hint>
                     <CopyButton value={person.id} label="Copy user ID" size="icon-xs" />
                   </dd>
                 </div>
