@@ -79,6 +79,26 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)(
       return rows[0].total;
     }
 
+    // Gives every code this person asks for a send time already past the resend cooldown, so
+    // that concurrent requests are refused only if the daily limit refuses them.
+    async function withoutCooldown(id, run) {
+      const name = `skip_cooldown_${id.replaceAll("-", "_")}`;
+      await pool.query(
+        `CREATE FUNCTION ${name}() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN NEW.last_sent_at := NEW.last_sent_at - interval '61 seconds'; RETURN NEW; END $$`,
+      );
+      await pool.query(
+        `CREATE TRIGGER ${name} BEFORE INSERT ON student_verification_challenge FOR EACH ROW
+          WHEN (NEW.user_id = '${id}') EXECUTE FUNCTION ${name}()`,
+      );
+      try {
+        await run();
+      } finally {
+        await pool.query(`DROP TRIGGER ${name} ON student_verification_challenge`);
+        await pool.query(`DROP FUNCTION ${name}()`);
+      }
+    }
+
     async function passDay(id) {
       await pool.query(
         "UPDATE student_verification_send SET sent_at = sent_at - interval '24 hours 1 second' WHERE user_id = $1",
@@ -184,22 +204,25 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)(
         await requestStudentVerification(actor.id, actor.email);
         await allowResend(actor.id);
       }
-      const targets = await Promise.all(Array.from({ length: 6 }, () => subject()));
-      const results = await Promise.allSettled(
-        targets.map((target) => requestStudentVerification(actor.id, target.email)),
-      );
-      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-      for (const result of results.filter((entry) => entry.status === "rejected"))
-        expect(result.reason).toMatchObject({ status: 429 });
-      expect(mocks.sendEmail).toHaveBeenCalledTimes(5);
-      expect(await sendsToday(actor.id)).toBe(5);
+      const dailyLimit = { status: 429, message: expect.stringMatching(/too many codes/) };
+      await withoutCooldown(actor.id, async () => {
+        const targets = await Promise.all(Array.from({ length: 6 }, () => subject()));
+        const results = await Promise.allSettled(
+          targets.map((target) => requestStudentVerification(actor.id, target.email)),
+        );
+        expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+        for (const result of results.filter((entry) => entry.status === "rejected"))
+          expect(result.reason).toMatchObject(dailyLimit);
+        expect(mocks.sendEmail).toHaveBeenCalledTimes(5);
+        expect(await sendsToday(actor.id)).toBe(5);
 
-      await allowResend(actor.id);
-      await expect(
-        Promise.all(targets.map((target) => requestStudentVerification(actor.id, target.email))),
-      ).rejects.toMatchObject({ status: 429 });
-      expect(mocks.sendEmail).toHaveBeenCalledTimes(5);
-      expect(await sendsToday(actor.id)).toBe(5);
+        const again = await Promise.allSettled(
+          targets.map((target) => requestStudentVerification(actor.id, target.email)),
+        );
+        for (const result of again) expect(result).toMatchObject({ reason: dailyLimit });
+        expect(mocks.sendEmail).toHaveBeenCalledTimes(5);
+        expect(await sendsToday(actor.id)).toBe(5);
+      });
     });
 
     it("removes the sent-code count when the person is deleted", async () => {
