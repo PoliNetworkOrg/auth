@@ -37,7 +37,7 @@ rules.
   resolve no address, so a client cannot create buckets of its own.
 - **Windows and concurrency (findings 2 and 3).** `src/auth/rate-limit.ts` replaces Better
   Auth's database storage with `rateLimit.customStorage`: one `INSERT ... ON CONFLICT DO
-UPDATE` per request on the existing `rate_limit` table decides admission against the
+  UPDATE` per request on the existing `rate_limit` table decides admission against the
   locked, latest row, using the database clock. `last_request` now holds the window start;
   neither accepted nor refused requests move it. No schema change or new infrastructure.
   Rows older than an hour are deleted at most once a minute per replica. Database errors
