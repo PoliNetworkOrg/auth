@@ -850,7 +850,7 @@ export function createMcpServer(principal: McpPrincipal) {
             .max(64)
             .nullable()
             .describe(
-              "admin (Telegram group admins), capo (Capo Admins), team:<key>:member or team:<key>:lead, with the dashboard's team key: it, hr, design, intl or events.",
+              "admin (Telegram group admins), capo (Capo Admins), team:<key>:member or team:<key>:lead, with the dashboard's team key: it, hr, design or events.",
             ),
         }),
         annotations: { idempotentHint: true },
