@@ -95,11 +95,17 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)(
       }
       await expect(requestStudentVerification(actor.id, actor.email)).rejects.toMatchObject({
         status: 429,
-        message: "You asked for too many codes. Try again tomorrow.",
+        message: "You asked for too many codes. Try again in 24 hours.",
       });
+      // The window is a rolling 24 hours: the wait ends when the oldest code leaves it.
+      await pool.query(
+        "UPDATE student_verification_send SET sent_at = sent_at - interval '23 hours 30 minutes' WHERE user_id = $1",
+        [actor.id],
+      );
       const other = await subject();
       await expect(requestStudentVerification(actor.id, other.email)).rejects.toMatchObject({
         status: 429,
+        message: "You asked for too many codes. Try again in 30 minutes.",
       });
       expect(mocks.sendEmail).toHaveBeenCalledTimes(5);
 

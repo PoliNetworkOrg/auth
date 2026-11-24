@@ -1,5 +1,5 @@
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { and, count, desc, eq, gt, lte, or } from "drizzle-orm";
+import { and, count, desc, eq, gt, lte, min, or } from "drizzle-orm";
 import { z } from "zod";
 import { account } from "../db/auth-schema";
 import {
@@ -30,6 +30,13 @@ export class StudentVerificationError extends Error {
   ) {
     super(message);
   }
+}
+
+function describeWait(ms: number) {
+  const minutes = Math.max(1, Math.ceil(ms / 60_000));
+  if (minutes < 60) return minutes === 1 ? "one minute" : `${minutes} minutes`;
+  const hours = Math.ceil(minutes / 60);
+  return hours === 1 ? "one hour" : `${hours} hours`;
 }
 
 export function parsePolimiStudentEmail(value: unknown) {
@@ -81,7 +88,7 @@ export async function requestStudentVerification(userId: string, input: unknown)
         .delete(studentVerificationSend)
         .where(lte(studentVerificationSend.sentAt, windowStart));
       const [sentToday] = await transaction
-        .select({ total: count() })
+        .select({ total: count(), oldest: min(studentVerificationSend.sentAt) })
         .from(studentVerificationSend)
         .where(
           and(
@@ -89,11 +96,14 @@ export async function requestStudentVerification(userId: string, input: unknown)
             gt(studentVerificationSend.sentAt, windowStart),
           ),
         );
-      if ((sentToday?.total ?? 0) >= DAILY_CODE_LIMIT)
+      if (sentToday?.oldest && sentToday.total >= DAILY_CODE_LIMIT) {
+        // The window is a rolling 24 hours, so a code frees up when the oldest one leaves it.
+        const wait = sentToday.oldest.getTime() + DAILY_WINDOW_MS - now.getTime();
         throw new StudentVerificationError(
           429,
-          "You asked for too many codes. Try again tomorrow.",
+          `You asked for too many codes. Try again in ${describeWait(wait)}.`,
         );
+      }
       await transaction
         .insert(studentVerificationSend)
         .values({ id: randomUUID(), userId, sentAt: now });
