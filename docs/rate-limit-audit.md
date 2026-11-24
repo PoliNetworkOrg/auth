@@ -271,7 +271,9 @@ backend receiver, not `/oauth2/authorize` or `/oauth2/token`.
 
 The student email verifier separately enforces a 60-second resend cooldown by
 both user and recipient and a five-attempt challenge limit under the RBAC write
-lock. Those controls should remain unchanged. The provider's sign-in limits,
+lock. Those controls should remain unchanged. It also allows at most five codes per
+person in any 24 hours, counted in a separate table that new codes, confirmations and
+failed emails do not reset. The provider's sign-in limits,
 PKCE, state, nonce, signature checks, disabled account-linking paths and
 database-backed sharing must be retained.
 

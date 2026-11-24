@@ -1,8 +1,12 @@
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, count, desc, eq, gt, lte, min, or } from "drizzle-orm";
 import { z } from "zod";
 import { account } from "../db/auth-schema";
-import { identityEvidence, studentVerificationChallenge } from "../db/evidence";
+import {
+  identityEvidence,
+  studentVerificationChallenge,
+  studentVerificationSend,
+} from "../db/evidence";
 import { rbacAuditEvent } from "../db/rbac";
 import { db } from "../db/index";
 import { authorizationMutationLock } from "../db/security-lock";
@@ -14,6 +18,10 @@ const POLIMI_EMAIL_ISSUER = "https://mail.polimi.it";
 const CODE_LIFETIME_MS = 10 * 60 * 1_000;
 const RESEND_DELAY_MS = 60 * 1_000;
 const MAX_ATTEMPTS = 5;
+// Codes one person can ask for in any 24 hours, whatever the address and whatever happened
+// to the earlier codes. Without it, new codes would give unlimited guesses and emails.
+const DAILY_CODE_LIMIT = 5;
+const DAILY_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
 export class StudentVerificationError extends Error {
   constructor(
@@ -22,6 +30,13 @@ export class StudentVerificationError extends Error {
   ) {
     super(message);
   }
+}
+
+function describeWait(ms: number) {
+  const minutes = Math.max(1, Math.ceil(ms / 60_000));
+  if (minutes < 60) return minutes === 1 ? "one minute" : `${minutes} minutes`;
+  const hours = Math.ceil(minutes / 60);
+  return hours === 1 ? "one hour" : `${hours} hours`;
 }
 
 export function parsePolimiStudentEmail(value: unknown) {
@@ -68,6 +83,30 @@ export async function requestStudentVerification(userId: string, input: unknown)
         .limit(1);
       if (recent && now.getTime() - recent.lastSentAt.getTime() < RESEND_DELAY_MS)
         throw new StudentVerificationError(429, "Wait one minute before requesting another code.");
+      const windowStart = new Date(now.getTime() - DAILY_WINDOW_MS);
+      await transaction
+        .delete(studentVerificationSend)
+        .where(lte(studentVerificationSend.sentAt, windowStart));
+      const [sentToday] = await transaction
+        .select({ total: count(), oldest: min(studentVerificationSend.sentAt) })
+        .from(studentVerificationSend)
+        .where(
+          and(
+            eq(studentVerificationSend.userId, userId),
+            gt(studentVerificationSend.sentAt, windowStart),
+          ),
+        );
+      if (sentToday?.oldest && sentToday.total >= DAILY_CODE_LIMIT) {
+        // The window is a rolling 24 hours, so a code frees up when the oldest one leaves it.
+        const wait = sentToday.oldest.getTime() + DAILY_WINDOW_MS - now.getTime();
+        throw new StudentVerificationError(
+          429,
+          `You asked for too many codes. Try again in ${describeWait(wait)}.`,
+        );
+      }
+      await transaction
+        .insert(studentVerificationSend)
+        .values({ id: randomUUID(), userId, sentAt: now });
       await transaction
         .delete(studentVerificationChallenge)
         .where(
