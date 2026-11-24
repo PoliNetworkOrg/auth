@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-start";
 import { getResponseStatus } from "@tanstack/react-start/server";
 import { actionErrorAdapter } from "@/lib/action-error";
+import { withSecurityHeaders } from "@/lib/security-headers";
 import { env } from "@/env";
 
 /** The public origin, not the one the request reached this process with behind the proxy. */
@@ -35,7 +36,17 @@ const refusalStatusMiddleware = createMiddleware().server(async ({ next, handler
   return { ...result, response: new Response(body, { status, headers }) };
 });
 
+/**
+ * Pages, server functions and server routes all pass through here. It runs first so it sees
+ * the response the other middleware produced.
+ */
+const securityHeadersMiddleware = createMiddleware().server(async ({ next }) => {
+  const result = await next();
+  const response = withSecurityHeaders(result.response, trustedOrigin());
+  return response === result.response ? result : { ...result, response };
+});
+
 export const startInstance = createStart(() => ({
-  requestMiddleware: [csrfMiddleware, refusalStatusMiddleware],
+  requestMiddleware: [securityHeadersMiddleware, csrfMiddleware, refusalStatusMiddleware],
   serializationAdapters: [actionErrorAdapter],
 }));
