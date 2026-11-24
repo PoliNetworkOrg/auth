@@ -527,6 +527,23 @@ describe("built-in roles given through inheritance", () => {
     expect(mayDelegateMutation(withHelper, deleted, actor, "role.delete", helper.id)).toBe(false);
   });
 
+  it("refuses binding a role that inherits a built-in role to People, but not unbinding it", () => {
+    const binder = resolveAccess(base, ["direttivo", "role-admin", "team"]);
+    const bound = withRole(withHelper, { ...helper, peopleBinding: "team:events:member" });
+    // Binding, or moving it to another concept, lets People writers hand out Presidente.
+    expect(mayDelegateMutation(withHelper, bound, binder, "role.people", helper.id)).toBe(false);
+    const moved = withRole(bound, { ...helper, peopleBinding: "team:events:lead" });
+    expect(mayDelegateMutation(bound, moved, binder, "role.people", helper.id)).toBe(false);
+    expect(mayDelegateMutation(withHelper, bound, master, "role.people", helper.id)).toBe(true);
+    // Unbinding it, or keeping the binding a Master Admin chose, gives nothing.
+    expect(mayDelegateMutation(bound, withHelper, binder, "role.people", helper.id)).toBe(true);
+    expect(mayDelegateMutation(bound, bound, binder, "role.people", helper.id)).toBe(true);
+    // Ordinary roles are bound as before.
+    const team = base.roles.find((entry) => entry.key === "team")!;
+    const teamBound = withRole(base, { ...team, peopleBinding: "team:events:member" });
+    expect(mayDelegateMutation(base, teamBound, binder, "role.people", team.id)).toBe(true);
+  });
+
   it("leaves Master Admin free to do all of it", () => {
     expect(mayDelegateMutation(base, withHelper, master, "role.save", helper.id)).toBe(true);
     expect(mayDelegateMutation(withHelper, withHelper, master, "role.assign", helper.id)).toBe(

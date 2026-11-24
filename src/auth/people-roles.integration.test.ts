@@ -226,5 +226,43 @@ describe.skipIf(!process.env.PEOPLE_ROLES_TEST_DATABASE_URL)(
         peopleBinding: null,
       });
     });
+
+    it("leaves binding a role that inherits a built-in role to Master Admin", async () => {
+      const studentish = await saveRole(root, {
+        key: `${team}-studentish`,
+        name: `${team}-studentish`,
+        description: "",
+        permissions: [],
+        parents: ["student"],
+      });
+      // The binder holds everything the role grants, so only the built-in parent stops them.
+      const verified = await saveRole(root, {
+        key: `${team}-verified`,
+        name: `${team}-verified`,
+        description: "",
+        permissions: ["student:verified"],
+        parents: [],
+      });
+      await assignRole(root, verified.id, binder);
+      const binding = `team:${team}y:member`;
+      await expect(setRolePeopleBinding(binder, studentish.id, binding)).rejects.toMatchObject({
+        status: 403,
+        message: expect.stringMatching(/Only a Master Admin.*because it also gives Student/),
+      });
+      expect(await setRolePeopleBinding(root, studentish.id, binding)).toMatchObject({
+        peopleBinding: binding,
+      });
+      // The backend learns that only a Master Admin may give it.
+      expect(
+        (await readPeopleDirectory()).roles.find((entry) => entry.key === studentish.key),
+      ).toMatchObject({ bindings: [binding], builtInRoles: ["student"] });
+      // Moving it to another concept is binding it again; unbinding it gives nothing.
+      await expect(
+        setRolePeopleBinding(binder, studentish.id, `team:${team}y:lead`),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(await setRolePeopleBinding(binder, studentish.id, null)).toMatchObject({
+        peopleBinding: null,
+      });
+    });
   },
 );

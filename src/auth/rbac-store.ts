@@ -2,7 +2,11 @@ import { groupListings, traitConditions, searchCondition } from "./people-search
 import type { FieldErrors } from "@/lib/action-error";
 import { contactEmails } from "./contact-email";
 import { inheritedBuiltInRoleChanges, mayDelegateMutation } from "./rbac-delegation";
-import { PEOPLE_BINDING_PATTERN, peopleBindingProblem } from "./people-binding";
+import {
+  PEOPLE_BINDING_PATTERN,
+  peopleBindingBuiltInProblem,
+  peopleBindingProblem,
+} from "./people-binding";
 import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
 import type { IdentityClaims } from "./policy";
@@ -437,14 +441,15 @@ export async function saveRole(
  * Binds a role to a People concept, or unbinds it with `null`. Binding hands the role's
  * membership to People writers (through the backend), so it needs `idp:people:bind`, and,
  * like editing a role, only a Master Admin may bind or unbind one granting permissions they
- * don't hold (`mayDelegateMutation`).
+ * don't hold (`mayDelegateMutation`). Only a Master Admin binds a role inheriting a built-in
+ * role; anyone allowed to bind may unbind it.
  */
 export async function setRolePeopleBinding(
   actorId: string,
   roleId: string,
   binding: string | null,
 ) {
-  return withRbacWriteLock(actorId, "role.people", roleId, async (transaction, catalog) => {
+  return withRbacWriteLock(actorId, "role.people", roleId, async (transaction, catalog, access) => {
     const current = requireRole(catalog, roleId);
     if (binding !== null) {
       if (!PEOPLE_BINDING_PATTERN.test(binding))
@@ -453,6 +458,15 @@ export async function setRolePeopleBinding(
         });
       const problem = peopleBindingProblem(catalog, current);
       if (problem) throw new RbacError(400, problem);
+      const builtIn = peopleBindingBuiltInProblem(catalog, current);
+      if (
+        builtIn &&
+        binding !== current.peopleBinding &&
+        !access.roles.includes(MASTER_ADMIN_ROLE_KEY)
+      ) {
+        logAuthorizationDenial(actorId, "rbac-store", ["master-admin"]);
+        throw new RbacError(403, builtIn);
+      }
     }
     await transaction
       .update(role)

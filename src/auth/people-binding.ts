@@ -52,6 +52,21 @@ export function peopleBindingProblem(catalog: RbacCatalog, role: RoleSummary): s
   return null;
 }
 
+/**
+ * Why only a Master Admin may bind `role` to People, or null. A role inheriting a built-in
+ * role gives the built-in role too, and People could then give it only through a Master Admin
+ * anyway (`peopleRoleChangeProblem`). Anyone with `idp:people:bind` may still unbind it.
+ */
+export function peopleBindingBuiltInProblem(
+  catalog: RbacCatalog,
+  role: RoleSummary,
+): string | null {
+  const builtIn = inheritedBuiltInRoles(catalog, role.key);
+  return builtIn.length
+    ? `Only a Master Admin can let People manage ${role.name}, because it also gives ${roleNames(catalog, builtIn)}.`
+    : null;
+}
+
 /** The permissions that let a dashboard user change who holds a bound role, besides `admin:access`. */
 export const PEOPLE_WRITE_PERMISSION = "people:write";
 export const PEOPLE_APPOINT_PERMISSION = "people:appoint";

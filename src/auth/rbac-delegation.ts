@@ -68,6 +68,15 @@ export function mayDelegateMutation(
       inheritedBuiltInRoles(before, old.key).length
     )
       return false;
+    // Binding such a role to People, or to another concept there, lets People writers give
+    // and take back the built-in role. Unbinding takes that away, so anyone may do it.
+    if (
+      operation === "role.people" &&
+      next?.peopleBinding &&
+      next.peopleBinding !== old?.peopleBinding &&
+      inheritedBuiltInRoles(after, next.key).length
+    )
+      return false;
   }
   if (!subset(resolveAccess(after, access.roles).permissions)) return false;
   // Only a Master Admin confers a built-in role, so nobody else may change which built-in
