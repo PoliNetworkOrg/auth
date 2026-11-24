@@ -112,7 +112,7 @@ export function PeopleBindingCard({
                 <Field
                   id="people-binding-team"
                   label="Team key"
-                  hint="As in the admin dashboard: it, hr, design, intl or events."
+                  hint="As in the admin dashboard: it, hr, design or events."
                   error={team && teamMissing ? "Use lowercase letters, digits and -." : undefined}
                 >
                   <Input

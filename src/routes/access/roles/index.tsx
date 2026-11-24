@@ -1,4 +1,5 @@
 import { matchesSearch } from "@/lib/search";
+import { Hint } from "@/components/ui/tooltip";
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";
@@ -75,28 +76,30 @@ function BuiltInRoleCard({ role, effective }: { role: RoleSummary; effective: nu
   return (
     <li>
       <Card className="h-47 transition-colors has-[a:hover]:bg-accent/50 has-[a:focus-visible]:bg-accent/50">
-        <Link
-          to="/access/roles/$roleId"
-          params={{ roleId: role.id }}
-          title={staticRole(role.key)?.evidence}
-          className="flex size-full flex-col items-center px-3 pt-7 pb-3.5 text-center outline-none"
-        >
-          <span className="flex size-[42px] items-center justify-center">
-            <BuiltInRoleIcon roleKey={role.key} />
-          </span>
-          <h3 className="mt-3 max-w-full truncate text-base">{role.name}</h3>
-          <span className="mt-1.5 max-w-full truncate">
-            <KeyChip>{role.key}</KeyChip>
-          </span>
-          <span className="mt-auto flex items-center gap-1.5 text-xs text-muted-foreground">
-            <PermissionsIcon />
-            {effective === null ? (
-              <span className="font-mono">ALL</span>
-            ) : (
-              plural(effective, "permission", "permissions")
-            )}
-          </span>
-        </Link>
+        <Hint content={staticRole(role.key)?.evidence}>
+          <Link
+            to="/access/roles/$roleId"
+            params={{ roleId: role.id }}
+
+            className="flex size-full flex-col items-center px-3 pt-7 pb-3.5 text-center outline-none"
+          >
+            <span className="flex size-[42px] items-center justify-center">
+              <BuiltInRoleIcon roleKey={role.key} />
+            </span>
+            <h3 className="mt-3 max-w-full truncate text-base">{role.name}</h3>
+            <span className="mt-1.5 max-w-full truncate">
+              <KeyChip>{role.key}</KeyChip>
+            </span>
+            <span className="mt-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+              <PermissionsIcon />
+              {effective === null ? (
+                <span className="font-mono">ALL</span>
+              ) : (
+                plural(effective, "permission", "permissions")
+              )}
+            </span>
+          </Link>
+        </Hint>
       </Card>
     </li>
   );
