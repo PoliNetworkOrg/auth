@@ -141,11 +141,11 @@ An application can send a person to link Telegram, PoliNetwork APS or Google to 
 https://auth.polinetwork.org/link?method=telegram&client_id=<client id>&return_to=<url>
 ```
 
-| Parameter   | Value                                                                                                                                         |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `method`    | `telegram`, `pn-entra` (PoliNetwork APS) or `google`.                                                                                         |
-| `client_id` | The application's client ID.                                                                                                                  |
-| `return_to` | Where to come back to: an absolute URL with the **same origin** (scheme, host and port) as one of the application's registered redirect URIs. |
+| Parameter   | Value                                                                                                                                                                  |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `method`    | `telegram`, `pn-entra` (PoliNetwork APS) or `google`.                                                                                                                  |
+| `client_id` | The application's client ID.                                                                                                                                           |
+| `return_to` | Where to come back to: an absolute URL with the **same origin** (scheme, host and port) as one of the application's registered redirect URIs, at most 2048 characters. |
 
 **What the person sees:**
 
