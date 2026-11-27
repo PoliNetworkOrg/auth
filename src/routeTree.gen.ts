@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccessRouteRouteImport } from './routes/access/route'
 import { Route as ApplicationsRouteRouteImport } from './routes/applications/route'
 import { Route as ConsentRouteImport } from './routes/consent'
+import { Route as ErrorRouteImport } from './routes/error'
 import { Route as LinkRouteImport } from './routes/link'
 import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as PasskeyRouteImport } from './routes/passkey'
@@ -58,6 +59,11 @@ const ApplicationsRouteRoute = ApplicationsRouteRouteImport.update({
 const ConsentRoute = ConsentRouteImport.update({
   id: '/consent',
   path: '/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ErrorRoute = ErrorRouteImport.update({
+  id: '/error',
+  path: '/error',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LinkRoute = LinkRouteImport.update({
@@ -202,6 +208,7 @@ export interface FileRoutesByFullPath {
   '/applications': typeof ApplicationsRouteRouteWithChildren
   '/users': typeof UsersRouteRouteWithChildren
   '/consent': typeof ConsentRoute
+  '/error': typeof ErrorRoute
   '/link': typeof LinkRoute
   '/logout': typeof LogoutRoute
   '/passkey': typeof PasskeyRoute
@@ -231,6 +238,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/consent': typeof ConsentRoute
+  '/error': typeof ErrorRoute
   '/link': typeof LinkRoute
   '/logout': typeof LogoutRoute
   '/passkey': typeof PasskeyRoute
@@ -264,6 +272,7 @@ export interface FileRoutesById {
   '/applications': typeof ApplicationsRouteRouteWithChildren
   '/users': typeof UsersRouteRouteWithChildren
   '/consent': typeof ConsentRoute
+  '/error': typeof ErrorRoute
   '/link': typeof LinkRoute
   '/logout': typeof LogoutRoute
   '/passkey': typeof PasskeyRoute
@@ -298,6 +307,7 @@ export interface FileRouteTypes {
     | '/applications'
     | '/users'
     | '/consent'
+    | '/error'
     | '/link'
     | '/logout'
     | '/passkey'
@@ -327,6 +337,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/consent'
+    | '/error'
     | '/link'
     | '/logout'
     | '/passkey'
@@ -359,6 +370,7 @@ export interface FileRouteTypes {
     | '/applications'
     | '/users'
     | '/consent'
+    | '/error'
     | '/link'
     | '/logout'
     | '/passkey'
@@ -392,6 +404,7 @@ export interface RootRouteChildren {
   ApplicationsRouteRoute: typeof ApplicationsRouteRouteWithChildren
   UsersRouteRoute: typeof UsersRouteRouteWithChildren
   ConsentRoute: typeof ConsentRoute
+  ErrorRoute: typeof ErrorRoute
   LinkRoute: typeof LinkRoute
   LogoutRoute: typeof LogoutRoute
   PasskeyRoute: typeof PasskeyRoute
@@ -435,6 +448,13 @@ declare module '@tanstack/react-router' {
       path: '/consent'
       fullPath: '/consent'
       preLoaderRoute: typeof ConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/error': {
+      id: '/error'
+      path: '/error'
+      fullPath: '/error'
+      preLoaderRoute: typeof ErrorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/link': {
@@ -681,6 +701,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApplicationsRouteRoute: ApplicationsRouteRouteWithChildren,
   UsersRouteRoute: UsersRouteRouteWithChildren,
   ConsentRoute: ConsentRoute,
+  ErrorRoute: ErrorRoute,
   LinkRoute: LinkRoute,
   LogoutRoute: LogoutRoute,
   PasskeyRoute: PasskeyRoute,

@@ -14,6 +14,7 @@ import * as schema from "../db/schema";
 import { env } from "../env";
 import { AUTH_COOKIE_PREFIX, PASSKEY_UNSUPPORTED_COOKIE } from "./cookies";
 import { appEmail } from "./contact-email";
+import { ERROR_PAGE_URL, routeCallbackError } from "./callback-errors";
 import { startAccessDispatcher } from "./access-dispatcher";
 import { startDataRetention } from "./data-retention";
 import { getOidcClaims } from "./identity";
@@ -108,6 +109,9 @@ export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, { provider: "pg", schema }),
   trustedOrigins: [new URL(env.BETTER_AUTH_URL).origin],
+  // Auth's own page, in its design, instead of Better Auth's bare one. Failures inside an
+  // application's sign-in are routed on from there by `routeCallbackError`.
+  onAPIError: { errorURL: ERROR_PAGE_URL },
   disabledPaths: ["/token", "/unlink-account", ...unusedAccountPaths, ...rawClientMutationPaths],
   socialProviders:
     env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
@@ -201,6 +205,7 @@ export const auth = betterAuth({
       }
     }),
     after: createAuthMiddleware(async (context) => {
+      if (context.path === "/callback/:id") return await routeCallbackError(context);
       if (context.path === "/oauth2/register") {
         const registered = registeredClientSchema.safeParse(context.context.returned);
         if (registered.success) await finishMcpRegistration(registered.data.client_id);

@@ -11,6 +11,8 @@ import { TELEGRAM_ISSUER, entraIssuer } from "./account-issuer";
 import { claimEmail } from "./contact-email";
 import { checkPnGroupStates, membershipEvidence } from "./membership";
 import { isEntraMember } from "./policy";
+import { AccountRefused, recordRefusal } from "./refusals";
+import { REFUSAL_CODES } from "./sign-in-errors";
 
 type ProviderSettings = {
   clientId: string;
@@ -86,7 +88,7 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
     if (!payload.sub || !payload.exp) throw new Error("Missing identity claims");
     if (!telegram && payload.tid !== settings.tenantId) throw new Error("Unexpected Entra tenant");
     if (!telegram && !isEntraMember(payload.acct))
-      throw new Error("Entra guest accounts cannot sign in");
+      throw new AccountRefused(REFUSAL_CODES.entraGuest, "Entra guest accounts cannot sign in");
     const telegramId =
       telegram &&
       (typeof payload.id === "string" ||
@@ -149,6 +151,8 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
             ? `${typeof code === "string" ? code : error.name}: ${error.message}`
             : "non-error value thrown";
         console.error(`Refused a ${id} account: ${reason}`);
+        // Better Auth reports every refusal the same way; `/error` explains ours by this code.
+        if (error instanceof AccountRefused) await recordRefusal(error.code);
         return null;
       }
     },

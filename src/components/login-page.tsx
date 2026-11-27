@@ -7,11 +7,26 @@ import { getClientLogoDark } from "@/auth/account.functions";
 import { authClient } from "@/auth/client";
 import { useProviders } from "@/components/access";
 import { DevLoginPanel } from "@/components/dev-login";
+import { ExpiredSignIn, useSignInExpiry } from "@/components/expired-sign-in";
 import { GoogleIcon } from "@/components/google-icon";
 import { AppLogo } from "@/components/oidc/app-logo";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+
+/** The provider plugin's answer to a sign-in from a page whose signed query no longer verifies. */
+function isInvalidSignature(error: object) {
+  return "error" in error && error.error === "invalid_signature";
+}
+
+/** Too many attempts: say how long to wait, from the server's `retryAfter`. */
+export function rateLimitMessage(error: object) {
+  const seconds =
+    "retryAfter" in error && typeof error.retryAfter === "number" ? error.retryAfter : null;
+  return seconds
+    ? `Too many attempts. Wait ${seconds === 1 ? "1 second" : `${seconds} seconds`}, then try again.`
+    : "Too many attempts. Wait a minute, then try again.";
+}
 
 const providers = [
   { id: "google", name: "Google" },
@@ -89,6 +104,7 @@ export function LoginPage({
     return params.has("sig") ? params.get("client_id") : null;
   }, [searchStr]);
   const oauthFlow = oauthClientId !== null;
+  const expiry = useSignInExpiry(searchStr);
 
   useEffect(() => {
     setPasskeySupported(window.isSecureContext && !!window.PublicKeyCredential);
@@ -123,6 +139,8 @@ export function LoginPage({
   }, [oauthClientId]);
 
   async function signIn(method: string) {
+    // A sign-in from an expired page can only fail: go back to the application instead.
+    if (oauthFlow && expiry.isExpired()) return void expiry.expire();
     setBusy(method);
     try {
       const result =
@@ -130,10 +148,16 @@ export function LoginPage({
           ? await authClient.signIn.passkey()
           : await authClient.signIn.social({ provider: method, callbackURL });
       if (result.error) {
+        if (oauthFlow && isInvalidSignature(result.error)) {
+          void expiry.expire();
+          return;
+        }
         toast.error(
-          method === "passkey"
-            ? "Passkey sign-in was not completed. Try again or continue with your account below."
-            : (result.error.message ?? "Sign-in failed. Please try again."),
+          result.error.status === 429
+            ? rateLimitMessage(result.error)
+            : method === "passkey"
+              ? "Passkey sign-in was not completed. Try again or continue with your account below."
+              : (result.error.message ?? "Sign-in failed. Please try again."),
         );
       } else if (method === "passkey") {
         // In an OpenID Connect sign-in the response carries the next step, and the auth client is
@@ -147,6 +171,13 @@ export function LoginPage({
     }
     setBusy(null);
   }
+
+  if (expiry.state.status !== "active")
+    return (
+      <LoginLayout wide>
+        <ExpiredSignIn state={expiry.state} />
+      </LoginLayout>
+    );
 
   return (
     <LoginLayout>
