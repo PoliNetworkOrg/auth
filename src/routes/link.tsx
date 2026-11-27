@@ -81,12 +81,13 @@ export const Route = createFileRoute("/link")({
       method === "telegram"
         ? context.providers.link.includes(method)
         : context.providers.signIn.includes(method);
-    const status = !available
-      ? "unavailable"
-      : !context.viewer
-        ? "sign-in"
-        : details.linked
-          ? "already-linked"
+    // Already linked needs no provider, so it holds even where the method can't be linked.
+    const status = details.linked
+      ? "already-linked"
+      : !available
+        ? "unavailable"
+        : !context.viewer
+          ? "sign-in"
           : "confirm";
     return { status, request, ...details };
   },
