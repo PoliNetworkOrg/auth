@@ -12,3 +12,6 @@ dist-ssr
 __unconfig*
 todos.json
 .vitest/
+
+# Integration test report written by CI
+integration-report.json

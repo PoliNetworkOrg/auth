@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  # Every pull request, including ones stacked on another branch.
+  pull_request:
+  push:
+    branches: [main]
+
+# Read-only token: these jobs only check out and test code.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Same versions as the Dockerfile, so CI checks what the image runs.
+  NODE_VERSION: "22"
+  PNPM_VERSION: "12.3.4"
+
+jobs:
+  check:
+    name: Check and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Corepack ships with Node, so pnpm needs no third-party action.
+      - name: Set up pnpm
+        run: corepack enable && corepack prepare "pnpm@${PNPM_VERSION}" --activate
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format, lint and type check
+        run: pnpm exec vp check
+
+      - name: Test
+        run: pnpm exec vp test
+
+  integration:
+    name: PostgreSQL integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASS: postgres
+      # One disposable, migrated database per suite family. Every RBAC_TEST_* suite
+      # shares one, so they run one file at a time (see the test step).
+      RBAC_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rbac
+      PEOPLE_ROLES_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/people_roles
+      RATE_LIMIT_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rate_limit
+      DEV_SEED_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dev_seed
+      # These suites load the app's real configuration (src/env.ts), so DB_NAME and the
+      # Better Auth settings below point it at their database.
+      ACCESS_SNAPSHOT_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/access_snapshot
+      IDENTITY_TEST_ADMIN_USER_ID: ci-admin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Set up pnpm
+        run: corepack enable && corepack prepare "pnpm@${PNPM_VERSION}" --activate
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create and migrate the test databases
+        run: |
+          for name in rbac people_roles rate_limit dev_seed access_snapshot; do
+            # Timestamps such as jwks.expires_at have no time zone; the app reads them as UTC.
+            PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -U "$DB_USER" -d postgres \
+              -c "CREATE DATABASE $name" -c "ALTER DATABASE $name SET timezone TO 'UTC'"
+            DB_NAME="$name" pnpm exec drizzle-kit migrate
+          done
+
+      # One file at a time: suites sharing a database search the whole user table
+      # (by traits such as Student or Google), so another suite's fixtures,
+      # created in parallel, would show up in their results.
+      - name: Integration tests
+        run: >-
+          pnpm exec vp test --no-file-parallelism
+          --reporter=default --reporter=json --outputFile.json=integration-report.json
+          src/auth/*.integration.test.* src/dev/*.integration.test.*
+        env:
+          DB_NAME: access_snapshot
+          BETTER_AUTH_URL: http://localhost:3000
+          BETTER_AUTH_SECRET: ci-only-secret-with-at-least-32-characters
+          IDP_ADMIN_USER_IDS: ci-admin
+
+      # A suite skips itself when its database or configuration is missing; in CI that
+      # must fail rather than leave the check green.
+      - name: Check that every expected suite ran
+        if: "!cancelled()"
+        run: node scripts/check-integration-run.mjs integration-report.json

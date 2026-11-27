@@ -487,3 +487,6 @@ The full RBAC security audit, findings, deployment changes and verification limi
 runs when `RBAC_TEST_DATABASE_URL` points to a disposable migrated database. To run all tests
 without skips, provide that variable together with the HTTP integration variables above and
 the matching `DB_*`, `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET` and admin bootstrap configuration.
+The suites that share `RBAC_TEST_DATABASE_URL` search the whole user table, so run them with
+`vp test --no-file-parallelism`, as CI does: in parallel, one suite's fixtures appear in
+another's results.
