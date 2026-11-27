@@ -44,6 +44,7 @@ const config = defineConfig({
             // BetterAuthError is initialized, and every auth route returns 500.
             inlineDynamicImports: true,
             rollupConfig: { external: [/^@sentry\//] },
+            plugins: ["./src/nitro/security-headers.ts"],
           }),
           tailwindcss(),
           tanstackStart(),
