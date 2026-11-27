@@ -46,6 +46,22 @@ export function linkErrorFromCallback(code: string | undefined): LinkError {
   return "failed";
 }
 
+/**
+ * The outcome of the provider round-trip: `result` is what the link's own callback says,
+ * `error` what Better Auth appended to the error callback, and `linked` whether the method is
+ * now linked to the signed-in person. Anyone can write `result=linked` in an address, so only
+ * `linked` counts as success.
+ */
+export function callbackOutcome(
+  method: LinkMethod,
+  result: "linked" | "failed",
+  linked: boolean | null,
+  error?: string,
+): LinkOutcome {
+  if (result === "linked") return linked ? { linked: method } : { error: "failed" };
+  return { error: linkErrorFromCallback(error) };
+}
+
 /** An absolute http(s) URL with no credentials in it, or null. */
 function parseWebUrl(value: string) {
   let url: URL;
@@ -75,6 +91,33 @@ export function trustedReturnTo(returnTo: string | undefined, redirectUris: read
     }),
   );
   return origins.has(url.origin) ? url.href : null;
+}
+
+export type LinkApp = { name: string; logo: string | null; logoDark: string | null };
+
+/** A registered application, as far as `/link` needs it. */
+export type LinkClient = {
+  name: string | null;
+  icon: string | null;
+  iconDark: string | null;
+  redirectUris: readonly string[];
+};
+
+/**
+ * The application to name and the address to go back to: both only when `client` exists and
+ * `returnTo` is one of its own addresses, otherwise neither. Then the page names no application
+ * and stays on PoliNetwork Auth, so a link can't claim to come from an application it doesn't
+ * return to.
+ */
+export function linkReturn(client: LinkClient | null, returnTo: string | undefined) {
+  const trusted = client ? trustedReturnTo(returnTo, client.redirectUris) : null;
+  if (!client || !trusted) return { app: null, returnTo: null };
+  const app: LinkApp = {
+    name: client.name ?? "The application",
+    logo: client.icon ?? null,
+    logoDark: client.iconDark ?? null,
+  };
+  return { app, returnTo: trusted };
 }
 
 /**

@@ -6,8 +6,8 @@ import { z } from "zod";
 import { authClient } from "@/auth/client";
 import {
   LINK_METHODS,
+  callbackOutcome,
   isLinkMethod,
-  linkErrorFromCallback,
   linkPagePath,
   withLinkOutcome,
   type LinkMethod,
@@ -64,12 +64,7 @@ export const Route = createFileRoute("/link")({
       : { method };
 
     if (deps.result) {
-      const outcome: LinkOutcome =
-        deps.result === "linked"
-          ? details.linked
-            ? { linked: method }
-            : { error: "failed" }
-          : { error: linkErrorFromCallback(deps.error) };
+      const outcome = callbackOutcome(method, deps.result, details.linked, deps.error);
       // A login that belongs to someone else is explained here first: the application can't.
       const explainFirst = "error" in outcome && outcome.error === "account_in_use";
       if (details.returnTo && !explainFirst)

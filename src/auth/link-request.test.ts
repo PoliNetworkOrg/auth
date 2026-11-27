@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  callbackOutcome,
   isLinkMethod,
   linkErrorFromCallback,
   linkPagePath,
+  linkReturn,
   trustedReturnTo,
   withLinkOutcome,
 } from "./link-request";
@@ -107,6 +109,31 @@ describe("withLinkOutcome", () => {
   });
 });
 
+describe("linkReturn", () => {
+  const client = {
+    name: "Dashboard",
+    icon: "https://admin.polinetwork.org/logo.svg",
+    iconDark: null,
+    redirectUris: dashboard,
+  };
+
+  it("names the application only with a trusted return address", () => {
+    expect(linkReturn(client, "https://admin.polinetwork.org/me")).toEqual({
+      app: { name: "Dashboard", logo: "https://admin.polinetwork.org/logo.svg", logoDark: null },
+      returnTo: "https://admin.polinetwork.org/me",
+    });
+    expect(linkReturn(client, "https://evil.example/me")).toEqual({ app: null, returnTo: null });
+    expect(linkReturn(client, undefined)).toEqual({ app: null, returnTo: null });
+  });
+
+  it("trusts nothing without a client (missing, unknown, disabled or not in the pool)", () => {
+    expect(linkReturn(null, "https://admin.polinetwork.org/me")).toEqual({
+      app: null,
+      returnTo: null,
+    });
+  });
+});
+
 describe("linkErrorFromCallback", () => {
   it("maps cancelling at the provider", () => {
     expect(linkErrorFromCallback("access_denied")).toBe("cancelled");
@@ -124,6 +151,25 @@ describe("linkErrorFromCallback", () => {
     expect(linkErrorFromCallback("state_mismatch")).toBe("failed");
     expect(linkErrorFromCallback("consent_required")).toBe("failed");
     expect(linkErrorFromCallback(undefined)).toBe("failed");
+  });
+});
+
+describe("callbackOutcome", () => {
+  it("reports linked only when the method is really linked to the signed-in person", () => {
+    expect(callbackOutcome("telegram", "linked", true)).toEqual({ linked: "telegram" });
+    // `result=linked` written by hand, or someone else's session by the time it comes back.
+    expect(callbackOutcome("telegram", "linked", false)).toEqual({ error: "failed" });
+    expect(callbackOutcome("telegram", "linked", null)).toEqual({ error: "failed" });
+  });
+
+  it("maps the error callback's code", () => {
+    expect(callbackOutcome("google", "failed", false, "access_denied")).toEqual({
+      error: "cancelled",
+    });
+    expect(
+      callbackOutcome("google", "failed", false, "account_already_linked_to_different_user"),
+    ).toEqual({ error: "account_in_use" });
+    expect(callbackOutcome("google", "failed", true)).toEqual({ error: "failed" });
   });
 });
 

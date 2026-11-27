@@ -6,11 +6,9 @@ import { db } from "@/db/index";
 import { account, oauthClient } from "@/db/schema";
 import { validate } from "@/lib/validate";
 import { auth } from "./index";
-import { LINK_METHODS, trustedReturnTo, type LinkMethod } from "./link-request";
+import { LINK_METHODS, linkReturn, type LinkMethod } from "./link-request";
 import { actionMiddleware } from "./middleware";
 import { OIDC_CLIENT_REFERENCE } from "./oidc-clients";
-
-export type LinkApp = { name: string; logo: string | null; logoDark: string | null };
 
 /**
  * An enabled application of the shared pool. Clients that agents registered for themselves are
@@ -54,15 +52,7 @@ export const getLinkRequest = createServerFn({ method: "GET" })
       data.clientId ? readPoolClient(data.clientId) : null,
       auth.api.getSession({ headers: getRequest().headers }),
     ]);
-    const returnTo = client ? trustedReturnTo(data.returnTo, client.redirectUris) : null;
-    const app: LinkApp | null =
-      client && returnTo
-        ? {
-            name: client.name ?? "The application",
-            logo: client.icon ?? null,
-            logoDark: client.iconDark ?? null,
-          }
-        : null;
+    const { app, returnTo } = linkReturn(client, data.returnTo);
     let linked: boolean | null = null;
     if (session) {
       const [existing] = await db
