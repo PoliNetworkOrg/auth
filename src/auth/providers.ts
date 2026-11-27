@@ -6,6 +6,7 @@ import { identityEvidence } from "../db/evidence";
 import { db } from "../db/index";
 import { authorizationMutationLock } from "../db/security-lock";
 import { env } from "../env";
+import { TELEGRAM_ISSUER, entraIssuer } from "./account-issuer";
 import { claimEmail } from "./contact-email";
 import { checkPnGroupStates, membershipEvidence } from "./membership";
 import { isEntraMember } from "./policy";
@@ -63,9 +64,8 @@ export function telegramUsername(claims: JWTPayload) {
 
 function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfig {
   const telegram = id === "telegram";
-  const issuer = telegram
-    ? "https://oauth.telegram.org"
-    : `https://login.microsoftonline.com/${settings.tenantId}/v2.0`;
+  // The same issuer the account gets (`account-issuer.ts`), so evidence and account stay joined.
+  const issuer = telegram ? TELEGRAM_ISSUER : entraIssuer(settings.tenantId!);
   const jwks = createRemoteJWKSet(
     new URL(
       telegram

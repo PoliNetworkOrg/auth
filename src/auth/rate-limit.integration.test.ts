@@ -7,6 +7,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import * as schema from "../db/schema";
+import { accountIssuerField } from "./account-issuer";
 import {
   clientIpOptions,
   oauthRateLimit,
@@ -163,6 +164,15 @@ describe.skipIf(!databaseURL)("PostgreSQL rate limiting", () => {
         secret: "rate-limit-test-secret-with-at-least-32-characters",
         database: drizzleAdapter(drizzle(connection, { schema }), { provider: "pg", schema }),
         emailAndPassword: { enabled: true },
+        // The migrated schema has the app's required `account.issuer` (see `account-issuer.ts`).
+        // This instance signs people up with a password, a provider the app does not have, so it
+        // gives those test accounts an issuer of its own.
+        account: { additionalFields: accountIssuerField },
+        databaseHooks: {
+          account: {
+            create: { before: async (data) => ({ data: { ...data, issuer: "test:credential" } }) },
+          },
+        },
         advanced: { ipAddress },
         rateLimit: {
           enabled: true,

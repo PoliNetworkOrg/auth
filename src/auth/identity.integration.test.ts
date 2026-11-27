@@ -437,6 +437,7 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       ],
       ["delete-client", { client_id: "integration-foreign-client" }],
       ["client/rotate-secret", { client_id: "integration-foreign-client" }],
+      ["client/rotate-keys", { jwks: { keys: [] } }],
     ] as const) {
       const response = await fetch(`${baseURL}/api/auth/oauth2/${path}`, {
         method: "POST",
@@ -894,6 +895,7 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
           ["update-client", { client_id: "integration-raw-client", update: { client_name: "X" } }],
           ["delete-client", { client_id: "integration-raw-client" }],
           ["client/rotate-secret", { client_id: "integration-raw-client" }],
+          ["client/rotate-keys", { jwks: { keys: [] } }],
         ] as const) {
           const response = await fetch(`${baseURL}/api/auth/oauth2/${path}`, {
             method: "POST",

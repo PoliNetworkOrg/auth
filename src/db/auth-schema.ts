@@ -70,6 +70,10 @@ export const account = pgTable(
   (table) => [
     index("account_userId_idx").on(table.userId),
     uniqueIndex("account_issuer_subject_uidx").on(table.issuer, table.accountId),
+    // Better Auth 1.7.3+ finds and links accounts by (provider, account ID), so that pair is
+    // unique too. The issuer, which this app fills in (see `src/auth/account-issuer.ts`),
+    // still keys the join to identity evidence.
+    uniqueIndex("account_provider_account_uidx").on(table.providerId, table.accountId),
   ],
 );
 

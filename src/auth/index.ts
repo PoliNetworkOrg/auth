@@ -32,6 +32,7 @@ import { hasIdpPermission } from "./idp-access";
 import { canAdministerIdp } from "./oidc-admin";
 import { validateClientJwks } from "./client-jwks";
 import { unusedAccountPaths } from "./account-endpoints";
+import { accountIssuer, accountIssuerField } from "./account-issuer";
 import { rawClientMutationPaths, refusedClientMutationPaths } from "./client-endpoints";
 import {
   apiScopes,
@@ -227,12 +228,24 @@ export const auth = betterAuth({
     }),
   },
   account: {
+    // Owned by this app, not Better Auth: see `account-issuer.ts`.
+    additionalFields: accountIssuerField,
     accountLinking: {
       enabled: true,
       disableImplicitLinking: true,
       allowDifferentEmails: true,
       allowUnlinkingAll: false,
       trustedProviders: ["google", "pn-entra", "telegram"],
+    },
+  },
+  databaseHooks: {
+    account: {
+      create: {
+        // Every account Better Auth creates gets its provider's issuer, or is refused.
+        before: async (data) => ({
+          data: { ...data, issuer: accountIssuer(data.providerId, env.PN_ENTRA_TENANT_ID) },
+        }),
+      },
     },
   },
   session: { cookieCache: { enabled: false }, freshAge: SESSION_FRESH_AGE },

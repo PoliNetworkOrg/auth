@@ -13,8 +13,8 @@ import { authorizationMutationLock } from "../db/security-lock";
 import { env } from "../env";
 import { sendStudentVerificationEmail, studentVerificationEmailConfigured } from "./email";
 import { hasPolimiStudentDomain } from "./policy";
+import { POLIMI_EMAIL_ISSUER } from "./account-issuer";
 
-const POLIMI_EMAIL_ISSUER = "https://mail.polimi.it";
 const CODE_LIFETIME_MS = 10 * 60 * 1_000;
 const RESEND_DELAY_MS = 60 * 1_000;
 const MAX_ATTEMPTS = 5;

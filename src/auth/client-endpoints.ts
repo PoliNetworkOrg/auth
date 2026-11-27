@@ -10,6 +10,9 @@ export const rawClientMutationPaths = [
   "/oauth2/update-client",
   "/oauth2/delete-client",
   "/oauth2/client/rotate-secret",
+  // Off unless `allowClientKeyRotation` is set, and closed anyway: a client's keys change on
+  // its application page, which rechecks them under the lock (see README, application JWKS).
+  "/oauth2/client/rotate-keys",
 ];
 
 /** Refused to server-side `auth.api` callers too, for the same reason. */
