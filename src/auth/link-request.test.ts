@@ -91,6 +91,19 @@ describe("withLinkOutcome", () => {
         error: "account_in_use",
       }),
     ).toBe("https://admin.polinetwork.org/me?link_error=account_in_use");
+    expect(
+      withLinkOutcome("https://admin.polinetwork.org/me?link%5Ferror=failed&tab=a", {
+        linked: "google",
+      }),
+    ).toBe("https://admin.polinetwork.org/me?tab=a&linked=google");
+  });
+
+  it("keeps the application's own query as written", () => {
+    expect(
+      withLinkOutcome("https://admin.polinetwork.org/me?q=a%20b&flag&next=/x/y&linked=google", {
+        linked: "telegram",
+      }),
+    ).toBe("https://admin.polinetwork.org/me?q=a%20b&flag&next=/x/y&linked=telegram");
   });
 });
 

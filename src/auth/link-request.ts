@@ -76,13 +76,23 @@ export function trustedReturnTo(returnTo: string | undefined, redirectUris: read
   return origins.has(url.origin) ? url.href : null;
 }
 
-/** `returnTo` with the outcome added as `linked` or `link_error`, replacing either if present. */
+/**
+ * `returnTo` with the outcome added as `linked` or `link_error`, replacing either if present.
+ * The rest of the query is kept as written: re-encoding it could change what the application
+ * reads (a `%20` turned into `+`, say).
+ */
 export function withLinkOutcome(returnTo: string, outcome: LinkOutcome) {
   const url = new URL(returnTo);
-  url.searchParams.delete("linked");
-  url.searchParams.delete("link_error");
-  if ("linked" in outcome) url.searchParams.set("linked", outcome.linked);
-  else url.searchParams.set("link_error", outcome.error);
+  const kept = url.search
+    .slice(1)
+    .split("&")
+    .filter((pair) => {
+      if (!pair) return false;
+      const [name] = new URLSearchParams(pair).keys();
+      return name !== "linked" && name !== "link_error";
+    });
+  const added = "linked" in outcome ? `linked=${outcome.linked}` : `link_error=${outcome.error}`;
+  url.search = [...kept, added].join("&");
   return url.href;
 }
 
