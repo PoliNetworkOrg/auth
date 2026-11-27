@@ -1,8 +1,8 @@
 name: CI
 
 on:
+  # Every pull request, including ones stacked on another branch.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
@@ -79,6 +79,10 @@ jobs:
       PEOPLE_ROLES_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/people_roles
       RATE_LIMIT_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rate_limit
       DEV_SEED_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dev_seed
+      # These suites load the app's real configuration (src/env.ts), so DB_NAME and the
+      # Better Auth settings below point it at their database.
+      ACCESS_SNAPSHOT_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/access_snapshot
+      IDENTITY_TEST_ADMIN_USER_ID: ci-admin
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -100,8 +104,10 @@ jobs:
 
       - name: Create and migrate the test databases
         run: |
-          for name in rbac people_roles rate_limit dev_seed; do
-            PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -U "$DB_USER" -d postgres -c "CREATE DATABASE $name"
+          for name in rbac people_roles rate_limit dev_seed access_snapshot; do
+            # Timestamps such as jwks.expires_at have no time zone; the app reads them as UTC.
+            PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -U "$DB_USER" -d postgres \
+              -c "CREATE DATABASE $name" -c "ALTER DATABASE $name SET timezone TO 'UTC'"
             DB_NAME="$name" pnpm exec drizzle-kit migrate
           done
 
@@ -109,4 +115,18 @@ jobs:
       # (by traits such as Student or Google), so another suite's fixtures,
       # created in parallel, would show up in their results.
       - name: Integration tests
-        run: pnpm exec vp test --no-file-parallelism src/auth/*.integration.test.* src/dev/*.integration.test.*
+        run: >-
+          pnpm exec vp test --no-file-parallelism
+          --reporter=default --reporter=json --outputFile.json=integration-report.json
+          src/auth/*.integration.test.* src/dev/*.integration.test.*
+        env:
+          DB_NAME: access_snapshot
+          BETTER_AUTH_URL: http://localhost:3000
+          BETTER_AUTH_SECRET: ci-only-secret-with-at-least-32-characters
+          IDP_ADMIN_USER_IDS: ci-admin
+
+      # A suite skips itself when its database or configuration is missing; in CI that
+      # must fail rather than leave the check green.
+      - name: Check that every expected suite ran
+        if: "!cancelled()"
+        run: node scripts/check-integration-run.mjs integration-report.json

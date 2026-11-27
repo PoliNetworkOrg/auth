@@ -62,7 +62,7 @@ describe.skipIf(!databaseURL || !root)("Phase 1 audit and deletion integration",
 
     await disconnectAccount(person, "audit-telegram");
     expect(await updateOidcClient(root!, clientId, { disabled: true })).toMatchObject({
-      disabled: true,
+      client: { disabled: true },
     });
     const rolledBack = await pool.connect();
     try {

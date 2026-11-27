@@ -7,18 +7,26 @@
 // versions already locked there. This check makes sure it did: a release that
 // was never reviewed in a pull request must not reach the production image.
 //
+// It compares `name@version` pairs, not the whole dependency graph: a package could in
+// principle resolve to another version that the lockfile holds for a different dependent.
+// pnpm still checks every installed package against the integrity hash locked for it.
+//
 // Usage: node check-runtime-lockfile.mjs <reviewed lockfile> <runtime lockfile>
 import { readFileSync } from "node:fs";
 
-/** The `name@version` keys of a pnpm lockfile's `packages:` section. */
+/**
+ * The `name@version` keys of a pnpm lockfile's `packages:` section. Throws on a key it cannot
+ * read, such as a git or tarball dependency, rather than leaving that package unchecked.
+ */
 function lockedPackages(path) {
   const keys = new Set();
   let inPackages = false;
   for (const line of readFileSync(path, "utf8").split("\n")) {
     if (/^\S/.test(line)) inPackages = line === "packages:";
-    else if (inPackages) {
-      const key = /^ {2}'?([^\s':][^':]*)'?:\s*$/.exec(line)?.[1];
-      if (key) keys.add(key);
+    else if (inPackages && /^ {2}\S/.test(line)) {
+      const key = /^ {2}'?([^\s':][^':]*@[^\s@':]+)'?:\s*$/.exec(line)?.[1];
+      if (!key) throw new Error(`${path}: cannot read the package key ${JSON.stringify(line)}`);
+      keys.add(key);
     }
   }
   return keys;
