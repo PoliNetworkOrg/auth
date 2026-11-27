@@ -133,7 +133,38 @@ Enforcement is deny-by-default: every operation declares its scope and permissio
   2. deploy the matching private key to the service;
   3. after the overlap, remove the old public key.
 
-## 7. Checklist
+## 7. Ask someone to link a login method
+
+An application can send a person to link Telegram, PoliNetwork APS or Google to their PoliNetwork Auth account, and get them back afterwards. Use it when the app needs something that only a linked account gives, for example the Telegram ID that bots match permissions to. Open it as a normal navigation, not in a frame (Auth refuses to be framed):
+
+```
+https://auth.polinetwork.org/link?method=telegram&client_id=<client id>&return_to=<url>
+```
+
+| Parameter   | Value                                                                                                                                         |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `method`    | `telegram`, `pn-entra` (PoliNetwork APS) or `google`.                                                                                         |
+| `client_id` | The application's client ID.                                                                                                                  |
+| `return_to` | Where to come back to: an absolute URL with the **same origin** (scheme, host and port) as one of the application's registered redirect URIs. |
+
+**What the person sees:**
+
+1. **Not signed in:** the usual sign-in page, then the next step.
+2. **Already linked:** a note saying so, with **Back to {application}**.
+3. **Otherwise:** a confirmation card, "{application} asks you to link your Telegram account to PoliNetwork Auth", with **Link Telegram** and **Not now**. Nothing starts without that click.
+4. **After the provider:** a redirect to `return_to`, with one of these query parameters added (any `linked` or `link_error` already there is replaced):
+
+| Result                      | Meaning                                                                                                                                                |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `linked=<method>`           | The method is linked, or already was. Refresh whatever you read from the person's identity (the Telegram ID in `polinetwork_telegram_id`, membership). |
+| `link_error=cancelled`      | The person chose **Not now**, or cancelled at the provider. Nothing changed; don't show an error.                                                      |
+| `link_error=account_in_use` | That login already belongs to another PoliNetwork Auth user. Auth explains this before sending the person back.                                        |
+| `link_error=unavailable`    | This deployment can't link that method right now.                                                                                                      |
+| `link_error=failed`         | Anything else. The person can try again.                                                                                                               |
+
+**Trust:** `return_to` counts only for an enabled application registered from the application pages, and only on the origin of one of its redirect URIs. Clients that agents registered for themselves never count. When `client_id` is missing or unknown, or `return_to` doesn't match, the page names no application and keeps the person on PoliNetwork Auth: it never redirects to an address the application didn't register. The outcome is not a proof: the app must read the person's identity again (UserInfo, a refreshed token or the backend), not trust `linked` on its own.
+
+## 8. Checklist
 
 - [ ] Level chosen, and the smallest set of scopes listed.
 - [ ] Permissions created and attached to roles (§4).
