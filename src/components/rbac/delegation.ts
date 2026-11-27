@@ -1,6 +1,7 @@
 import {
   effectiveRolePermissions,
   expandPermissionKeys,
+  inheritedBuiltInRoles,
   type RbacCatalog,
   type RoleSummary,
   takesHandAssignments,
@@ -27,10 +28,27 @@ export function canGrantRole(access: DelegationAccess, catalog: RbacCatalog, key
   );
 }
 
-/** Built-in roles that take assignments are given and taken back by Master Admin only. */
+/** Whether holding this role means holding a built-in role, which only Master Admin confers. */
+export function confersBuiltInRole(catalog: RbacCatalog, role: RoleSummary) {
+  return role.managed || inheritedBuiltInRoles(catalog, role.key).length > 0;
+}
+
+/** Whether a role may be picked, or dropped, as a parent of another role. */
+export function canInheritFrom(access: DelegationAccess, catalog: RbacCatalog, role: RoleSummary) {
+  return (
+    access.isMasterAdmin ||
+    (!confersBuiltInRole(catalog, role) && canGrantRole(access, catalog, role.key))
+  );
+}
+
+/**
+ * Built-in roles that take assignments, and roles inheriting any built-in role, are given and
+ * taken back by Master Admin only.
+ */
 export function canAssignRole(access: DelegationAccess, catalog: RbacCatalog, role: RoleSummary) {
   return (
     takesHandAssignments(role) &&
-    (access.isMasterAdmin || (!role.managed && canGrantRole(access, catalog, role.key)))
+    (access.isMasterAdmin ||
+      (!confersBuiltInRole(catalog, role) && canGrantRole(access, catalog, role.key)))
   );
 }

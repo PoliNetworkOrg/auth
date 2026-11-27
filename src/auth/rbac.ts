@@ -343,6 +343,24 @@ export function expandRoleKeys(catalog: RbacCatalog, roleKeys: Iterable<string>)
   return [...reachable].filter((key) => index.roles.has(key)).sort();
 }
 
+/**
+ * The built-in roles that holding `roleKey` also gives through inheritance, not counting the
+ * role itself, sorted. Holders are reported as holding these roles everywhere, so only a
+ * Master Admin may change this list for any role, or give or take back a role for which it
+ * is not empty.
+ */
+export function inheritedBuiltInRoles(catalog: RbacCatalog, roleKey: string): string[] {
+  const managed = new Set(catalog.roles.filter((entry) => entry.managed).map((entry) => entry.key));
+  return expandRoleKeys(catalog, [roleKey]).filter((key) => key !== roleKey && managed.has(key));
+}
+
+/** Role names for a message, such as "Direttivo and Presidente". */
+export function roleNames(catalog: RbacCatalog, keys: readonly string[]) {
+  return keys
+    .map((key) => catalog.roles.find((entry) => entry.key === key)?.name ?? key)
+    .join(" and ");
+}
+
 /** The given permissions plus every permission they grant, transitively. */
 export function expandPermissionKeys(
   catalog: RbacCatalog,

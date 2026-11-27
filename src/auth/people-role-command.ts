@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { parsePeopleBinding, peopleBindingProblem } from "./people-binding";
-import { effectiveRolePermissions, expandRoleKeys, type RbacCatalog } from "./rbac";
+import {
+  effectiveRolePermissions,
+  expandRoleKeys,
+  inheritedBuiltInRoles,
+  type RbacCatalog,
+} from "./rbac";
 
 /**
  * One People command from the backend. Each change names a desired state for one concept.
@@ -36,9 +41,9 @@ export const peopleCommandSchema = z
   });
 export type PeopleCommand = z.infer<typeof peopleCommandSchema>;
 /**
- * A role bound to People, as the backend sees it. `permissions` and `bindings` let it apply
- * `peopleRoleChangeProblem`'s rules itself to assignments it keeps before a record is linked,
- * which this identity provider only sees at link time.
+ * A role bound to People, as the backend sees it. `permissions`, `bindings` and `builtInRoles`
+ * let it apply `peopleRoleChangeProblem`'s rules itself to assignments it keeps before a record
+ * is linked, which this identity provider only sees at link time.
  */
 export type PeopleBoundRole = {
   key: string;
@@ -48,6 +53,11 @@ export type PeopleBoundRole = {
   permissions: string[];
   /** Its own binding, then those of the roles it inherits. */
   bindings: string[];
+  /**
+   * The built-in roles (such as `socio` or `direttivo`) it also gives through inheritance,
+   * sorted. When not empty, only a Master Admin may give or take it back.
+   */
+  builtInRoles: string[];
 };
 export type PeopleCommandResult = {
   roles: PeopleBoundRole[];
@@ -76,6 +86,7 @@ export function describePeopleBoundRoles(catalog: RbacCatalog): PeopleBoundRole[
       binding: r.peopleBinding!,
       permissions: effectiveRolePermissions(catalog, r.key),
       bindings: [r.peopleBinding!, ...inherited],
+      builtInRoles: inheritedBuiltInRoles(catalog, r.key),
     };
   });
 }
