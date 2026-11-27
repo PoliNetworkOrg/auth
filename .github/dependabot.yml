@@ -1,0 +1,60 @@
+# Dependabot configuration.
+# Docs: https://docs.github.com/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+#
+# Security updates are turned on in the repository settings; this file only
+# shapes how they arrive. Every npm fix touches pnpm-lock.yaml, so one PR per
+# advisory means each merge conflicts with (or leaves behind) all the others.
+# Grouping them gives a single PR that Dependabot keeps rebased and extends as
+# new advisories land.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Europe/Rome
+    # 0 turns off routine version-bump PRs for npm while keeping security
+    # updates, which ignore this limit.
+    open-pull-requests-limit: 0
+    groups:
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  # Keeps the workflow actions current, and keeps them current once they are
+  # pinned to commit SHAs (Dependabot updates the SHA and its version comment).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Rome
+    # Wait a week before proposing a new release, so a hijacked action release
+    # has time to be noticed and pulled before it reaches this repo.
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # The Node base image in the Dockerfile, pinned by digest. Dependabot updates the
+  # tag and digest of every FROM line together, so all stages stay on one image.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Rome
+    cooldown:
+      default-days: 7
+    # Stay on the Node 22 line the app is built and tested for; moving to a new
+    # major is a deliberate change, not a weekly bump.
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
