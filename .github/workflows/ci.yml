@@ -73,8 +73,8 @@ jobs:
       DB_PORT: "5432"
       DB_USER: postgres
       DB_PASS: postgres
-      # One disposable, migrated database per suite family: the suites clean up
-      # only their own fixtures and run in parallel.
+      # One disposable, migrated database per suite family. Every RBAC_TEST_* suite
+      # shares one, so they run one file at a time (see the test step).
       RBAC_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rbac
       PEOPLE_ROLES_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/people_roles
       RATE_LIMIT_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rate_limit
@@ -105,5 +105,8 @@ jobs:
             DB_NAME="$name" pnpm exec drizzle-kit migrate
           done
 
+      # One file at a time: suites sharing a database search the whole user table
+      # (by traits such as Student or Google), so another suite's fixtures,
+      # created in parallel, would show up in their results.
       - name: Integration tests
-        run: pnpm exec vp test src/auth/*.integration.test.* src/dev/*.integration.test.*
+        run: pnpm exec vp test --no-file-parallelism src/auth/*.integration.test.* src/dev/*.integration.test.*

@@ -68,12 +68,16 @@ async function runChain(middleware: readonly Middleware[], ctx: Context): Promis
     const validator = next.options.inputValidator ?? next.options.validator;
     if (validator) ctx = { ...ctx, data: await execValidator(validator as never, ctx.data) };
     if (!next.options.server) return step(ctx);
-    // Safety: every middleware in this app returns what `next()` resolved with.
-    return (await next.options.server({
+    const out = await next.options.server({
       ...ctx,
       next: (more = {}) =>
         step({ ...ctx, ...more, context: { ...ctx.context, ...more.context } } as Context),
-    })) as Context;
+    });
+    // A middleware that answers by itself, as the CSRF check does when it refuses, returns a
+    // bare Response; Start hands the middleware before it a context carrying that response.
+    if (out instanceof Response) return { ...ctx, response: out };
+    // Safety: every other middleware in this app returns what `next()` resolved with.
+    return out as Context;
   };
   return step(ctx);
 }
@@ -150,25 +154,35 @@ export async function callServerFn<TData, TResult>(
     functionMiddleware: functionMiddleware as unknown as Middleware[],
     responseHeaders: new Headers(),
   };
-  // After the request middleware, the request reaches the server function.
+  // After the request middleware, the request reaches the server function. Start answers it
+  // with a response that carries the serialized result; request middleware such as the
+  // security headers reads that response, so this answers with one too, minus the body.
   const serverFn: Middleware = {
-    options: { server: async () => ({ result: await fn({ data }) }) },
+    options: {
+      server: async () => {
+        const result = await fn({ data });
+        const response = new Response(null, {
+          status: call.status ?? 200,
+          headers: call.responseHeaders,
+        });
+        return { result, response };
+      },
+    },
   };
   try {
-    const done: unknown = await calls.run(call, () =>
+    const done = (await calls.run(call, () =>
       runChain([...(requestMiddleware as unknown as Middleware[]), serverFn], {
         context: {},
         handlerType: "serverFn",
         request: call.request,
       }),
-    );
-    // A request middleware that answers by itself, as the CSRF check does when it refuses.
-    if (done instanceof Response) return { status: done.status, headers: call.responseHeaders };
-    return {
-      status: 200,
-      result: (done as { result: TResult }).result,
-      headers: call.responseHeaders,
-    };
+    )) as Context & { result?: TResult; response?: Response };
+    // A request middleware answered by itself, so the function never ran.
+    if (!("result" in done)) {
+      if (!done.response) throw new Error("The request middleware returned no response.");
+      return { status: done.response.status, headers: call.responseHeaders };
+    }
+    return { status: 200, result: done.result, headers: call.responseHeaders };
   } catch (cause) {
     if (cause instanceof ActionError)
       return { status: cause.status, error: cause, headers: call.responseHeaders };
