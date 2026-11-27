@@ -15,7 +15,7 @@ import {
 } from "@/auth/rbac";
 import { Field, KeyChip } from "@/components/rbac/fields";
 import { useAccess } from "@/components/access";
-import { canGrantPermission, canGrantRole } from "@/components/rbac/delegation";
+import { canGrantPermission, canGrantRole, canInheritFrom } from "@/components/rbac/delegation";
 import { PickList } from "@/components/rbac/pick-list";
 import { useDraftErrors } from "@/components/rbac/use-draft-errors";
 import { Button } from "@/components/ui/button";
@@ -72,23 +72,24 @@ export function RoleForm({
 
   const parentOptions = catalog.roles
     .filter((entry) => entry.key !== (currentKey ?? draft.key.trim().toLowerCase()))
-    .filter(
-      (entry) => canGrantRole(access, catalog, entry.key) || draft.parents.includes(entry.key),
-    )
+    .filter((entry) => canInheritFrom(access, catalog, entry) || draft.parents.includes(entry.key))
     .map((entry) => {
       const cycles = currentKey ? roleParentWouldCycle(catalog, currentKey, entry.key) : false;
       const wildcard = entry.key === MASTER_ADMIN_ROLE_KEY;
       const outsideAuthority = !canGrantRole(access, catalog, entry.key);
+      const fixed = !canInheritFrom(access, catalog, entry);
       return {
         key: entry.key,
         label: entry.name,
         hint: entry.description ?? undefined,
-        disabled: cycles || wildcard || outsideAuthority,
+        disabled: cycles || wildcard || fixed,
         disabledReason: wildcard
           ? `${entry.name} holds every permission and is granted only by this deployment's configuration, so no role can inherit from it.`
           : outsideAuthority
             ? "This role grants permissions you do not hold."
-            : `${entry.name} already inherits from this role.`,
+            : fixed
+              ? (entry.description ?? undefined)
+              : `${entry.name} already inherits from this role.`,
       };
     });
 

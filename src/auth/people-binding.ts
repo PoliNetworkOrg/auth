@@ -6,7 +6,9 @@ import {
   MASTER_ADMIN_ROLE_KEY,
   effectiveRolePermissions,
   expandRoleKeys,
+  inheritedBuiltInRoles,
   isManagedPermissionKey,
+  roleNames,
 } from "./rbac";
 
 /**
@@ -48,6 +50,21 @@ export function peopleBindingProblem(catalog: RbacCatalog, role: RoleSummary): s
   if (effectiveRolePermissions(catalog, role.key).some(isManagedPermissionKey))
     return "This role grants permissions of the identity provider itself, so People can't manage it.";
   return null;
+}
+
+/**
+ * Why only a Master Admin may bind `role` to People, or null. A role inheriting a built-in
+ * role gives the built-in role too, and People could then give it only through a Master Admin
+ * anyway (`peopleRoleChangeProblem`). Anyone with `idp:people:bind` may still unbind it.
+ */
+export function peopleBindingBuiltInProblem(
+  catalog: RbacCatalog,
+  role: RoleSummary,
+): string | null {
+  const builtIn = inheritedBuiltInRoles(catalog, role.key);
+  return builtIn.length
+    ? `Only a Master Admin can let People manage ${role.name}, because it also gives ${roleNames(catalog, builtIn)}.`
+    : null;
 }
 
 /** The permissions that let a dashboard user change who holds a bound role, besides `admin:access`. */
@@ -116,6 +133,8 @@ function ruleProblem(context: PeopleRuleContext): string | null {
  *
  * - Only bound roles, and only while they carry no `idp:*` permission.
  * - Nobody gives themselves a role. Giving one up is always allowed: it only removes access.
+ * - Unless Master Admin, nobody gives or takes back a role that inherits a built-in role:
+ *   holding it means holding the built-in role, which only a Master Admin confers.
  * - The rule of the role's binding kind, and of every binding it inherits: a member role
  *   wrapping a Lead role needs what the Lead role needs. See `PEOPLE_RULES`.
  * - Bounded delegation, as in the dashboard: unless Master Admin, the actor must already hold
@@ -128,6 +147,9 @@ export function peopleRoleChangeProblem(change: PeopleRoleChange): string | null
   if (problem) return problem;
   if (actorId === targetId)
     return action === "unassign" ? null : "Nobody can give themselves a role.";
+  const builtIn = inheritedBuiltInRoles(catalog, role.key);
+  if (builtIn.length && !actor.roles.includes(MASTER_ADMIN_ROLE_KEY))
+    return `Only a Master Admin can give or take back ${role.name}, because it also gives ${roleNames(catalog, builtIn)}.`;
 
   const holds = (key: string) => actor.permissions.includes(key);
   const general = (key: string) => holds(ADMIN_ACCESS_PERMISSION) && holds(key);

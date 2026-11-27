@@ -180,6 +180,28 @@ describe.skipIf(!baseURL || !databaseURL || !secret)("identity HTTP integration"
       expect(response.status).toBe(401);
     }
   });
+  it("refuses the account endpoints no page uses", async () => {
+    const { unusedAccountPaths } = await import("./account-endpoints");
+    for (const path of unusedAccountPaths) {
+      const get = ["/account-info", "/delete-user/callback", "/verify-email"].includes(path);
+      const response = await fetch(`${baseURL}/api/auth${path}`, {
+        method: get ? "GET" : "POST",
+        headers,
+        body: get ? undefined : "{}",
+      });
+      expect(response.status, path).toBe(404);
+    }
+    const rename = await fetch(`${baseURL}/api/auth/update-user`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: "Someone Else", image: "https://example.invalid/x.png" }),
+    });
+    expect(rename.status).toBe(404);
+    const { rows } = await pool.query(`SELECT name, image FROM "user" WHERE id = $1`, [
+      "integration-user",
+    ]);
+    expect(rows[0]).toEqual({ name: "Test", image: null });
+  });
   it("offers discoverable passkey authentication without an email", async () => {
     const response = await fetch(`${baseURL}/api/auth/passkey/generate-authenticate-options`);
     expect(response.status).toBe(200);

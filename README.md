@@ -162,6 +162,12 @@ inherit from `Socio`, everyone holding your role also reports the `socio` role a
 permissions, whether or not Entra says they are a member. Inherit from a built-in role only
 when that is what you mean.
 
+So only a Master Admin can make a role inherit from a built-in role, directly or through
+another role, give or take back a role that does, here or from People, or bind one to People.
+Holding `idp:roles:write`, `idp:roles:assign` and `idp:people:bind` is not enough. People
+still lets anyone give up a role they hold themselves, and anyone who may bind roles may
+unbind one, since neither gives anything.
+
 ### Permissions the identity provider defines itself
 
 Administering this service is expressed as permissions like any other capability, so it can
@@ -355,9 +361,9 @@ New services follow [docs/service-integration-guide.md](docs/service-integration
 
 ### People roles
 
-The admin dashboard's People register gives people predetermined roles: those bound, on the role's page (People register card), to what holding them means in People. A role's holders are admins of the Telegram groups (`admin`), Capo Admins (`capo`), or members or the Lead of a team (`team:<key>:member`, `team:<key>:lead`, where the key is the dashboard's team key: `it`, `hr`, `design` or `events`). Binding a role needs `idp:people:bind`, and, as when editing a role, only Master Admin can bind or unbind a role granting permissions they don't hold. Managed roles, and roles that carry any `idp:*` permission directly, through a parent or through an implication, can't be bound, and saving a role or permission that would give a bound role one is refused. Bind only one role to each meaning: `trusted-admin` inherits `admin`, so binding it as `admin` too makes giving `admin` ambiguous (409).
+The admin dashboard's People register gives people predetermined roles: those bound, on the role's page (People register card), to what holding them means in People. A role's holders are admins of the Telegram groups (`admin`), Capo Admins (`capo`), or members or the Lead of a team (`team:<key>:member`, `team:<key>:lead`, where the key is the dashboard's team key: `it`, `hr`, `design` or `events`). Binding a role needs `idp:people:bind`, and, as when editing a role, only Master Admin can bind or unbind a role granting permissions they don't hold. Only Master Admin can bind a role that inherits a built-in role (`socio`, `direttivo`, …), though anyone with `idp:people:bind` may unbind it. Managed roles, and roles that carry any `idp:*` permission directly, through a parent or through an implication, can't be bound, and saving a role or permission that would give a bound role one is refused. Bind only one role to each meaning: `trusted-admin` inherits `admin`, so binding it as `admin` too makes giving `admin` ambiguous (409).
 
-`GET /api/internal/people-roles` (backend client, `idp:access:read`) lists the bound roles, each with every permission it grants (`permissions`, through parent roles too) and its own binding followed by those it inherits (`bindings`), and everyone holding them by hand or through a parent role, with their name, directory email, Telegram ID and username, which of those roles they were given directly, and since when they hold each one (`since`, `YYYY-MM-DD`: the earliest of their current assignments conferring it). Unlike the access snapshot it includes roles that grant no permission. People without a login account are the backend's own: they never appear here.
+`GET /api/internal/people-roles` (backend client, `idp:access:read`) lists the bound roles, each with every permission it grants (`permissions`, through parent roles too), its own binding followed by those it inherits (`bindings`) and the built-in roles it also gives through inheritance (`builtInRoles`, sorted, usually empty), and everyone holding them by hand or through a parent role, with their name, directory email, Telegram ID and username, which of those roles they were given directly, and since when they hold each one (`since`, `YYYY-MM-DD`: the earliest of their current assignments conferring it). Unlike the access snapshot it includes roles that grant no permission. People without a login account are the backend's own: they never appear here.
 
 `POST /api/internal/people-roles` (backend client, `idp:people:roles`) applies one People command `{ id, actor, sub, reason, changes }` on behalf of the dashboard user the backend authenticated. `sub` is always a login account. Each change names a desired state: `{ kind: "admin" | "capo", active }` or `{ kind: "team", team, role: "member" | "lead" | null }`. This IdP plans the concrete assignments against its own role graph and applies all of them or none: a concept with no bound role stays People's own and is skipped; it refuses with 409 when the mapping is ambiguous (not exactly one bound role to give), or when the requested state would still be held through another role (ending `admin` for a Capo Admin, say), rather than reporting a change that did not happen.
 
@@ -373,9 +379,9 @@ The backend only names the actor; this IdP resolves the actor's own access and r
   | `team:<key>:member` | `admin:access` + `people:write`, or the Lead of that team                |
   | `team:<key>:lead`   | `admin:access` + `people:appoint`                                        |
 
-- unless Master Admin, the actor holds every permission the role grants.
+- unless Master Admin, the actor holds every permission the role grants, and the role does not inherit a built-in role.
 
-The backend applies the same rules to assignments it keeps for records that aren't linked yet, which this IdP only sees when the record is linked: that is what each bound role's `permissions` and `bindings` are for.
+The backend applies the same rules to assignments it keeps for records that aren't linked yet, which this IdP only sees when the record is linked: that is what each bound role's `permissions`, `bindings` and `builtInRoles` are for. A role whose `builtInRoles` isn't empty may be given or taken back only by a Master Admin (anyone may still give up their own), so the backend should refuse those assignments from anyone else rather than accept one this IdP will refuse at link time.
 
 The response is the person's bound roles after the command (`held`, `assigned`) and the bound role list. Each assignment is audited as `role.assign`/`role.unassign` with `via: "people"`, the reason and the command ID, and the command itself as `people.roles` under `people-command:<id>`: repeating an ID with the same command, for example after a lost response, applies nothing again and returns the current roles, and repeating it with a different command is refused with 409.
 

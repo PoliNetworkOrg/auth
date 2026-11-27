@@ -7,7 +7,7 @@ import { type RbacCatalog, takesHandAssignments } from "@/auth/rbac";
 import type { UserRoleAssignment } from "@/auth/users";
 import { changeRoleMemberFn } from "@/auth/rbac.functions";
 import { useAccess } from "@/components/access";
-import { canAssignRole } from "@/components/rbac/delegation";
+import { canAssignRole, confersBuiltInRole } from "@/components/rbac/delegation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,7 +57,7 @@ export function UserRoles({
     .filter(
       (role) =>
         takesHandAssignments(role) &&
-        (access.isMasterAdmin || !role.managed) &&
+        (access.isMasterAdmin || !confersBuiltInRole(catalog, role)) &&
         !assigned.some((entry) => entry.key === role.key),
     )
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -90,6 +90,8 @@ export function UserRoles({
           {assigned.map((entry) => {
             const role = roleByKey(entry.key);
             const assignedAt = formatDate(entry.assignedAt);
+            const removable =
+              canWrite && (access.isMasterAdmin || !role || !confersBuiltInRole(catalog, role));
             return (
               <li key={entry.key} className="flex flex-wrap items-center gap-3 px-4 py-3">
                 <ShieldCheck className="size-4 shrink-0 text-primary" aria-hidden="true" />
@@ -112,7 +114,7 @@ export function UserRoles({
                       : ""}
                   </p>
                 </div>
-                {canWrite && (
+                {removable && (
                   <Hint
                     content={
                       mayGrant(entry.key)
