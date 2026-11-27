@@ -12,20 +12,22 @@ catalog:
   vite-plus: 1.7.0
 overrides:
   vite@*: "catalog:"
-  # Security floors: each entry lifts only the copies below the first release
-  # that fixes a published advisory, whether a dependency pins them below the
-  # fix or a lockfile merge would bring them back. They never cap a version, so
-  # an entry can be dropped once every dependent requires the fixed release.
-  brace-expansion@>=4.0.0 <5.0.12: ^5.0.12
-  esbuild@<0.25.0: ^0.25.0
-  glob@>=9.0.0 <14.0.2: ^14.0.2
-  launch-editor@<2.14.2: ^2.14.2
-  minimatch@>=7.0.0 <11.0.1: ^11.0.1
-  postcss-selector-parser@<6.1.5: ^6.1.5
-  seroval-plugins@<1.6.11: ^1.6.11
-  seroval@<1.6.11: ^1.6.11
-  shell-quote@<1.11.0: ^1.11.0
-  source-map-js@<1.2.2: ^1.2.2
-  zod@<4.6.6: ^4.6.6
+  # Security floors: each entry replaces only the copies below the first release
+  # that fixes a published advisory, whether a dependency pins them below the fix
+  # or a lockfile merge would bring them back, with the nearest fixed release in
+  # the same minor line (~), the smallest step past the fix. Copies already at or
+  # above the fix are left alone, so an entry can be dropped once every dependent
+  # requires the fixed release.
+  brace-expansion@>=4.0.0 <5.0.12: ~5.0.12
+  esbuild@<0.25.0: ~0.25.0
+  glob@>=9.0.0 <14.0.2: ~14.0.2
+  launch-editor@<2.14.2: ~2.14.2
+  minimatch@>=7.0.0 <11.0.1: ~11.0.1
+  postcss-selector-parser@<6.1.5: ~6.1.5
+  seroval-plugins@<1.6.11: ~1.6.11
+  seroval@<1.6.11: ~1.6.11
+  shell-quote@<1.11.0: ~1.11.0
+  source-map-js@<1.2.2: ~1.2.2
+  zod@<4.6.6: ~4.6.6
 minimumReleaseAgeExclude:
   - cn@0.2.6
