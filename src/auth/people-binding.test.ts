@@ -4,6 +4,7 @@ import {
   PEOPLE_RULES,
   describePeopleBinding,
   parsePeopleBinding,
+  peopleBindingBuiltInProblem,
   peopleBindingProblem,
   peopleRoleChangeProblem,
 } from "./people-binding";
@@ -322,6 +323,7 @@ it("describes each bound role with its effective permissions and inherited bindi
     binding: "capo",
     permissions: ["people:self", "tg:trusted"],
     bindings: ["capo", "admin"],
+    builtInRoles: [],
   });
   expect(described.find((entry) => entry.key === "hr-lead")).toMatchObject({
     permissions: ["admin:access", "people:read", "people:self", "people:write"],
@@ -329,4 +331,48 @@ it("describes each bound role with its effective permissions and inherited bindi
   });
   // Roles People can't manage are left out, as everywhere else.
   expect(described.map((entry) => entry.key)).not.toContain("sneaky");
+});
+
+it("leaves bound roles that inherit a built-in role to Master Admin", () => {
+  const socio = { ...role("socio", ["people:self"]), managed: true };
+  const member = role("socio-member", ["people:self"], "team:events:member", ["socio"]);
+  const extended = { ...catalog, roles: [...catalog.roles, socio, member] };
+  const problem = (actorRoles: string[], overrides: Partial<PeopleRoleChange> = {}) =>
+    peopleRoleChangeProblem({
+      catalog: extended,
+      actorId: "actor",
+      actor: resolveAccess(extended, actorRoles),
+      targetId: "target",
+      role: member,
+      action: "assign",
+      ...overrides,
+    });
+  // Direttivo holds every permission the role grants, and may give ordinary team roles.
+  expect(problem(["direttivo"])).toMatch(/Only a Master Admin.*socio/);
+  expect(problem(["direttivo"], { action: "unassign" })).toMatch(/Only a Master Admin/);
+  expect(problem([MASTER_ADMIN_ROLE_KEY])).toBeNull();
+  expect(problem([MASTER_ADMIN_ROLE_KEY], { action: "unassign" })).toBeNull();
+  // Giving up one's own role stays allowed.
+  expect(problem([], { targetId: "actor", action: "unassign" })).toBeNull();
+  // The backend learns which bound roles these are, for records not linked yet.
+  expect(describePeopleBoundRoles(extended).find((entry) => entry.key === member.key)).toEqual({
+    key: "socio-member",
+    name: "socio-member",
+    binding: "team:events:member",
+    permissions: ["people:self"],
+    bindings: ["team:events:member"],
+    builtInRoles: ["socio"],
+  });
+  // Also through a bound parent, which gives the built-in role just the same.
+  const lead = role("socio-lead", [], "team:events:lead", ["socio-member"]);
+  const withLead = { ...extended, roles: [...extended.roles, lead] };
+  expect(describePeopleBoundRoles(withLead).find((entry) => entry.key === lead.key)).toMatchObject({
+    bindings: ["team:events:lead", "team:events:member"],
+    builtInRoles: ["socio"],
+  });
+  // Binding such a role is left to Master Admin too.
+  expect(peopleBindingBuiltInProblem(extended, member)).toMatch(
+    /Only a Master Admin can let People manage socio-member, because it also gives socio/,
+  );
+  expect(peopleBindingBuiltInProblem(extended, role("plain", [], "admin"))).toBeNull();
 });
