@@ -69,10 +69,13 @@ export function AppHandshake({ app }: { app: RequestingApp | null }) {
 export function LoginPage({
   callbackURL = "/",
   header,
+  footer,
 }: {
   callbackURL?: string;
   /** Replaces the heading, for pages that ask to sign in before something else. */
   header?: ReactNode;
+  /** Shown under the card, for a way back to where the person came from. */
+  footer?: ReactNode;
 }) {
   const router = useRouter();
   const available = useProviders().signIn;
@@ -248,6 +251,7 @@ export function LoginPage({
           </p>
         </CardContent>
       </Card>
+      {footer}
       {import.meta.env.DEV && <DevLoginPanel redirect={callbackURL} />}
     </LoginLayout>
   );

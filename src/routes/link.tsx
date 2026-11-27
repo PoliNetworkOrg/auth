@@ -165,6 +165,15 @@ function LinkStep({ data }: { data: Extract<LinkPageData, { request: LinkRequest
               </CardDescription>
             </>
           }
+          footer={
+            returnTo && appName ? (
+              <Button asChild variant="ghost" className="h-11 self-center">
+                <a href={withLinkOutcome(returnTo, { error: "cancelled" })}>
+                  Not now, back to {appName}
+                </a>
+              </Button>
+            ) : null
+          }
         />
       );
 

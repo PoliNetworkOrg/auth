@@ -149,7 +149,7 @@ https://auth.polinetwork.org/link?method=telegram&client_id=<client id>&return_t
 
 **What the person sees:**
 
-1. **Not signed in:** the usual sign-in page, then the next step.
+1. **Not signed in:** the usual sign-in page, then the next step. **Not now, back to {application}** under it returns `link_error=cancelled`.
 2. **Already linked:** a note saying so, with **Back to {application}**.
 3. **Otherwise:** a confirmation card, "{application} asks you to link your Telegram account to PoliNetwork Auth", with **Link Telegram** and **Not now**. Nothing starts without that click.
 4. **After the provider:** a redirect to `return_to`, with one of these query parameters added (any `linked` or `link_error` already there is replaced):
