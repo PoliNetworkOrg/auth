@@ -122,6 +122,7 @@ describe("linkErrorFromCallback", () => {
   it("maps everything else to failed", () => {
     expect(linkErrorFromCallback("unable_to_get_user_info")).toBe("failed");
     expect(linkErrorFromCallback("state_mismatch")).toBe("failed");
+    expect(linkErrorFromCallback("consent_required")).toBe("failed");
     expect(linkErrorFromCallback(undefined)).toBe("failed");
   });
 });

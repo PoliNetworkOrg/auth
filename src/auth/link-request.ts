@@ -34,9 +34,10 @@ export type LinkOutcome = { linked: LinkMethod } | { error: LinkError };
 
 /**
  * Codes that mean the person stopped at the provider: OAuth's own `access_denied` (RFC 6749
- * §4.1.2.1) and the names some providers use instead.
+ * §4.1.2.1) and the names some providers use instead. Not OIDC's `consent_required`: that one
+ * means the provider couldn't ask, not that the person said no.
  */
-const CANCEL_CODES = new Set(["access_denied", "user_cancelled", "cancelled", "consent_required"]);
+const CANCEL_CODES = new Set(["access_denied", "user_cancelled", "cancelled"]);
 
 /** The `link_error` for the `error` Better Auth appends to the link's error callback. */
 export function linkErrorFromCallback(code: string | undefined): LinkError {
