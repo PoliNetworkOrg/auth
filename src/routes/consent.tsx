@@ -128,7 +128,8 @@ function Consent() {
   const { searchStr } = useLocation();
   const request = useMemo(() => parseConsentRequest(searchStr), [searchStr]);
   const [busy, setBusy] = useState<"allow" | "deny" | "switch" | null>(null);
-  const expiry = useSignInExpiry(searchStr);
+  // Someone may still be reading what the application asks for: don't leave under them.
+  const expiry = useSignInExpiry(searchStr, { leave: "ask" });
 
   // Consent needs a session: hand signed-out visitors to the login page with the same request.
   // The raw browser query is forwarded untouched so its signature keeps verifying.

@@ -40,7 +40,8 @@ function PasskeyOffer() {
   const appName = Route.useLoaderData()?.app?.name ?? "the application";
   const [busy, setBusy] = useState<"add" | "skip" | null>(null);
   const [supported, setSupported] = useState<boolean | null>(null);
-  const expiry = useSignInExpiry(useLocation().searchStr);
+  // Someone may be in the middle of adding a passkey: don't leave under them.
+  const expiry = useSignInExpiry(useLocation().searchStr, { leave: "ask" });
 
   useEffect(() => {
     // The session ended on the way here: sign in again with the same, still signed request.
