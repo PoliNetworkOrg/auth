@@ -19,15 +19,25 @@ function canonical(params: URLSearchParams) {
   return new URLSearchParams(sorted).toString();
 }
 
+/** How long after it was signed an expired sign-in page can still send someone back. */
+export const EXPIRED_QUERY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 /**
  * The authorization request behind a sign-in page's signed query, when the signature is the
  * provider plugin's own, whether or not it has expired. An expired query only has an old `exp`:
  * its client and redirect URI were checked when it was signed, so they can still be trusted to
  * send the person back with `login_required`.
  *
+ * It still has to be recent: one signed more than `EXPIRED_QUERY_MAX_AGE_MS` ago (by its signed
+ * `ba_iat`), or with no issue time, is refused, so an old signature isn't useful forever.
+ *
  * Mirrors the plugin's `buildSignedOAuthQuery` and `verifyOAuthQueryParams`, without the expiry.
  */
-export async function verifySignedQueryIgnoringExpiry(search: string, secret: string) {
+export async function verifySignedQueryIgnoringExpiry(
+  search: string,
+  secret: string,
+  now = Date.now(),
+) {
   const params = new URLSearchParams(search);
   const sigs = params.getAll("sig");
   const names = new Set(params.getAll("ba_param"));
@@ -39,6 +49,9 @@ export async function verifySignedQueryIgnoringExpiry(search: string, secret: st
   // Compared the way the plugin does: a `+` that became a space in the URL, or a signature
   // written in base64url, still verifies.
   if (!constantTimeEqual(toBase64Url(sigs[0].replace(/ /g, "+")), toBase64Url(expected)))
+    return null;
+  const issuedAt = Number(signed.get("ba_iat"));
+  if (!Number.isFinite(issuedAt) || issuedAt <= 0 || now - issuedAt > EXPIRED_QUERY_MAX_AGE_MS)
     return null;
   return authorizationRequestOf(signed);
 }

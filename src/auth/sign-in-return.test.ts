@@ -2,6 +2,7 @@ import { makeSignature } from "better-auth/crypto";
 import { describe, expect, it } from "vite-plus/test";
 import {
   APP_CONTEXT_TTL_SECONDS,
+  EXPIRED_QUERY_MAX_AGE_MS,
   readAppContext,
   signAppContext,
   verifySignedQueryIgnoringExpiry,
@@ -11,7 +12,8 @@ const secret = "test-secret-that-is-long-enough-for-hmac";
 
 /** Signs a query the way the provider plugin does (`signParams` in @better-auth/oauth-provider). */
 async function signLikeThePlugin(params: Record<string, string>, key = secret) {
-  const query = new URLSearchParams(params);
+  // Signed ten minutes ago by default, so the query has just expired.
+  const query = new URLSearchParams({ ba_iat: String(Date.now() - 10 * 60 * 1000), ...params });
   const names = [...new Set([...query.keys(), "ba_param"])].sort();
   for (const name of names) query.append("ba_param", name);
   const sorted = new URLSearchParams(
@@ -35,9 +37,32 @@ const request = {
 
 describe("verifySignedQueryIgnoringExpiry", () => {
   it("accepts an expired query Auth signed, and returns its authorization request", async () => {
-    const search = await signLikeThePlugin({ ...request, exp: "1000", ba_iat: "999000" });
+    const search = await signLikeThePlugin({ ...request, exp: "1000" });
     const verified = await verifySignedQueryIgnoringExpiry(`?${search}`, secret);
     expect(verified && Object.fromEntries(verified)).toEqual(request);
+  });
+
+  it("refuses a query signed more than a day ago, or with no signed issue time", async () => {
+    const now = Date.now();
+    const recent = await signLikeThePlugin({
+      ...request,
+      exp: "1000",
+      ba_iat: String(now - EXPIRED_QUERY_MAX_AGE_MS + 60_000),
+    });
+    expect(await verifySignedQueryIgnoringExpiry(recent, secret, now)).not.toBeNull();
+    const old = await signLikeThePlugin({
+      ...request,
+      exp: "1000",
+      ba_iat: String(now - EXPIRED_QUERY_MAX_AGE_MS - 60_000),
+    });
+    expect(await verifySignedQueryIgnoringExpiry(old, secret, now)).toBeNull();
+    const undated = await signLikeThePlugin({ ...request, exp: "1000", ba_iat: "" });
+    expect(await verifySignedQueryIgnoringExpiry(undated, secret, now)).toBeNull();
+    // Nor does an issue time changed after signing.
+    const unsigned = new URLSearchParams(undated);
+    unsigned.delete("ba_iat");
+    unsigned.append("ba_iat", String(now));
+    expect(await verifySignedQueryIgnoringExpiry(unsigned.toString(), secret, now)).toBeNull();
   });
 
   it("accepts the signature forms the plugin accepts", async () => {
