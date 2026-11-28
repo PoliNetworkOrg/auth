@@ -124,6 +124,11 @@ describe("clientErrorUrl", () => {
     });
   });
 
+  it("writes iss the way the provider plugin publishes it, without a trailing slash", () => {
+    const url = new URL(clientErrorUrl(dashboard, error, `${issuer}/`));
+    expect(url.searchParams.get("iss")).toBe(issuer);
+  });
+
   it("keeps a query the redirect URI already has", () => {
     const url = new URL(
       clientErrorUrl(

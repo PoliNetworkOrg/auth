@@ -7,6 +7,11 @@ import { authorizationRequestOf } from "./sign-in-errors";
  * so tests can run them without a server.
  */
 
+/** Standard base64 in the base64url alphabet, without padding. */
+function toBase64Url(value: string) {
+  return value.replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
 function canonical(params: URLSearchParams) {
   const sorted = [...params].sort(([keyA, valueA], [keyB, valueB]) =>
     keyA < keyB ? -1 : keyA > keyB ? 1 : valueA < valueB ? -1 : valueA > valueB ? 1 : 0,
@@ -31,7 +36,10 @@ export async function verifySignedQueryIgnoringExpiry(search: string, secret: st
   for (const [key, value] of params)
     if (key === "ba_param" || (key !== "sig" && names.has(key))) signed.append(key, value);
   const expected = await makeSignature(canonical(signed), secret);
-  if (!constantTimeEqual(sigs[0], expected)) return null;
+  // Compared the way the plugin does: a `+` that became a space in the URL, or a signature
+  // written in base64url, still verifies.
+  if (!constantTimeEqual(toBase64Url(sigs[0].replace(/ /g, "+")), toBase64Url(expected)))
+    return null;
   return authorizationRequestOf(signed);
 }
 

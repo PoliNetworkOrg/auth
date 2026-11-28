@@ -229,7 +229,8 @@ export function clientErrorUrl(
 ) {
   const params = new URLSearchParams({ error: error.error, error_description: error.description });
   if (target.state) params.set("state", target.state);
-  params.set("iss", issuer);
+  // The provider plugin publishes its issuer without a trailing slash.
+  params.set("iss", issuer.replace(/\/$/, ""));
   if (target.responseMode === "fragment") return `${target.redirectUri}#${params}`;
   return `${target.redirectUri}${target.redirectUri.includes("?") ? "&" : "?"}${params}`;
 }

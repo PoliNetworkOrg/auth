@@ -40,6 +40,17 @@ describe("verifySignedQueryIgnoringExpiry", () => {
     expect(verified && Object.fromEntries(verified)).toEqual(request);
   });
 
+  it("accepts the signature forms the plugin accepts", async () => {
+    const search = await signLikeThePlugin({ ...request, exp: "1000" });
+    const sig = new URLSearchParams(search).get("sig")!;
+    const query = new URLSearchParams(search);
+    query.set("sig", sig.replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_"));
+    expect(await verifySignedQueryIgnoringExpiry(query.toString(), secret)).not.toBeNull();
+    // A `+` written unescaped in the URL arrives as a space.
+    const raw = search.replace(/sig=[^&]*/, `sig=${sig}`);
+    expect(await verifySignedQueryIgnoringExpiry(raw, secret)).not.toBeNull();
+  });
+
   it("ignores parameters added outside the signature", async () => {
     const search = await signLikeThePlugin({ ...request, exp: "1000" });
     const verified = await verifySignedQueryIgnoringExpiry(`${search}&utm_source=mail`, secret);
