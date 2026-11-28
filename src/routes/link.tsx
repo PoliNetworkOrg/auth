@@ -14,6 +14,7 @@ import {
   type LinkOutcome,
   type LinkRequest,
 } from "@/auth/link-request";
+import { accountInUseAdvice } from "@/auth/sign-in-errors";
 import { getLinkRequest, startLinkAttempt, type LinkRequestDetails } from "@/auth/link.functions";
 import { useViewer } from "@/components/access";
 import { LoginLayout, LoginPage } from "@/components/login-page";
@@ -343,8 +344,7 @@ function Outcome({
           title={`This ${method.name} account belongs to another PoliNetwork account`}
         >
           You've used it before with a different PoliNetwork account than the one you're signed in
-          with now. To link it here, sign in with that other account and unlink it from there, then
-          try again. If you can't, ask the IT team.
+          with now. {accountInUseAdvice(request.method)}
           <Actions>{back(outcome) ?? <AccountButton primary />}</Actions>
         </Notice>
       );

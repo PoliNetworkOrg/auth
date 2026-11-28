@@ -139,19 +139,18 @@ export function LoginPage({
   }, [oauthClientId]);
 
   async function signIn(method: string) {
-    // A sign-in from an expired page can only fail: go back to the application instead.
-    if (oauthFlow && expiry.isExpired()) return void expiry.expire();
     setBusy(method);
+    // A sign-in from an expired page can only fail: go back to the application instead, unless
+    // the server says the page is still valid.
+    if (oauthFlow && expiry.isExpired() && (await expiry.expire())) return;
     try {
       const result =
         method === "passkey"
           ? await authClient.signIn.passkey()
           : await authClient.signIn.social({ provider: method, callbackURL });
       if (result.error) {
-        if (oauthFlow && isInvalidSignature(result.error)) {
-          void expiry.expire();
-          return;
-        }
+        // Stay busy only while the page leaves for the application.
+        if (oauthFlow && isInvalidSignature(result.error) && (await expiry.expire())) return;
         toast.error(
           result.error.status === 429
             ? rateLimitMessage(result.error)

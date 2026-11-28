@@ -118,8 +118,7 @@ export function describeError(
     case "account-in-use":
       return {
         title: `This ${provider ? `${provider} ` : ""}account belongs to another PoliNetwork account`,
-        message:
-          "You've used it with a different PoliNetwork Auth account than the one you're signed in with now. Sign in with that other account and unlink it there, or ask the IT team.",
+        message: `You've used it with a different PoliNetwork Auth account than the one you're signed in with now. ${accountInUseAdvice(details.provider)}`,
         showCode: true,
       };
     case "expired":
@@ -158,6 +157,18 @@ export function describeError(
         showCode: true,
       };
   }
+}
+
+/**
+ * What to do about a login that belongs to another PoliNetwork Auth user, until accounts can be
+ * merged (#102). Telegram is never an account's only login, so it can always be unlinked from
+ * the other account; a Google or PoliNetwork APS login often is, and the last one can't be.
+ */
+export function accountInUseAdvice(providerId: string | undefined) {
+  const name = providerName(providerId);
+  if (providerId === "telegram")
+    return "Sign in with that other account, unlink Telegram from it, then try again here. If you can't, ask the IT team.";
+  return `If that account has another way to sign in, use it to sign in and unlink ${name ?? "this login"} there, then try again here. Otherwise ask the IT team: accounts can't be merged yet.`;
 }
 
 /**

@@ -138,14 +138,16 @@ function Consent() {
   }, [viewer, request]);
 
   async function decide(accept: boolean) {
-    // A decision on an expired request can only fail: go back to the application instead.
-    if (expiry.isExpired()) return void expiry.expire();
     setBusy(accept ? "allow" : "deny");
     try {
+      // A decision on an expired request can only fail: go back to the application instead,
+      // unless the server says the request is still valid.
+      if (expiry.isExpired() && (await expiry.expire())) return;
       const result = await authClient.oauth2.consent({ accept });
-      if (result.error && "error" in result.error && result.error.error === "invalid_signature")
-        void expiry.expire();
-      else if (result.error) toast.error(result.error.message ?? "Unable to process your choice.");
+      if (result.error && "error" in result.error && result.error.error === "invalid_signature") {
+        if (!(await expiry.expire())) toast.error("Unable to process your choice. Try again.");
+      } else if (result.error)
+        toast.error(result.error.message ?? "Unable to process your choice.");
       else if (result.data?.url) window.location.assign(result.data.url);
     } catch {
       toast.error("Unable to reach PoliNetwork. Please try again.");

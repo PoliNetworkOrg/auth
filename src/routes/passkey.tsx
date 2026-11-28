@@ -65,9 +65,9 @@ function PasskeyOffer() {
       const result = await authClient.oauth2.continue({ postLogin: true });
       if (!result.error) return true;
       if ("error" in result.error && result.error.error === "invalid_signature") {
-        // The sign-in expired while the person was here: go back to the application.
-        void expiry.expire();
-        return true;
+        // The sign-in expired while the person was here: go back to the application. Stay busy
+        // only while the page leaves; if the server says it's still valid, show an error.
+        if (await expiry.expire()) return true;
       }
       toast.error(
         result.error.message ?? "Unable to continue. Go back to the application and try again.",

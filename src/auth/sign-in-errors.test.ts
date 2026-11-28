@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  accountInUseAdvice,
   authorizationRequestOf,
   clientErrorFor,
   clientErrorUrl,
@@ -231,5 +232,20 @@ describe("routeCallback", () => {
       "/",
     ])
       expect(routeCallback({ ...base, location }), location).toBeNull();
+  });
+});
+
+describe("accountInUseAdvice", () => {
+  it("offers unlinking Telegram, which is never an account's only login", () => {
+    expect(accountInUseAdvice("telegram")).toContain("unlink Telegram from it");
+  });
+
+  it("points to IT for a login that may be the other account's only one", () => {
+    for (const provider of ["google", "pn-entra", undefined]) {
+      const advice = accountInUseAdvice(provider);
+      expect(advice).toContain("If that account has another way to sign in");
+      expect(advice).toContain("ask the IT team");
+    }
+    expect(accountInUseAdvice("google")).toContain("unlink Google there");
   });
 });
