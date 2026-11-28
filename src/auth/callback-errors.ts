@@ -2,7 +2,7 @@ import { getOAuthState, isAPIError } from "better-auth/api";
 import { env } from "../env";
 import { resolveClientReturn } from "./app-return";
 import { readRefusal } from "./refusals";
-import { authorizationRequestOf, routeCallback } from "./sign-in-errors";
+import { authorizationRequestOf, isErrorPageUrl, routeCallback } from "./sign-in-errors";
 import { signAppContext } from "./sign-in-return";
 
 /** Auth's own error page, where Better Auth and the provider plugin send failures. */
@@ -37,7 +37,8 @@ export async function routeCallbackError(ctx: CallbackContext) {
   const returned = ctx.context.returned;
   if (!isAPIError(returned) || returned.statusCode !== 302) return;
   const location = locationOf(returned);
-  if (!location) return;
+  // Successes and flows with their own error callback: nothing to look up.
+  if (!location || !isErrorPageUrl(location, ERROR_PAGE_URL)) return;
 
   // The authorization request a sign-in started from, kept in the encrypted OAuth state when
   // the sign-in began. It was verified then, and the state can't be forged.
