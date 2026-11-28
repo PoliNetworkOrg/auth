@@ -1,7 +1,7 @@
 import { getOAuthState, isAPIError } from "better-auth/api";
 import { env } from "../env";
 import { resolveClientReturn } from "./app-return";
-import { readRefusal } from "./refusals";
+import { readProviderError } from "./provider-errors";
 import { authorizationRequestOf, isErrorPageUrl, routeCallback } from "./sign-in-errors";
 import { signAppContext } from "./sign-in-return";
 
@@ -51,7 +51,7 @@ export async function routeCallbackError(ctx: CallbackContext) {
   const route = routeCallback({
     location,
     errorPage: ERROR_PAGE_URL,
-    refusal: await readRefusal(),
+    providerError: await readProviderError(),
     provider: ctx.params?.id,
     client: client?.target ?? null,
     issuer: ctx.context.baseURL,

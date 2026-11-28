@@ -11,8 +11,8 @@ import { TELEGRAM_ISSUER, entraIssuer } from "./account-issuer";
 import { claimEmail } from "./contact-email";
 import { checkPnGroupStates, membershipEvidence } from "./membership";
 import { isEntraMember } from "./policy";
-import { AccountRefused, recordRefusal } from "./refusals";
-import { REFUSAL_CODES } from "./sign-in-errors";
+import { AccountRefused, recordProviderError } from "./provider-errors";
+import { PROVIDER_ERROR_CODES } from "./sign-in-errors";
 
 type ProviderSettings = {
   clientId: string;
@@ -85,19 +85,28 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
       algorithms: ["RS256"],
       requiredClaims: ["sub", "exp", "iat"],
     });
-    if (!payload.sub || !payload.exp) throw new Error("Missing identity claims");
-    if (!telegram && payload.tid !== settings.tenantId) throw new Error("Unexpected Entra tenant");
+    if (!payload.sub || !payload.exp)
+      throw new AccountRefused(PROVIDER_ERROR_CODES.missingClaims, "Missing identity claims");
+    if (!telegram && payload.tid !== settings.tenantId)
+      throw new AccountRefused(PROVIDER_ERROR_CODES.entraTenant, "Unexpected Entra tenant");
     if (!telegram && !isEntraMember(payload.acct))
-      throw new AccountRefused(REFUSAL_CODES.entraGuest, "Entra guest accounts cannot sign in");
+      throw new AccountRefused(
+        PROVIDER_ERROR_CODES.entraGuest,
+        "Entra guest accounts cannot sign in",
+      );
     const telegramId =
       telegram &&
       (typeof payload.id === "string" ||
         (typeof payload.id === "number" && Number.isSafeInteger(payload.id)))
         ? String(payload.id)
         : null;
-    if (telegram && !/^[1-9]\d*$/.test(telegramId!)) throw new Error("Missing Telegram user ID");
+    if (telegram && !/^[1-9]\d*$/.test(telegramId!))
+      throw new AccountRefused(PROVIDER_ERROR_CODES.missingClaims, "Missing Telegram user ID");
     if (!telegram && typeof payload.oid !== "string")
-      throw new Error("Missing Entra object ID for membership verification");
+      throw new AccountRefused(
+        PROVIDER_ERROR_CODES.missingClaims,
+        "Missing Entra object ID for membership verification",
+      );
     const membership = telegram
       ? { states: [], validUntil: new Date(payload.exp * 1000) }
       : membershipEvidence(await checkPnGroupStates(payload.oid as string));
@@ -150,9 +159,12 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
           error instanceof Error
             ? `${typeof code === "string" ? code : error.name}: ${error.message}`
             : "non-error value thrown";
-        console.error(`Refused a ${id} account: ${reason}`);
-        // Better Auth reports every refusal the same way; `/error` explains ours by this code.
-        if (error instanceof AccountRefused) await recordRefusal(error.code);
+        const refused = error instanceof AccountRefused;
+        console.error(`${refused ? "Refused" : "Couldn't verify"} a ${id} account: ${reason}`);
+        // Better Auth reports every failure here the same way. A deliberate refusal keeps its own
+        // code; anything else (keys unreachable, a bad token, the database) is a failure, so the
+        // person is told to try again rather than that their account can't be used.
+        await recordProviderError(refused ? error.code : PROVIDER_ERROR_CODES.failed);
         return null;
       }
     },

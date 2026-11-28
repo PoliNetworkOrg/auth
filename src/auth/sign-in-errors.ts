@@ -7,10 +7,16 @@
  * the failure happened inside its sign-in (RFC 6749 §4.1.2.1, OIDC Core §3.1.2.6).
  */
 
-/** Codes our providers use for accounts they refuse (see `src/auth/providers.ts`). */
-export const REFUSAL_CODES = {
-  /** A B2B guest of the association's tenant tried PoliNetwork APS. */
+/** Codes our providers record when they can't return an account (see `src/auth/providers.ts`). */
+export const PROVIDER_ERROR_CODES = {
+  /** Refused: a B2B guest of the association's tenant tried PoliNetwork APS. */
   entraGuest: "pn_entra_guest",
+  /** Refused: an Entra token from another tenant. */
+  entraTenant: "pn_entra_tenant",
+  /** Refused: the provider's token lacks what we need to know who this is. */
+  missingClaims: "provider_missing_claims",
+  /** Not a refusal: the provider or Auth failed (keys unreachable, a bad token, the database). */
+  failed: "provider_failed",
 } as const;
 
 export type ErrorKind =
@@ -35,8 +41,12 @@ const KINDS: Record<string, ErrorKind> = {
   access_denied: "cancelled",
   user_cancelled: "cancelled",
   cancelled: "cancelled",
-  [REFUSAL_CODES.entraGuest]: "refused",
-  unable_to_get_user_info: "refused",
+  [PROVIDER_ERROR_CODES.entraGuest]: "refused",
+  [PROVIDER_ERROR_CODES.entraTenant]: "refused",
+  [PROVIDER_ERROR_CODES.missingClaims]: "refused",
+  // Better Auth's own code when a provider returns no account. Without one of ours recorded it
+  // says nothing about why, so it's a failure, not a refusal.
+  unable_to_get_user_info: "failed",
   email_not_found: "refused",
   TELEGRAM_LINK_ONLY: "refused",
   account_already_linked_to_different_user: "account-in-use",
@@ -100,7 +110,8 @@ export function describeError(
   const provider = providerName(details.provider);
   const at = provider ? ` with ${provider}` : "";
   switch (code) {
-    case REFUSAL_CODES.entraGuest:
+    case PROVIDER_ERROR_CODES.entraGuest:
+    case PROVIDER_ERROR_CODES.entraTenant:
       return {
         title: "This account can't use PoliNetwork APS",
         message:
@@ -293,7 +304,7 @@ export type CallbackErrorRoute =
 
 /**
  * Where a provider callback that failed should go. `location` is where Better Auth was sending
- * it; `refusal` is our own reason, if a provider refused the account; `client` is the
+ * it; `providerError` is our own code, when one of our providers couldn't return an account; `client` is the
  * application whose sign-in this was, when there is one and its redirect URI is trusted.
  */
 /** Whether a redirect is to Auth's error page, which is all `routeCallback` takes over. */
@@ -310,14 +321,14 @@ export function isErrorPageUrl(location: string, errorPage: string) {
 export function routeCallback(input: {
   location: string;
   errorPage: string;
-  refusal: string | null;
+  providerError: string | null;
   provider?: string;
   client: ClientReturn | null;
   issuer: string;
 }): CallbackErrorRoute {
   if (!isErrorPageUrl(input.location, input.errorPage)) return null;
   let code = new URL(input.location, input.errorPage).searchParams.get("error") || "unknown";
-  if (code === "unable_to_get_user_info" && input.refusal) code = input.refusal;
+  if (code === "unable_to_get_user_info" && input.providerError) code = input.providerError;
   if (input.client && errorKind(code) === "cancelled")
     return { to: "client", url: clientErrorUrl(input.client, clientErrorFor(code), input.issuer) };
   return { to: "page", code, provider: input.provider, withApp: !!input.client };

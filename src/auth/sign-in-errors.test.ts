@@ -8,7 +8,7 @@ import {
   errorCode,
   errorKind,
   isRegisteredRedirect,
-  REFUSAL_CODES,
+  PROVIDER_ERROR_CODES,
   responseModeOf,
   routeCallback,
   signedQueryExpiry,
@@ -26,9 +26,12 @@ describe("describeError", () => {
   it.each([
     ["access_denied", "You cancelled signing in"],
     ["user_cancelled", "You cancelled signing in"],
-    [REFUSAL_CODES.entraGuest, "This account can't use PoliNetwork APS"],
+    [PROVIDER_ERROR_CODES.entraGuest, "This account can't use PoliNetwork APS"],
     ["TELEGRAM_LINK_ONLY", "Telegram can't be used to sign in"],
-    ["unable_to_get_user_info", "We couldn't verify your account"],
+    [PROVIDER_ERROR_CODES.entraTenant, "This account can't use PoliNetwork APS"],
+    [PROVIDER_ERROR_CODES.missingClaims, "We couldn't verify your account"],
+    [PROVIDER_ERROR_CODES.failed, "Something went wrong"],
+    ["unable_to_get_user_info", "Something went wrong"],
     [
       "account_already_linked_to_different_user",
       "This account belongs to another PoliNetwork account",
@@ -45,7 +48,7 @@ describe("describeError", () => {
   });
 
   it("tells a guest to use Google", () => {
-    expect(describeError(REFUSAL_CODES.entraGuest).message).toContain("Use Google instead");
+    expect(describeError(PROVIDER_ERROR_CODES.entraGuest).message).toContain("Use Google instead");
   });
 
   it("names the provider when it knows it", () => {
@@ -69,7 +72,7 @@ describe("describeError", () => {
   it("shows the code for support, except for a plain cancel", () => {
     expect(describeError("access_denied").showCode).toBe(false);
     expect(describeError("invalid_code").showCode).toBe(true);
-    expect(describeError(REFUSAL_CODES.entraGuest).showCode).toBe(true);
+    expect(describeError(PROVIDER_ERROR_CODES.entraGuest).showCode).toBe(true);
   });
 
   it("doesn't treat inherited names as codes", () => {
@@ -84,7 +87,7 @@ describe("errorCode", () => {
       "access_denied",
       "unable_to_get_user_info",
       "TELEGRAM_LINK_ONLY",
-      REFUSAL_CODES.entraGuest,
+      PROVIDER_ERROR_CODES.entraGuest,
       "invalid-code",
     ])
       expect(errorCode(code)).toBe(code);
@@ -102,10 +105,14 @@ describe("errorCode", () => {
 describe("clientErrorFor", () => {
   it("is access_denied for a cancel or a refusal, login_required on expiry, else server_error", () => {
     expect(clientErrorFor("access_denied").error).toBe("access_denied");
-    expect(clientErrorFor(REFUSAL_CODES.entraGuest).error).toBe("access_denied");
+    expect(clientErrorFor(PROVIDER_ERROR_CODES.entraGuest).error).toBe("access_denied");
     expect(clientErrorFor("account_already_linked_to_different_user").error).toBe("access_denied");
     expect(clientErrorFor("login_required").error).toBe("login_required");
+    expect(clientErrorFor(PROVIDER_ERROR_CODES.missingClaims).error).toBe("access_denied");
     expect(clientErrorFor("invalid_code").error).toBe("server_error");
+    // An outage at the provider or in Auth isn't the account's fault.
+    expect(clientErrorFor(PROVIDER_ERROR_CODES.failed).error).toBe("server_error");
+    expect(clientErrorFor("unable_to_get_user_info").error).toBe("server_error");
     expect(clientErrorFor("state_mismatch").error).toBe("server_error");
   });
 });
@@ -205,7 +212,7 @@ describe("signedQueryExpiry", () => {
 });
 
 describe("routeCallback", () => {
-  const base = { errorPage, refusal: null, provider: "google", client: dashboard, issuer };
+  const base = { errorPage, providerError: null, provider: "google", client: dashboard, issuer };
 
   it("sends a cancel inside an application straight back to it", () => {
     const route = routeCallback({
@@ -224,13 +231,28 @@ describe("routeCallback", () => {
       routeCallback({
         ...base,
         provider: "pn-entra",
-        refusal: REFUSAL_CODES.entraGuest,
+        providerError: PROVIDER_ERROR_CODES.entraGuest,
         location: `${errorPage}?error=unable_to_get_user_info`,
       }),
-    ).toEqual({ to: "page", code: REFUSAL_CODES.entraGuest, provider: "pn-entra", withApp: true });
+    ).toEqual({
+      to: "page",
+      code: PROVIDER_ERROR_CODES.entraGuest,
+      provider: "pn-entra",
+      withApp: true,
+    });
   });
 
-  it("keeps Better Auth's code when no refusal was recorded", () => {
+  it("reports a provider outage as a failure, not a refusal", () => {
+    expect(
+      routeCallback({
+        ...base,
+        providerError: PROVIDER_ERROR_CODES.failed,
+        location: `${errorPage}?error=unable_to_get_user_info`,
+      }),
+    ).toMatchObject({ to: "page", code: PROVIDER_ERROR_CODES.failed, withApp: true });
+  });
+
+  it("keeps Better Auth's code when none of ours was recorded", () => {
     expect(
       routeCallback({ ...base, location: `${errorPage}?error=unable_to_get_user_info` }),
     ).toMatchObject({ to: "page", code: "unable_to_get_user_info" });
