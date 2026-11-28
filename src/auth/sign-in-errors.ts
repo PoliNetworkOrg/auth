@@ -59,6 +59,18 @@ export function errorKind(code: string): ErrorKind {
   return Object.hasOwn(KINDS, code) ? KINDS[code] : "failed";
 }
 
+/** What Better Auth, the provider plugin and our providers use as codes: short and plain. */
+const CODE_SHAPE = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * The code `/error` works with, from the URL's `error`. The page shows the code for support, so
+ * anything that isn't shaped like one becomes `unknown`: a crafted link can't put its own words
+ * on the page in place of a code.
+ */
+export function errorCode(raw: string | undefined) {
+  return raw && CODE_SHAPE.test(raw) ? raw : "unknown";
+}
+
 /** How the page names a provider, from the id in its callback path. */
 export const PROVIDER_NAMES: Record<string, string> = {
   google: "Google",
@@ -283,6 +295,17 @@ export type CallbackErrorRoute =
  * it; `refusal` is our own reason, if a provider refused the account; `client` is the
  * application whose sign-in this was, when there is one and its redirect URI is trusted.
  */
+/** Whether a redirect is to Auth's error page, which is all `routeCallback` takes over. */
+export function isErrorPageUrl(location: string, errorPage: string) {
+  const page = new URL(errorPage);
+  try {
+    const target = new URL(location, page);
+    return target.origin === page.origin && target.pathname === page.pathname;
+  } catch {
+    return false;
+  }
+}
+
 export function routeCallback(input: {
   location: string;
   errorPage: string;
@@ -291,15 +314,8 @@ export function routeCallback(input: {
   client: ClientReturn | null;
   issuer: string;
 }): CallbackErrorRoute {
-  const errorPage = new URL(input.errorPage);
-  let target: URL;
-  try {
-    target = new URL(input.location, errorPage);
-  } catch {
-    return null;
-  }
-  if (target.origin !== errorPage.origin || target.pathname !== errorPage.pathname) return null;
-  let code = target.searchParams.get("error") || "unknown";
+  if (!isErrorPageUrl(input.location, input.errorPage)) return null;
+  let code = new URL(input.location, input.errorPage).searchParams.get("error") || "unknown";
   if (code === "unable_to_get_user_info" && input.refusal) code = input.refusal;
   if (input.client && errorKind(code) === "cancelled")
     return { to: "client", url: clientErrorUrl(input.client, clientErrorFor(code), input.issuer) };

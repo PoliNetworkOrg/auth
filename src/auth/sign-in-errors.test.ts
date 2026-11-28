@@ -5,6 +5,7 @@ import {
   clientErrorFor,
   clientErrorUrl,
   describeError,
+  errorCode,
   errorKind,
   isRegisteredRedirect,
   REFUSAL_CODES,
@@ -74,6 +75,27 @@ describe("describeError", () => {
   it("doesn't treat inherited names as codes", () => {
     expect(errorKind("toString")).toBe("failed");
     expect(errorKind("__proto__")).toBe("failed");
+  });
+});
+
+describe("errorCode", () => {
+  it("keeps codes from Better Auth, the provider plugin and our providers", () => {
+    for (const code of [
+      "access_denied",
+      "unable_to_get_user_info",
+      "TELEGRAM_LINK_ONLY",
+      REFUSAL_CODES.entraGuest,
+      "invalid-code",
+    ])
+      expect(errorCode(code)).toBe(code);
+  });
+
+  it("turns anything else from the URL into unknown, so the page never shows it", () => {
+    expect(errorCode(undefined)).toBe("unknown");
+    expect(errorCode("")).toBe("unknown");
+    expect(errorCode("Your account is locked. Call +39 000 0000")).toBe("unknown");
+    expect(errorCode("<b>x</b>")).toBe("unknown");
+    expect(errorCode("a".repeat(65))).toBe("unknown");
   });
 });
 

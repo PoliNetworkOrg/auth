@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Clock, ShieldOff, TriangleAlert, UserRoundX, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { z } from "zod";
-import { describeError, errorKind, type ErrorKind } from "@/auth/sign-in-errors";
+import { describeError, errorCode, errorKind, type ErrorKind } from "@/auth/sign-in-errors";
 import { getErrorApp } from "@/auth/sign-in-errors.functions";
 import { useViewer } from "@/components/access";
 import { LoginLayout } from "@/components/login-page";
@@ -18,8 +18,8 @@ const searchSchema = z.object({
   provider: text,
   /** A signed context from `routeCallbackError`: the application the sign-in belonged to. */
   app: text,
-  /** Seconds to wait, after too many attempts. */
-  retry_after: z.coerce.number().int().positive().optional().catch(undefined),
+  /** Seconds to wait, after too many attempts. No rate limit here lasts longer than an hour. */
+  retry_after: z.coerce.number().int().positive().max(3600).optional().catch(undefined),
 });
 
 /**
@@ -33,7 +33,7 @@ export const Route = createFileRoute("/error")({
     meta: [{ title: "Sign-in problem · PoliNetwork Auth" }, { name: "robots", content: "noindex" }],
   }),
   validateSearch: searchSchema,
-  loaderDeps: ({ search }) => ({ error: search.error ?? "unknown", app: search.app }),
+  loaderDeps: ({ search }) => ({ error: errorCode(search.error), app: search.app }),
   loader: ({ deps }) => (deps.app ? getErrorApp({ data: deps }) : null),
   component: ErrorPage,
 });
@@ -53,7 +53,7 @@ function ErrorPage() {
   const viewer = useViewer();
   const app = Route.useLoaderData();
   const search = Route.useSearch();
-  const code = search.error ?? "unknown";
+  const code = errorCode(search.error);
   const copy = describeError(code, { provider: search.provider, retryAfter: search.retry_after });
 
   return (
