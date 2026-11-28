@@ -65,6 +65,32 @@ export function telegramUsername(claims: JWTPayload) {
   return typeof name === "string" && name ? name.replace(/^@/, "") : null;
 }
 
+/**
+ * The account `verify` returns, or null when it throws. Better Auth sends a missing result to the
+ * flow's error callback, as `unable_to_get_user_info`, but lets a throw escape it, so a refused
+ * account would end on a bare error page instead of going back to `/link` or `/error`.
+ */
+export async function accountOrNull<T>(id: string, verify: () => Promise<T>): Promise<T | null> {
+  try {
+    return await verify();
+  } catch (error) {
+    // The reason only: jose's claim errors carry the whole ID token payload (name, email,
+    // object ID), which must not reach the logs for someone who was refused.
+    const code = error instanceof Error && "code" in error ? error.code : undefined;
+    const reason =
+      error instanceof Error
+        ? `${typeof code === "string" ? code : error.name}: ${error.message}`
+        : "non-error value thrown";
+    const refused = error instanceof AccountRefused;
+    console.error(`${refused ? "Refused" : "Couldn't verify"} a ${id} account: ${reason}`);
+    // Better Auth reports every failure here the same way. A deliberate refusal keeps its own
+    // code; anything else (keys unreachable, a bad token, the database) is a failure, so the
+    // person is told to try again rather than that their account can't be used.
+    await recordProviderError(refused ? error.code : PROVIDER_ERROR_CODES.failed);
+    return null;
+  }
+}
+
 function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfig {
   const telegram = id === "telegram";
   // The same issuer the account gets (`account-issuer.ts`), so evidence and account stay joined.
@@ -145,29 +171,7 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
     pkce: true,
     authentication: telegram ? "basic" : "post",
     disableSignUp: telegram,
-    async getUserInfo(tokens) {
-      // Better Auth sends a missing result to the flow's error callback, as
-      // `unable_to_get_user_info`, but lets a throw escape it. A refused account (an Entra guest,
-      // say) would then end on a bare error page instead of going back to `/link` or the login.
-      try {
-        return await verifiedUserInfo(tokens);
-      } catch (error) {
-        // The reason only: jose's claim errors carry the whole ID token payload (name, email,
-        // object ID), which must not reach the logs for someone who was refused.
-        const code = error instanceof Error && "code" in error ? error.code : undefined;
-        const reason =
-          error instanceof Error
-            ? `${typeof code === "string" ? code : error.name}: ${error.message}`
-            : "non-error value thrown";
-        const refused = error instanceof AccountRefused;
-        console.error(`${refused ? "Refused" : "Couldn't verify"} a ${id} account: ${reason}`);
-        // Better Auth reports every failure here the same way. A deliberate refusal keeps its own
-        // code; anything else (keys unreachable, a bad token, the database) is a failure, so the
-        // person is told to try again rather than that their account can't be used.
-        await recordProviderError(refused ? error.code : PROVIDER_ERROR_CODES.failed);
-        return null;
-      }
-    },
+    getUserInfo: (tokens) => accountOrNull(id, () => verifiedUserInfo(tokens)),
   };
 }
 
