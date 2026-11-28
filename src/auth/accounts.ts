@@ -3,6 +3,7 @@ import { account } from "../db/auth-schema";
 import { identityEvidence } from "../db/evidence";
 import { db } from "../db/index";
 import { authorizationMutationLock } from "../db/security-lock";
+import { releaseEntraName } from "./name-store";
 import { isLoginProvider } from "./policy";
 
 export class AccountError extends Error {
@@ -49,6 +50,8 @@ export async function disconnectAccount(userId: string, accountId: string) {
       await transaction
         .delete(account)
         .where(and(eq(account.id, accountId), eq(account.userId, userId)));
+      // The directory's name stays, now self-declared: the person can edit it from here on.
+      if (selected.providerId === "pn-entra") await releaseEntraName(transaction, userId);
     },
     { isolationLevel: "read committed" },
   );

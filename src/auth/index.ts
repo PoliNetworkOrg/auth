@@ -17,13 +17,16 @@ import { appEmail } from "./contact-email";
 import { ERROR_PAGE_URL, routeCallbackError } from "./callback-errors";
 import { startAccessDispatcher } from "./access-dispatcher";
 import { startDataRetention } from "./data-retention";
-import { getOidcClaims } from "./identity";
+import { getNameClaims, getOidcClaims } from "./identity";
+import { initialNames, syncNamesQuietly } from "./name-store";
+import { userNameFields } from "./names";
 import {
-  PASSKEY_PROMPT_PAGE,
+  POST_LOGIN_PAGE,
   SESSION_FRESH_AGE,
-  readPasskeyPromptState,
+  readPostLoginState,
   shouldOfferPasskey,
-} from "./passkey-prompt";
+  shouldConfirmName,
+} from "./post-login";
 import { ensureIdTokenKey, jwtOptions } from "./jwt-options";
 import { startKeyPruning } from "./key-pruning";
 import { logAuthorizationDenial } from "./denial-log";
@@ -232,6 +235,10 @@ export const auth = betterAuth({
       }
     }),
   },
+  user: {
+    // Owned by this app: see `names.ts`. `input: false`, so only this app's code sets them.
+    additionalFields: userNameFields,
+  },
   account: {
     // Owned by this app, not Better Auth: see `account-issuer.ts`.
     additionalFields: accountIssuerField,
@@ -244,12 +251,26 @@ export const auth = betterAuth({
     },
   },
   databaseHooks: {
+    user: {
+      create: {
+        // A guess from the provider's full name, until Entra's names or the person's own replace it.
+        before: async (data) => ({ data: { ...data, ...initialNames(data.name) } }),
+      },
+    },
     account: {
       create: {
         // Every account Better Auth creates gets its provider's issuer, or is refused.
         before: async (data) => ({
           data: { ...data, issuer: accountIssuer(data.providerId, env.PN_ENTRA_TENANT_ID) },
         }),
+        // Linking a PoliNetwork APS account sets the directory's names (`syncNames`).
+        after: async (data) => syncNamesQuietly(data.userId),
+      },
+    },
+    session: {
+      create: {
+        // Every sign-in, whatever the method, brings the names in line with the linked accounts.
+        after: async (data) => syncNamesQuietly(data.userId),
       },
     },
   },
@@ -291,20 +312,22 @@ export const auth = betterAuth({
       clientRegistrationDefaultScopes: MCP_CLIENT_SCOPES,
       // Lets the login page name the requesting app before the user signs in.
       allowPublicClientPrelogin: true,
-      // Offers a passkey once, on the way to the app; the page continues the sign-in after.
+      // On the way to the app: confirm a self-declared name, then a passkey offer, once each.
+      // The page continues the sign-in after each step, which comes back here for the next one.
       postLogin: {
-        page: PASSKEY_PROMPT_PAGE,
+        page: POST_LOGIN_PAGE,
         consentReferenceId: () => undefined,
         shouldRedirect: async ({ headers, user, session }) => {
           const query = new URLSearchParams((await getOAuthProviderState())?.query ?? "");
-          return shouldOfferPasskey({
-            ...(await readPasskeyPromptState(user.id)),
+          const state = {
+            ...(await readPostLoginState(user.id)),
             unsupportedBrowser: parseCookies(headers.get("cookie") ?? "").has(
               PASSKEY_UNSUPPORTED_COOKIE,
             ),
             sessionCreatedAt: new Date(session.createdAt),
             prompt: query.get("prompt"),
-          });
+          };
+          return shouldConfirmName(state) || shouldOfferPasskey(state);
         },
       },
       // Administrators share one client pool instead of owning clients individually.
@@ -335,10 +358,12 @@ export const auth = betterAuth({
       idTokenExpiresIn: tokenLifetimes.idToken,
       customIdTokenClaims: async ({ user, scopes }) => ({
         ...standardIdTokenClaims(await withAppEmail(user, scopes), scopes),
+        ...(await getNameClaims(user.id, scopes)),
         ...(await getOidcClaims(user.id, scopes)),
       }),
       customUserInfoClaims: async ({ user, scopes }) => ({
         ...standardIdTokenClaims(await withAppEmail(user, scopes), scopes),
+        ...(await getNameClaims(user.id, scopes)),
         ...(await getOidcClaims(user.id, scopes)),
       }),
       customAccessTokenClaims: async ({ user, scopes }) => ({

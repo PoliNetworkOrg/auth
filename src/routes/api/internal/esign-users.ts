@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { asc } from "drizzle-orm";
 import { snapshotClientId } from "@/auth/access-snapshot-token";
 import { contactEmails } from "@/auth/contact-email";
+import { isNameVerified } from "@/auth/names";
 import { projectionForClient } from "@/auth/access-projections";
 import { db } from "@/db";
 import { user } from "@/db/schema";
@@ -24,7 +25,14 @@ export const Route = createFileRoute("/api/internal/esign-users")({
         if (projectionForClient(clientId) !== "backend")
           return Response.json({ error: "Forbidden" }, { status: 403, headers });
         const people = await db
-          .select({ id: user.id, name: user.name, email: user.email })
+          .select({
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            givenName: user.givenName,
+            familyName: user.familyName,
+            nameSource: user.nameSource,
+          })
           .from(user)
           .orderBy(asc(user.name), asc(user.id));
         const emails = await contactEmails(db, people, "everyone");
@@ -32,6 +40,10 @@ export const Route = createFileRoute("/api/internal/esign-users")({
           people.map((person) => ({
             sub: person.id,
             name: person.name,
+            givenName: person.givenName,
+            familyName: person.familyName,
+            // False for a self-declared name, which the picker marks as such.
+            nameVerified: isNameVerified(person.nameSource),
             email: emails.get(person.id) ?? null,
           })),
           { headers },

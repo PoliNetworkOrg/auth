@@ -144,6 +144,8 @@ export type UserRoleAssignment = {
 export type UserDetail = {
   id: string;
   name: string;
+  /** From the association's directory (PoliNetwork APS); otherwise the person declared it. */
+  nameVerified: boolean;
   email: string | null;
   image: string | null;
   createdAt: string;

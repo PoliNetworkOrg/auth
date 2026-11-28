@@ -80,6 +80,7 @@ describe("backend access projection", () => {
   it("merges rights by latest expiry and keeps permanent assignments permanent", () => {
     const subjects = projectBackendSubjects({
       users: ["manual-user", "student-user", "entra-user", "root", "no-rights"],
+      verifiedNames: new Set(["entra-user"]),
       manualRoles: [{ userId: "manual-user", roleKey: "manual" }],
       proofs: [
         pnProof("manual-user", "m"),
@@ -112,6 +113,7 @@ describe("backend access projection", () => {
         sub: "entra-user",
         telegramId: null,
         entraObjectId: "e",
+        nameVerified: true,
         roles: { socio: { validUntil: "2026-10-08T10:30:00.000Z" } },
         permissions: { "tg:read": { validUntil: "2026-10-08T10:30:00.000Z" } },
       },
@@ -119,6 +121,7 @@ describe("backend access projection", () => {
         sub: "manual-user",
         telegramId: "123456",
         entraObjectId: "m",
+        nameVerified: false,
         roles: {
           manual: { validUntil: null },
           socio: { validUntil: "2026-10-08T10:30:00.000Z" },
@@ -132,6 +135,7 @@ describe("backend access projection", () => {
         sub: "root",
         telegramId: null,
         entraObjectId: null,
+        nameVerified: false,
         roles: { "master-admin": { validUntil: null } },
         permissions: {
           "admin:access": { validUntil: null },
@@ -143,6 +147,7 @@ describe("backend access projection", () => {
         sub: "student-user",
         telegramId: null,
         entraObjectId: null,
+        nameVerified: false,
         roles: { student: { validUntil: "2026-10-08T10:30:00.000Z" } },
         permissions: {
           "tg:moderate": { validUntil: "2026-10-08T10:30:00.000Z" },
@@ -287,6 +292,7 @@ describe("backend access projection", () => {
         sub: "signer",
         telegramId: null,
         entraObjectId: null,
+        nameVerified: false,
         roles: { secretary: { validUntil: null } },
         permissions: { "esign:sign": { validUntil: null } },
       },

@@ -16,7 +16,7 @@ import { Route as ConsentRouteImport } from './routes/consent'
 import { Route as ErrorRouteImport } from './routes/error'
 import { Route as LinkRouteImport } from './routes/link'
 import { Route as LogoutRouteImport } from './routes/logout'
-import { Route as PasskeyRouteImport } from './routes/passkey'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as UsersRouteRouteImport } from './routes/users/route'
 import { Route as AccessIndexRouteImport } from './routes/access/index'
 import { Route as ApiIdentityRouteImport } from './routes/api/identity'
@@ -76,9 +76,9 @@ const LogoutRoute = LogoutRouteImport.update({
   path: '/logout',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PasskeyRoute = PasskeyRouteImport.update({
-  id: '/passkey',
-  path: '/passkey',
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UsersRouteRoute = UsersRouteRouteImport.update({
@@ -211,7 +211,7 @@ export interface FileRoutesByFullPath {
   '/error': typeof ErrorRoute
   '/link': typeof LinkRoute
   '/logout': typeof LogoutRoute
-  '/passkey': typeof PasskeyRoute
+  '/setup': typeof SetupRoute
   '/api/identity': typeof ApiIdentityRoute
   '/api/mcp': typeof ApiMcpRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
@@ -241,7 +241,7 @@ export interface FileRoutesByTo {
   '/error': typeof ErrorRoute
   '/link': typeof LinkRoute
   '/logout': typeof LogoutRoute
-  '/passkey': typeof PasskeyRoute
+  '/setup': typeof SetupRoute
   '/api/identity': typeof ApiIdentityRoute
   '/api/mcp': typeof ApiMcpRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
@@ -275,7 +275,7 @@ export interface FileRoutesById {
   '/error': typeof ErrorRoute
   '/link': typeof LinkRoute
   '/logout': typeof LogoutRoute
-  '/passkey': typeof PasskeyRoute
+  '/setup': typeof SetupRoute
   '/api/identity': typeof ApiIdentityRoute
   '/api/mcp': typeof ApiMcpRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
@@ -310,7 +310,7 @@ export interface FileRouteTypes {
     | '/error'
     | '/link'
     | '/logout'
-    | '/passkey'
+    | '/setup'
     | '/api/identity'
     | '/api/mcp'
     | '/applications/$clientId'
@@ -340,7 +340,7 @@ export interface FileRouteTypes {
     | '/error'
     | '/link'
     | '/logout'
-    | '/passkey'
+    | '/setup'
     | '/api/identity'
     | '/api/mcp'
     | '/applications/$clientId'
@@ -373,7 +373,7 @@ export interface FileRouteTypes {
     | '/error'
     | '/link'
     | '/logout'
-    | '/passkey'
+    | '/setup'
     | '/api/identity'
     | '/api/mcp'
     | '/applications/$clientId'
@@ -407,7 +407,7 @@ export interface RootRouteChildren {
   ErrorRoute: typeof ErrorRoute
   LinkRoute: typeof LinkRoute
   LogoutRoute: typeof LogoutRoute
-  PasskeyRoute: typeof PasskeyRoute
+  SetupRoute: typeof SetupRoute
   ApiIdentityRoute: typeof ApiIdentityRoute
   ApiMcpRoute: typeof ApiMcpRoute
   DotwellKnownOauthAuthorizationServerSplatRoute: typeof DotwellKnownOauthAuthorizationServerSplatRoute
@@ -471,11 +471,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LogoutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/passkey': {
-      id: '/passkey'
-      path: '/passkey'
-      fullPath: '/passkey'
-      preLoaderRoute: typeof PasskeyRouteImport
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/users': {
@@ -704,7 +704,7 @@ const rootRouteChildren: RootRouteChildren = {
   ErrorRoute: ErrorRoute,
   LinkRoute: LinkRoute,
   LogoutRoute: LogoutRoute,
-  PasskeyRoute: PasskeyRoute,
+  SetupRoute: SetupRoute,
   ApiIdentityRoute: ApiIdentityRoute,
   ApiMcpRoute: ApiMcpRoute,
   DotwellKnownOauthAuthorizationServerSplatRoute:

@@ -3,6 +3,7 @@
  * sign-in endpoint and `src/dev/seed.ts` import this module, and production builds include
  * neither, so nothing here can run against production.
  */
+import { guessNameParts } from "../auth/names";
 import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { db } from "../db";
 import { authorizationMutationLock } from "../db/security-lock";
@@ -211,6 +212,14 @@ export async function saveDevUser(entry: DevUser, issuers: DevIssuers = devIssue
     async (transaction) => {
       // Linked evidence is mutated under the same lock as every other writer of it.
       await transaction.execute(authorizationMutationLock);
+      // Confirmed, so personas skip the name step; Entra's for those with a PoliNetwork account.
+      const names = {
+        ...guessNameParts(entry.name),
+        nameSource: entry.accounts.some((linked) => linked.providerId === "pn-entra")
+          ? ("entra" as const)
+          : ("self" as const),
+        nameConfirmedAt: now,
+      };
       await transaction
         .insert(user)
         .values({
@@ -218,9 +227,13 @@ export async function saveDevUser(entry: DevUser, issuers: DevIssuers = devIssue
           name: entry.name,
           email: entry.email,
           emailVerified: false,
+          ...names,
           ...(entry.createdAt ? { createdAt: entry.createdAt, updatedAt: entry.createdAt } : {}),
         })
-        .onConflictDoUpdate({ target: user.id, set: { name: entry.name, email: entry.email } });
+        .onConflictDoUpdate({
+          target: user.id,
+          set: { name: entry.name, email: entry.email, ...names },
+        });
 
       const wanted = new Set(
         entry.accounts.map((linked) => fixtureAccountId(entry.id, linked.providerId)),
