@@ -16,3 +16,12 @@ export const AUTH_COOKIE_PREFIX = "pn-identity";
  * offer, so it is not recorded as declined.
  */
 export const PASSKEY_UNSUPPORTED_COOKIE = `${AUTH_COOKIE_PREFIX}.passkey-unsupported`;
+
+/**
+ * Set when someone clicks **Link** on `/link`, and read when the provider sends them back: only
+ * then does the page return to the application by itself. Over HTTPS it carries the `__Host-`
+ * prefix, so no other `*.polinetwork.org` site can set it.
+ */
+export function linkAttemptCookie(secure: boolean) {
+  return `${secure ? "__Host-" : ""}${AUTH_COOKIE_PREFIX}.link-attempt`;
+}

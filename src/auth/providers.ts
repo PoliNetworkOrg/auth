@@ -1,3 +1,4 @@
+import type { OAuth2Tokens } from "better-auth";
 import type { GenericOAuthConfig } from "better-auth/plugins/generic-oauth";
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import { and, eq, sql } from "drizzle-orm";
@@ -73,6 +74,54 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
         : `https://login.microsoftonline.com/${settings.tenantId}/discovery/v2.0/keys`,
     ),
   );
+  /** The verified identity behind `tokens`, after saving its evidence. Throws when it's refused. */
+  async function verifiedUserInfo(tokens: OAuth2Tokens) {
+    if (!tokens.idToken) throw new Error("Provider did not return an ID token");
+    const { payload } = await jwtVerify(tokens.idToken, jwks, {
+      issuer,
+      audience: settings.clientId,
+      algorithms: ["RS256"],
+      requiredClaims: ["sub", "exp", "iat"],
+    });
+    if (!payload.sub || !payload.exp) throw new Error("Missing identity claims");
+    if (!telegram && payload.tid !== settings.tenantId) throw new Error("Unexpected Entra tenant");
+    if (!telegram && !isEntraMember(payload.acct))
+      throw new Error("Entra guest accounts cannot sign in");
+    const telegramId =
+      telegram &&
+      (typeof payload.id === "string" ||
+        (typeof payload.id === "number" && Number.isSafeInteger(payload.id)))
+        ? String(payload.id)
+        : null;
+    if (telegram && !/^[1-9]\d*$/.test(telegramId!)) throw new Error("Missing Telegram user ID");
+    if (!telegram && typeof payload.oid !== "string")
+      throw new Error("Missing Entra object ID for membership verification");
+    const membership = telegram
+      ? { states: [], validUntil: new Date(payload.exp * 1000) }
+      : membershipEvidence(await checkPnGroupStates(payload.oid as string));
+    const proof = {
+      issuer,
+      subject: payload.sub,
+      providerId: id,
+      externalId: typeof payload.oid === "string" ? payload.oid : null,
+      ...membership,
+      telegramId,
+      telegramUsername: telegramUsername(payload),
+      // Saved on every sign-in, so people who signed up before this was kept get it the
+      // next time they sign in.
+      email: telegram ? null : (claimEmail(payload) ?? null),
+    };
+    await persistVerifiedEvidence(proof);
+    return {
+      ...payload,
+      sub: payload.sub,
+      name: typeof payload.name === "string" ? payload.name : "PoliNetwork user",
+      email: `${id}.${Buffer.from(payload.sub).toString("base64url")}@identity.invalid`,
+      emailVerified: false,
+      image: typeof payload.picture === "string" ? payload.picture : undefined,
+    };
+  }
+
   return {
     providerId: id,
     clientId: settings.clientId,
@@ -86,51 +135,22 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
     authentication: telegram ? "basic" : "post",
     disableSignUp: telegram,
     async getUserInfo(tokens) {
-      if (!tokens.idToken) throw new Error("Provider did not return an ID token");
-      const { payload } = await jwtVerify(tokens.idToken, jwks, {
-        issuer,
-        audience: settings.clientId,
-        algorithms: ["RS256"],
-        requiredClaims: ["sub", "exp", "iat"],
-      });
-      if (!payload.sub || !payload.exp) throw new Error("Missing identity claims");
-      if (!telegram && payload.tid !== settings.tenantId)
-        throw new Error("Unexpected Entra tenant");
-      if (!telegram && !isEntraMember(payload.acct))
-        throw new Error("Entra guest accounts cannot sign in");
-      const telegramId =
-        telegram &&
-        (typeof payload.id === "string" ||
-          (typeof payload.id === "number" && Number.isSafeInteger(payload.id)))
-          ? String(payload.id)
-          : null;
-      if (telegram && !/^[1-9]\d*$/.test(telegramId!)) throw new Error("Missing Telegram user ID");
-      if (!telegram && typeof payload.oid !== "string")
-        throw new Error("Missing Entra object ID for membership verification");
-      const membership = telegram
-        ? { states: [], validUntil: new Date(payload.exp * 1000) }
-        : membershipEvidence(await checkPnGroupStates(payload.oid as string));
-      const proof = {
-        issuer,
-        subject: payload.sub,
-        providerId: id,
-        externalId: typeof payload.oid === "string" ? payload.oid : null,
-        ...membership,
-        telegramId,
-        telegramUsername: telegramUsername(payload),
-        // Saved on every sign-in, so people who signed up before this was kept get it the
-        // next time they sign in.
-        email: telegram ? null : (claimEmail(payload) ?? null),
-      };
-      await persistVerifiedEvidence(proof);
-      return {
-        ...payload,
-        sub: payload.sub,
-        name: typeof payload.name === "string" ? payload.name : "PoliNetwork user",
-        email: `${id}.${Buffer.from(payload.sub).toString("base64url")}@identity.invalid`,
-        emailVerified: false,
-        image: typeof payload.picture === "string" ? payload.picture : undefined,
-      };
+      // Better Auth sends a missing result to the flow's error callback, as
+      // `unable_to_get_user_info`, but lets a throw escape it. A refused account (an Entra guest,
+      // say) would then end on a bare error page instead of going back to `/link` or the login.
+      try {
+        return await verifiedUserInfo(tokens);
+      } catch (error) {
+        // The reason only: jose's claim errors carry the whole ID token payload (name, email,
+        // object ID), which must not reach the logs for someone who was refused.
+        const code = error instanceof Error && "code" in error ? error.code : undefined;
+        const reason =
+          error instanceof Error
+            ? `${typeof code === "string" ? code : error.name}: ${error.message}`
+            : "non-error value thrown";
+        console.error(`Refused a ${id} account: ${reason}`);
+        return null;
+      }
     },
   };
 }

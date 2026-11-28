@@ -53,8 +53,22 @@ export const startServerMock = {
     current().status = status;
   },
   getResponseStatus: () => current().status ?? 200,
-  // Better Auth's TanStack Start plugin forwards session cookies here; tests read the database.
-  setCookie: () => {},
+  getCookie: (name: string) => {
+    for (const pair of (current().request.headers.get("cookie") ?? "").split(";")) {
+      const at = pair.indexOf("=");
+      if (at > 0 && pair.slice(0, at).trim() === name) return pair.slice(at + 1).trim();
+    }
+    return undefined;
+  },
+  // Recorded as Set-Cookie response headers. Better Auth's TanStack Start plugin forwards
+  // session cookies here too; tests read the database for those.
+  setCookie: (name: string, value: string, options: { maxAge?: number } = {}) => {
+    const maxAge = options.maxAge === undefined ? "" : `; Max-Age=${options.maxAge}`;
+    current().responseHeaders.append("set-cookie", `${name}=${value}${maxAge}`);
+  },
+  deleteCookie: (name: string) => {
+    current().responseHeaders.append("set-cookie", `${name}=; Max-Age=0`);
+  },
 };
 
 /** Runs middleware the way Start does on the server: validator first, then `server`. */

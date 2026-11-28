@@ -66,7 +66,17 @@ export function AppHandshake({ app }: { app: RequestingApp | null }) {
   );
 }
 
-export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
+export function LoginPage({
+  callbackURL = "/",
+  header,
+  footer,
+}: {
+  callbackURL?: string;
+  /** Replaces the heading, for pages that ask to sign in before something else. */
+  header?: ReactNode;
+  /** Shown under the card, for a way back to where the person came from. */
+  footer?: ReactNode;
+}) {
   const router = useRouter();
   const available = useProviders().signIn;
   const [busy, setBusy] = useState<string | null>(null);
@@ -142,7 +152,9 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
     <LoginLayout>
       <Card>
         <CardHeader className="pb-6 pt-8 text-center">
-          {oauthFlow ? (
+          {header ? (
+            header
+          ) : oauthFlow ? (
             <>
               <div className="mb-5">
                 <AppHandshake app={requestingApp} />
@@ -239,6 +251,7 @@ export function LoginPage({ callbackURL = "/" }: { callbackURL?: string }) {
           </p>
         </CardContent>
       </Card>
+      {footer}
       {import.meta.env.DEV && <DevLoginPanel redirect={callbackURL} />}
     </LoginLayout>
   );
