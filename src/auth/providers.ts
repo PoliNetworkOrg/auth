@@ -11,6 +11,8 @@ import { TELEGRAM_ISSUER, entraIssuer } from "./account-issuer";
 import { claimEmail } from "./contact-email";
 import { checkPnGroupStates, membershipEvidence } from "./membership";
 import { isEntraMember } from "./policy";
+import { AccountRefused, recordProviderError } from "./provider-errors";
+import { PROVIDER_ERROR_CODES } from "./sign-in-errors";
 
 type ProviderSettings = {
   clientId: string;
@@ -63,6 +65,32 @@ export function telegramUsername(claims: JWTPayload) {
   return typeof name === "string" && name ? name.replace(/^@/, "") : null;
 }
 
+/**
+ * The account `verify` returns, or null when it throws. Better Auth sends a missing result to the
+ * flow's error callback, as `unable_to_get_user_info`, but lets a throw escape it, so a refused
+ * account would end on a bare error page instead of going back to `/link` or `/error`.
+ */
+export async function accountOrNull<T>(id: string, verify: () => Promise<T>): Promise<T | null> {
+  try {
+    return await verify();
+  } catch (error) {
+    // The reason only: jose's claim errors carry the whole ID token payload (name, email,
+    // object ID), which must not reach the logs for someone who was refused.
+    const code = error instanceof Error && "code" in error ? error.code : undefined;
+    const reason =
+      error instanceof Error
+        ? `${typeof code === "string" ? code : error.name}: ${error.message}`
+        : "non-error value thrown";
+    const refused = error instanceof AccountRefused;
+    console.error(`${refused ? "Refused" : "Couldn't verify"} a ${id} account: ${reason}`);
+    // Better Auth reports every failure here the same way. A deliberate refusal keeps its own
+    // code; anything else (keys unreachable, a bad token, the database) is a failure, so the
+    // person is told to try again rather than that their account can't be used.
+    await recordProviderError(refused ? error.code : PROVIDER_ERROR_CODES.failed);
+    return null;
+  }
+}
+
 function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfig {
   const telegram = id === "telegram";
   // The same issuer the account gets (`account-issuer.ts`), so evidence and account stay joined.
@@ -83,19 +111,28 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
       algorithms: ["RS256"],
       requiredClaims: ["sub", "exp", "iat"],
     });
-    if (!payload.sub || !payload.exp) throw new Error("Missing identity claims");
-    if (!telegram && payload.tid !== settings.tenantId) throw new Error("Unexpected Entra tenant");
+    if (!payload.sub || !payload.exp)
+      throw new AccountRefused(PROVIDER_ERROR_CODES.missingClaims, "Missing identity claims");
+    if (!telegram && payload.tid !== settings.tenantId)
+      throw new AccountRefused(PROVIDER_ERROR_CODES.entraTenant, "Unexpected Entra tenant");
     if (!telegram && !isEntraMember(payload.acct))
-      throw new Error("Entra guest accounts cannot sign in");
+      throw new AccountRefused(
+        PROVIDER_ERROR_CODES.entraGuest,
+        "Entra guest accounts cannot sign in",
+      );
     const telegramId =
       telegram &&
       (typeof payload.id === "string" ||
         (typeof payload.id === "number" && Number.isSafeInteger(payload.id)))
         ? String(payload.id)
         : null;
-    if (telegram && !/^[1-9]\d*$/.test(telegramId!)) throw new Error("Missing Telegram user ID");
+    if (telegram && !/^[1-9]\d*$/.test(telegramId!))
+      throw new AccountRefused(PROVIDER_ERROR_CODES.missingClaims, "Missing Telegram user ID");
     if (!telegram && typeof payload.oid !== "string")
-      throw new Error("Missing Entra object ID for membership verification");
+      throw new AccountRefused(
+        PROVIDER_ERROR_CODES.missingClaims,
+        "Missing Entra object ID for membership verification",
+      );
     const membership = telegram
       ? { states: [], validUntil: new Date(payload.exp * 1000) }
       : membershipEvidence(await checkPnGroupStates(payload.oid as string));
@@ -134,24 +171,7 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
     pkce: true,
     authentication: telegram ? "basic" : "post",
     disableSignUp: telegram,
-    async getUserInfo(tokens) {
-      // Better Auth sends a missing result to the flow's error callback, as
-      // `unable_to_get_user_info`, but lets a throw escape it. A refused account (an Entra guest,
-      // say) would then end on a bare error page instead of going back to `/link` or the login.
-      try {
-        return await verifiedUserInfo(tokens);
-      } catch (error) {
-        // The reason only: jose's claim errors carry the whole ID token payload (name, email,
-        // object ID), which must not reach the logs for someone who was refused.
-        const code = error instanceof Error && "code" in error ? error.code : undefined;
-        const reason =
-          error instanceof Error
-            ? `${typeof code === "string" ? code : error.name}: ${error.message}`
-            : "non-error value thrown";
-        console.error(`Refused a ${id} account: ${reason}`);
-        return null;
-      }
-    },
+    getUserInfo: (tokens) => accountOrNull(id, () => verifiedUserInfo(tokens)),
   };
 }
 

@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Fingerprint, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -6,6 +6,7 @@ import { declinePasskeyPromptFn, getConsentApp } from "@/auth/account.functions"
 import { authClient } from "@/auth/client";
 import { PASSKEY_UNSUPPORTED_COOKIE } from "@/auth/cookies";
 import { useViewer } from "@/components/access";
+import { ExpiredSignIn, useSignInExpiry } from "@/components/expired-sign-in";
 import { LoginLayout } from "@/components/login-page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,6 +40,8 @@ function PasskeyOffer() {
   const appName = Route.useLoaderData()?.app?.name ?? "the application";
   const [busy, setBusy] = useState<"add" | "skip" | null>(null);
   const [supported, setSupported] = useState<boolean | null>(null);
+  // Someone may be in the middle of adding a passkey: don't leave under them.
+  const expiry = useSignInExpiry(useLocation().searchStr, { leave: "ask" });
 
   useEffect(() => {
     // The session ended on the way here: sign in again with the same, still signed request.
@@ -62,6 +65,11 @@ function PasskeyOffer() {
     try {
       const result = await authClient.oauth2.continue({ postLogin: true });
       if (!result.error) return true;
+      if ("error" in result.error && result.error.error === "invalid_signature") {
+        // The sign-in expired while the person was here: go back to the application. Stay busy
+        // only while the page leaves; if the server says it's still valid, show an error.
+        if (await expiry.expire()) return true;
+      }
       toast.error(
         result.error.message ?? "Unable to continue. Go back to the application and try again.",
       );
@@ -98,6 +106,14 @@ function PasskeyOffer() {
       toast.error(errorMessage(cause, "Unable to skip this step. Please try again."));
     }
     setBusy(null);
+  }
+
+  if (expiry.state.status !== "active") {
+    return (
+      <LoginLayout wide>
+        <ExpiredSignIn state={expiry.state} />
+      </LoginLayout>
+    );
   }
 
   if (!viewer || supported === false) {

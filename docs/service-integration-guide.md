@@ -35,8 +35,25 @@ Most new services are level 1, or level 1 + 2. Level 3 needs changes to the IdP'
    Check for a specific permission, e.g. `rooms:book`. Roles are only labels for people; the claims also carry `roles` and `groups`, but services must not authorize on them.
 
 5. **Keep permissions fresh.** The claims are a snapshot taken at sign-in. Re-read UserInfo or refresh at least every 5 minutes, or keep the session short. polinet.cc today keeps them for up to 7 days.
+6. **Handle sign-in errors.** See §2.1.
 
 If the app needs new permissions, create them as in §4.
+
+### 2.1 Errors your redirect URI can receive
+
+When a sign-in fails and your `redirect_uri` is registered, Auth sends the browser back to it the way OAuth expects (RFC 6749 §4.1.2.1, OIDC Core §3.1.2.6). The response has `error`, an `error_description` for logs (not for display), your `state`, and `iss` (RFC 9207). It's in the query, or in the fragment if the request asked for that. Check `state` as you would for a success.
+
+| `error`                                                                            | When                                                                                                                                                                                                                            | What to do                                                                                                                            |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `access_denied`                                                                    | The person cancelled at the provider or on the consent screen. Or Auth refused the account (for example an Entra guest choosing PoliNetwork APS), explained it on its own page, and the person chose **Back to {application}**. | Don't sign them in. Say they can try again, and don't restart on your own.                                                            |
+| `login_required`                                                                   | The sign-in page expired (it lasts 10 minutes), or `prompt=none` found no session.                                                                                                                                              | Start a new sign-in, once, keeping the page the person was going to. If it comes back again, stop and show an error, to avoid a loop. |
+| `server_error`                                                                     | A sign-in failed in some other way, Auth showed its error page, and the person chose **Back to {application}**.                                                                                                                 | Show a generic error with **Try again**.                                                                                              |
+| `invalid_request`, `invalid_scope`, `unsupported_response_type`, `invalid_target`… | The request itself is wrong.                                                                                                                                                                                                    | Fix the application.                                                                                                                  |
+
+Some failures never reach the application:
+
+- **An unknown or disabled client, or an unregistered `redirect_uri`:** Auth can't trust where to send the person, so it shows its own error page with the code (`invalid_client`, `client_disabled`, `invalid_redirect`…).
+- **Most failures at the provider, except a cancel:** Auth explains them on its own error page, with **Try again**, which starts the same authorization request again, and **Back to {application}**. Only a person who chooses to go back reaches you, with `access_denied` or `server_error`.
 
 ## 3. Level 2: call the backend
 

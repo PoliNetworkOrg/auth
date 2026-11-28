@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
   Bot,
-  Clock,
   KeyRound,
   LoaderCircle,
   RefreshCw,
@@ -19,6 +18,7 @@ import { authClient } from "@/auth/client";
 import { MCP_SCOPE } from "@/auth/mcp-clients";
 import { describeScope } from "@/auth/oidc-clients";
 import { useViewer } from "@/components/access";
+import { ExpiredSignIn, useSignInExpiry } from "@/components/expired-sign-in";
 import { AppHandshake, LoginLayout } from "@/components/login-page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -46,7 +46,6 @@ type ConsentRequest = {
   scopes: string[];
   claims: string[];
   redirectHost: string | null;
-  expiresAt: number | null;
   signed: boolean;
 };
 
@@ -76,13 +75,11 @@ function parseConsentRequest(search: string): ConsentRequest {
   } catch {
     redirectHost = null;
   }
-  const exp = Number(params.get("exp"));
   return {
     clientId: params.get("client_id") ?? "",
     scopes: (params.get("scope") ?? "").split(" ").filter(Boolean),
     claims: [...claims],
     redirectHost,
-    expiresAt: Number.isFinite(exp) && exp > 0 ? exp * 1000 : null,
     signed: params.has("sig"),
   };
 }
@@ -131,6 +128,8 @@ function Consent() {
   const { searchStr } = useLocation();
   const request = useMemo(() => parseConsentRequest(searchStr), [searchStr]);
   const [busy, setBusy] = useState<"allow" | "deny" | "switch" | null>(null);
+  // Someone may still be reading what the application asks for: don't leave under them.
+  const expiry = useSignInExpiry(searchStr, { leave: "ask" });
 
   // Consent needs a session: hand signed-out visitors to the login page with the same request.
   // The raw browser query is forwarded untouched so its signature keeps verifying.
@@ -142,8 +141,14 @@ function Consent() {
   async function decide(accept: boolean) {
     setBusy(accept ? "allow" : "deny");
     try {
+      // A decision on an expired request can only fail: go back to the application instead,
+      // unless the server says the request is still valid.
+      if (expiry.isExpired() && (await expiry.expire())) return;
       const result = await authClient.oauth2.consent({ accept });
-      if (result.error) toast.error(result.error.message ?? "Unable to process your choice.");
+      if (result.error && "error" in result.error && result.error.error === "invalid_signature") {
+        if (!(await expiry.expire())) toast.error("Unable to process your choice. Try again.");
+      } else if (result.error)
+        toast.error(result.error.message ?? "Unable to process your choice.");
       else if (result.data?.url) window.location.assign(result.data.url);
     } catch {
       toast.error("Unable to reach PoliNetwork. Please try again.");
@@ -181,23 +186,10 @@ function Consent() {
     );
   }
 
-  if (request.expiresAt !== null && request.expiresAt < Date.now()) {
+  if (expiry.state.status !== "active") {
     return (
       <LoginLayout wide>
-        <Notice
-          icon={Clock}
-          title="This request has expired"
-          action={
-            app?.uri ? (
-              <Button asChild>
-                <a href={app.uri}>Back to {app.name}</a>
-              </Button>
-            ) : undefined
-          }
-        >
-          For your security, sign-in requests are only valid for a few minutes. Go back to the
-          application and try again.
-        </Notice>
+        <ExpiredSignIn state={expiry.state} />
       </LoginLayout>
     );
   }
