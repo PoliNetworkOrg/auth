@@ -3,7 +3,8 @@
  * server-side `auth.api` calls are not affected.
  *
  * - `/update-user`: anyone signed in could set their own name and picture to anything, and that
- *   name is what applications, administrators and the e-signing picker see.
+ *   name is what applications, administrators and the e-signing picker see. People change a
+ *   self-declared name through `saveNameFn` instead, with the limits in `names.ts`.
  * - `/update-session`: nothing here lets a session be edited.
  * - `/get-access-token`, `/refresh-token`, `/account-info`: they hand the Google, Entra or
  *   Telegram tokens and profile behind a linked account to the browser.

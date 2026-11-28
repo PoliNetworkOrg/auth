@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 vi.mock("../db", () => ({ db: {} }));
 
-import { SESSION_FRESH_AGE, shouldOfferPasskey, type PasskeyPromptState } from "./passkey-prompt";
+import {
+  SESSION_FRESH_AGE,
+  shouldConfirmName,
+  shouldOfferPasskey,
+  type PasskeyPromptState,
+} from "./post-login";
 
 const now = Date.parse("2026-10-15T12:00:00Z");
 const fresh: PasskeyPromptState = {
@@ -40,5 +45,17 @@ describe("passkey offer", () => {
     expect(
       shouldOfferPasskey({ ...fresh, sessionCreatedAt: createdAt(SESSION_FRESH_AGE) }, now),
     ).toBe(false);
+  });
+});
+
+describe("name confirmation", () => {
+  it("stops an app sign-in until a self-declared name is confirmed", () => {
+    expect(shouldConfirmName({ nameUnconfirmed: true, prompt: null })).toBe(true);
+    expect(shouldConfirmName({ nameUnconfirmed: true, prompt: "consent" })).toBe(true);
+    expect(shouldConfirmName({ nameUnconfirmed: false, prompt: null })).toBe(false);
+  });
+
+  it("never interrupts a silent sign-in", () => {
+    expect(shouldConfirmName({ nameUnconfirmed: true, prompt: "none" })).toBe(false);
   });
 });

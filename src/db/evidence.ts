@@ -27,6 +27,13 @@ export const identityEvidence = pgTable(
     // The address the account signs in with, saved at each sign-in. Shown and searched, and a
     // PoliNetwork address is also what apps receive as `email` (see `appEmail`).
     email: text(),
+    // The directory's first and last names for a PoliNetwork APS account, from the ID token or
+    // Microsoft Graph. Null until read; a failed read keeps the last ones. See `entraNames`.
+    givenName: text("given_name"),
+    familyName: text("family_name"),
+    // When the directory last answered with them, so other sign-ins refresh them through Graph
+    // once they're older than `ENTRA_NAME_REFRESH_MS`.
+    namesCheckedAt: timestamp("names_checked_at", { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.issuer, table.subject] }),

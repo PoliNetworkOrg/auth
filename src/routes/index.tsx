@@ -6,6 +6,7 @@ import { AccountCards } from "@/components/account/account-cards";
 import { GroupsPanel, PasskeysPanel, PermissionsPanel } from "@/components/account/access-panels";
 import { DebugPanel } from "@/components/account/debug-panel";
 import { McpPanel } from "@/components/account/mcp-panel";
+import { ConfirmNameCard, NameStatus } from "@/components/account/name-panel";
 import { Spinner } from "@/components/account/panel";
 import { SessionsPanel } from "@/components/account/sessions-panel";
 import { useAccountActions } from "@/components/account/use-account-actions";
@@ -47,6 +48,7 @@ function AccountPage({ viewer, details }: { viewer: Viewer; details: AccountDeta
             {details.primaryEmail && (
               <p className="mt-1 truncate text-sm text-muted-foreground">{details.primaryEmail}</p>
             )}
+            {!details.name.needsConfirmation && <NameStatus name={details.name} />}
           </div>
           <Button
             variant="destructive-soft"
@@ -58,6 +60,8 @@ function AccountPage({ viewer, details }: { viewer: Viewer; details: AccountDeta
             Sign out
           </Button>
         </header>
+
+        {details.name.needsConfirmation && <ConfirmNameCard name={details.name} />}
 
         <AccountCards details={details} providers={providers} actions={actions} />
 

@@ -4,6 +4,7 @@ import { db } from "../db/index";
 import { authorizationMutationLock } from "../db/security-lock";
 import { account, identityEvidence, rbacAuditEvent, role, user, userRole } from "../db/schema";
 import { contactEmails } from "./contact-email";
+import { isNameVerified } from "./names";
 import { logAuthorizationDenial } from "./denial-log";
 import { readIdentitySubject, refreshIdentityMembership } from "./identity-subject";
 import { peopleRoleChangeProblem } from "./people-binding";
@@ -32,6 +33,10 @@ export type PeopleDirectory = {
   users: {
     sub: string;
     name: string;
+    givenName: string;
+    familyName: string;
+    /** True for the association's directory name (PoliNetwork APS); false when self-declared. */
+    nameVerified: boolean;
     /** Their PoliNetwork address when they linked it, otherwise their sign-in address. */
     email: string | null;
     telegramId: string | null;
@@ -84,7 +89,15 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
       const ids = [...held.keys()];
       if (!ids.length) return { roles, users: [] };
       const people = await transaction
-        .select({ id: user.id, name: user.name, email: user.email })
+        .select({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          givenName: user.givenName,
+          familyName: user.familyName,
+          nameSource: user.nameSource,
+          nameConfirmedAt: user.nameConfirmedAt,
+        })
         .from(user)
         .where(inArray(user.id, ids))
         .orderBy(user.id);
@@ -112,6 +125,9 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
         users: people.map((person) => ({
           sub: person.id,
           name: person.name,
+          givenName: person.givenName,
+          familyName: person.familyName,
+          nameVerified: isNameVerified(person),
           email: emails.get(person.id) ?? null,
           telegramId: telegramByUser.get(person.id)?.telegramId ?? null,
           telegramUsername: telegramByUser.get(person.id)?.telegramUsername ?? null,

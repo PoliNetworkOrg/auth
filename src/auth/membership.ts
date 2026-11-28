@@ -1,6 +1,7 @@
 import { ClientSecretCredential } from "@azure/identity";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { env } from "../env";
+import { directoryName, type PersonName } from "./names";
 
 type MembersPage = { value: { id: string }[]; "@odata.nextLink"?: string };
 
@@ -42,10 +43,11 @@ export const GRAPH_CHECK_TIMEOUT_MS = 5_000;
  * when it could not be completed; callers must not treat that as an empty answer.
  */
 async function readGraph<T>(
-  read: (getPage: (path: string) => Promise<MembersPage>) => Promise<T>,
+  read: (get: <R>(path: string) => Promise<R>) => Promise<T>,
+  permission = "GroupMember.Read.All",
 ): Promise<T | null> {
   if (!env.PN_ENTRA_TENANT_ID || !env.PN_ENTRA_CLIENT_ID || !env.PN_ENTRA_CLIENT_SECRET) {
-    console.warn("Entra group check unavailable: configure PN_ENTRA credentials.");
+    console.warn("Microsoft Graph unavailable: configure PN_ENTRA credentials.");
     return null;
   }
   const controller = new AbortController();
@@ -70,7 +72,7 @@ async function readGraph<T>(
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
           controller.abort();
-          reject(new Error("Graph membership check timed out."));
+          reject(new Error("Graph read timed out."));
         }, GRAPH_CHECK_TIMEOUT_MS);
       }),
     ]);
@@ -78,11 +80,11 @@ async function readGraph<T>(
     // Do not log Graph errors wholesale: they may contain tokens or personal data.
     const status = error instanceof Error && "statusCode" in error ? error.statusCode : null;
     console.warn(
-      "Entra group check failed.",
+      "Microsoft Graph read failed.",
       typeof status === "number"
         ? `Graph HTTP ${status}.`
         : "Check PN Entra credentials/connectivity.",
-      "The PN_ENTRA_CLIENT_ID app needs Graph application GroupMember.Read.All with admin consent; check the group ID too.",
+      `The PN_ENTRA_CLIENT_ID app needs Graph application ${permission} with admin consent; check the group or user ID too.`,
     );
     return null;
   } finally {
@@ -100,6 +102,21 @@ export async function checkEntraGroupMember(
   objectId: string,
 ): Promise<boolean | null> {
   return readGraph((getPage) => readGroupMembership(getPage, groupId, objectId));
+}
+
+/**
+ * The directory's first and last names for an Entra object, or null when Graph couldn't be read
+ * (for example without User.Read.All) or the user has neither. See `src/auth/names.ts`.
+ */
+export async function readEntraUserNames(objectId: string): Promise<PersonName | null> {
+  const user = await readGraph(
+    (get) =>
+      get<{ givenName?: string | null; surname?: string | null }>(
+        `/users/${encodeURIComponent(objectId)}?$select=givenName,surname`,
+      ),
+    "User.Read.All",
+  );
+  return user ? directoryName(user.givenName, user.surname) : null;
 }
 
 /**

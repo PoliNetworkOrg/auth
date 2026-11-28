@@ -10,6 +10,8 @@ import { env } from "../env";
 import { TELEGRAM_ISSUER, entraIssuer } from "./account-issuer";
 import { claimEmail } from "./contact-email";
 import { checkPnGroupStates, membershipEvidence } from "./membership";
+import { entraNames } from "./name-store";
+import { joinName } from "./names";
 import { isEntraMember } from "./policy";
 import { AccountRefused, recordProviderError } from "./provider-errors";
 import { PROVIDER_ERROR_CODES } from "./sign-in-errors";
@@ -133,9 +135,12 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
         PROVIDER_ERROR_CODES.missingClaims,
         "Missing Entra object ID for membership verification",
       );
-    const membership = telegram
-      ? { states: [], validUntil: new Date(payload.exp * 1000) }
-      : membershipEvidence(await checkPnGroupStates(payload.oid as string));
+    const [membership, names] = telegram
+      ? [{ states: [], validUntil: new Date(payload.exp * 1000) }, null]
+      : await Promise.all([
+          checkPnGroupStates(payload.oid as string).then(membershipEvidence),
+          entraNames(payload, payload.oid as string),
+        ]);
     const proof = {
       issuer,
       subject: payload.sub,
@@ -147,12 +152,18 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
       // Saved on every sign-in, so people who signed up before this was kept get it the
       // next time they sign in.
       email: telegram ? null : (claimEmail(payload) ?? null),
+      // The directory's names, which `syncNames` gives the person once the sign-in ends. Left out
+      // when they couldn't be read, so the last ones read stay.
+      ...(names ? { ...names, namesCheckedAt: new Date() } : {}),
     };
     await persistVerifiedEvidence(proof);
     return {
       ...payload,
       sub: payload.sub,
-      name: typeof payload.name === "string" ? payload.name : "PoliNetwork user",
+      name:
+        typeof payload.name === "string" && payload.name.trim()
+          ? payload.name
+          : (names && joinName(names)) || "PoliNetwork user",
       email: `${id}.${Buffer.from(payload.sub).toString("base64url")}@identity.invalid`,
       emailVerified: false,
       image: typeof payload.picture === "string" ? payload.picture : undefined,

@@ -17,6 +17,7 @@ import { Route as ErrorRouteImport } from './routes/error'
 import { Route as LinkRouteImport } from './routes/link'
 import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as PasskeyRouteImport } from './routes/passkey'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as UsersRouteRouteImport } from './routes/users/route'
 import { Route as AccessIndexRouteImport } from './routes/access/index'
 import { Route as ApiIdentityRouteImport } from './routes/api/identity'
@@ -79,6 +80,11 @@ const LogoutRoute = LogoutRouteImport.update({
 const PasskeyRoute = PasskeyRouteImport.update({
   id: '/passkey',
   path: '/passkey',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UsersRouteRoute = UsersRouteRouteImport.update({
@@ -212,6 +218,7 @@ export interface FileRoutesByFullPath {
   '/link': typeof LinkRoute
   '/logout': typeof LogoutRoute
   '/passkey': typeof PasskeyRoute
+  '/setup': typeof SetupRoute
   '/api/identity': typeof ApiIdentityRoute
   '/api/mcp': typeof ApiMcpRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
@@ -242,6 +249,7 @@ export interface FileRoutesByTo {
   '/link': typeof LinkRoute
   '/logout': typeof LogoutRoute
   '/passkey': typeof PasskeyRoute
+  '/setup': typeof SetupRoute
   '/api/identity': typeof ApiIdentityRoute
   '/api/mcp': typeof ApiMcpRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
@@ -276,6 +284,7 @@ export interface FileRoutesById {
   '/link': typeof LinkRoute
   '/logout': typeof LogoutRoute
   '/passkey': typeof PasskeyRoute
+  '/setup': typeof SetupRoute
   '/api/identity': typeof ApiIdentityRoute
   '/api/mcp': typeof ApiMcpRoute
   '/applications/$clientId': typeof ApplicationsClientIdRoute
@@ -311,6 +320,7 @@ export interface FileRouteTypes {
     | '/link'
     | '/logout'
     | '/passkey'
+    | '/setup'
     | '/api/identity'
     | '/api/mcp'
     | '/applications/$clientId'
@@ -341,6 +351,7 @@ export interface FileRouteTypes {
     | '/link'
     | '/logout'
     | '/passkey'
+    | '/setup'
     | '/api/identity'
     | '/api/mcp'
     | '/applications/$clientId'
@@ -374,6 +385,7 @@ export interface FileRouteTypes {
     | '/link'
     | '/logout'
     | '/passkey'
+    | '/setup'
     | '/api/identity'
     | '/api/mcp'
     | '/applications/$clientId'
@@ -408,6 +420,7 @@ export interface RootRouteChildren {
   LinkRoute: typeof LinkRoute
   LogoutRoute: typeof LogoutRoute
   PasskeyRoute: typeof PasskeyRoute
+  SetupRoute: typeof SetupRoute
   ApiIdentityRoute: typeof ApiIdentityRoute
   ApiMcpRoute: typeof ApiMcpRoute
   DotwellKnownOauthAuthorizationServerSplatRoute: typeof DotwellKnownOauthAuthorizationServerSplatRoute
@@ -476,6 +489,13 @@ declare module '@tanstack/react-router' {
       path: '/passkey'
       fullPath: '/passkey'
       preLoaderRoute: typeof PasskeyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/users': {
@@ -705,6 +725,7 @@ const rootRouteChildren: RootRouteChildren = {
   LinkRoute: LinkRoute,
   LogoutRoute: LogoutRoute,
   PasskeyRoute: PasskeyRoute,
+  SetupRoute: SetupRoute,
   ApiIdentityRoute: ApiIdentityRoute,
   ApiMcpRoute: ApiMcpRoute,
   DotwellKnownOauthAuthorizationServerSplatRoute:

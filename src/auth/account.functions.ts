@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/index";
 import { oauthClient } from "@/db/schema";
+import { ActionError } from "@/lib/action-error";
 import { validate } from "@/lib/validate";
 import { ownSessionToken, readAccountOverview } from "./account-overview";
 import { disconnectAccount } from "./accounts";
@@ -14,7 +15,9 @@ import { MCP_SCOPE } from "./mcp-clients";
 import { disconnectMcpConnection, listMcpConnections } from "./mcp-connections";
 import { mcpResource } from "./mcp-resource";
 import { actionMiddleware, sessionMiddleware } from "./middleware";
-import { declinePasskeyPrompt } from "./passkey-prompt";
+import { readNameDetails, saveSelfDeclaredName } from "./name-store";
+import { NAME_PART_MAX_LENGTH, personNameSchema } from "./names";
+import { declinePasskeyPrompt } from "./post-login";
 import { confirmStudentVerification, requestStudentVerification } from "./student-verification";
 
 /**
@@ -33,11 +36,13 @@ export const getAccount = createServerFn({ method: "GET" })
       auth.api.listPasskeys({ headers }),
       auth.api.getSession({ headers }),
     ]);
-    const [overview, agents] = await Promise.all([
+    const [overview, agents, name] = await Promise.all([
       readAccountOverview(context.session.userId, current?.session.id ?? "", identity),
       listMcpConnections(context.session.userId),
+      readNameDetails(context.session.userId),
     ]);
     return {
+      name,
       accounts: accounts.map(({ id, providerId, accountId }) => ({ id, providerId, accountId })),
       identity,
       passkeys: passkeys.map(({ id, name, createdAt }) => ({
@@ -103,6 +108,44 @@ export const confirmStudentVerificationFn = createServerFn({ method: "POST" })
   .middleware([sessionMiddleware])
   .validator(validate(z.object({ email: z.string().max(254), code: z.string().max(32) })))
   .handler(({ context, data }) => confirmStudentVerification(context.session.userId, data));
+
+/**
+ * Saves the first and last name the person typed: the confirmation of a self-declared name the
+ * first time, an edit afterwards (limited, audited). Never `/update-user`, which stays closed.
+ */
+export const saveNameFn = createServerFn({ method: "POST" })
+  .middleware([sessionMiddleware])
+  .validator(
+    validate(
+      z.object({
+        givenName: z.string().max(NAME_PART_MAX_LENGTH * 4),
+        familyName: z.string().max(NAME_PART_MAX_LENGTH * 4),
+      }),
+    ),
+  )
+  .handler(async ({ context, data }) => {
+    const parsed = personNameSchema.safeParse(data);
+    if (!parsed.success) {
+      const fields: Record<string, string> = {};
+      for (const issue of parsed.error.issues) {
+        const field = String(issue.path[0]);
+        fields[field] ??= issue.message;
+      }
+      throw new ActionError(400, Object.values(fields)[0] ?? "Check your name.", fields);
+    }
+    return saveSelfDeclaredName(context.session.userId, parsed.data);
+  });
+
+/** Which step the post-login page shows (see `POST_LOGIN_PAGE`), and the name it starts from. */
+export const getSetupStep = createServerFn({ method: "GET" })
+  .middleware([sessionMiddleware])
+  .handler(async ({ context }) => {
+    const name = await readNameDetails(context.session.userId);
+    return {
+      step: name.needsConfirmation ? ("name" as const) : ("passkey" as const),
+      name: { givenName: name.givenName, familyName: name.familyName },
+    };
+  });
 
 /** Skips the passkey offer for good; passkeys can still be added from the account page. */
 export const declinePasskeyPromptFn = createServerFn({ method: "POST" })

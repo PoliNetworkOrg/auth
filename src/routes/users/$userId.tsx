@@ -1,6 +1,6 @@
 import { Hint } from "@/components/ui/tooltip";
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
-import { ArrowLeft, Clock, KeyRound, Mail, RefreshCw } from "lucide-react";
+import { ArrowLeft, BadgeCheck, Clock, KeyRound, Mail, RefreshCw, UserRound } from "lucide-react";
 import { emptyCatalog } from "@/auth/rbac";
 import { getCatalog } from "@/auth/rbac.functions";
 import { getUser } from "@/auth/users.functions";
@@ -131,6 +131,20 @@ function UserDetailPage() {
             <p className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
               <Mail className="size-4" aria-hidden="true" />
               {person.email ?? "No email on file"}
+            </p>
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+              {person.nameStatus === "verified" ? (
+                <BadgeCheck className="size-4 text-primary" aria-hidden="true" />
+              ) : (
+                <UserRound className="size-4" aria-hidden="true" />
+              )}
+              {
+                {
+                  verified: "Name from PoliNetwork APS",
+                  "self-declared": "Self-declared name",
+                  unconfirmed: "Name not confirmed yet",
+                }[person.nameStatus]
+              }
             </p>
           </div>
         </div>

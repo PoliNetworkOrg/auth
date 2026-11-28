@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   pgTable,
   text,
@@ -9,22 +9,40 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  check,
 } from "drizzle-orm/pg-core";
 
-export const user = pgTable("user", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified").default(false).notNull(),
-  image: text("image"),
-  // When the person skipped the passkey offer during an app sign-in; it is never shown again.
-  passkeyPromptDeclinedAt: timestamp("passkey_prompt_declined_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at")
-    .defaultNow()
-    .$onUpdate(() => /* @__PURE__ */ new Date())
-    .notNull(),
-});
+export const user = pgTable(
+  "user",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    email: text("email").notNull().unique(),
+    emailVerified: boolean("email_verified").default(false).notNull(),
+    image: text("image"),
+    // The person's first and last names, kept apart because neither can be recovered by splitting
+    // `name` ("Maria De Luca"). `name` stays their join, for Better Auth and older readers.
+    givenName: text("given_name").notNull().default(""),
+    familyName: text("family_name").notNull().default(""),
+    // Where the names come from: `entra`, the association's directory, while a PoliNetwork APS
+    // account is linked; otherwise `self`, typed or confirmed by the person. See `src/auth/names.ts`.
+    nameSource: text("name_source", { enum: ["entra", "self"] })
+      .notNull()
+      .default("self"),
+    // When the person confirmed a self-declared name, or when the directory supplied an `entra`
+    // one. Null means the stored parts are a guess: a `self` name is then asked to be confirmed,
+    // and an `entra` one isn't verified until the directory is read.
+    nameConfirmedAt: timestamp("name_confirmed_at"),
+    // When the person skipped the passkey offer during an app sign-in; it is never shown again.
+    passkeyPromptDeclinedAt: timestamp("passkey_prompt_declined_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [check("user_name_source_check", sql`${table.nameSource} in ('entra', 'self')`)],
+);
 
 export const session = pgTable(
   "session",

@@ -13,6 +13,7 @@ import {
 import { authorizationMutationLock } from "../db/security-lock";
 import { env } from "../env";
 import { listEntraGroupMembers } from "./membership";
+import { isNameVerified } from "./names";
 import { isManagedPermissionKey, resolveAccess, type RbacCatalog } from "./rbac";
 import { handAssignableRole, readCatalog } from "./rbac-store";
 
@@ -31,6 +32,8 @@ export type AccessSubject = {
   telegramId: string | null;
   /** Microsoft 365 (Entra) object ID of the linked PoliNetwork account; null when none or ambiguous. */
   entraObjectId: string | null;
+  /** True when their name is the association's directory's (PoliNetwork APS); false when self-declared. */
+  nameVerified: boolean;
   /** Effective roles: those granted plus every role they inherit from. */
   roles: Record<string, { validUntil: string | null }>;
   permissions: Record<string, { validUntil: string | null }>;
@@ -211,6 +214,8 @@ export function projectBackendCatalog(catalog: RbacCatalog): AccessCatalog {
  */
 export function projectBackendSubjects(input: {
   users: string[];
+  /** Those of `users` whose name is verified (`isNameVerified`). */
+  verifiedNames?: Set<string>;
   manualRoles: { userId: string; roleKey: string }[];
   proofs: Proof[];
   catalog: RbacCatalog;
@@ -219,6 +224,7 @@ export function projectBackendSubjects(input: {
   now: Date;
 }): AccessSubject[] {
   const { users, manualRoles, proofs, catalog, groups, observations, now } = input;
+  const verifiedNames = input.verifiedNames ?? new Set<string>();
   const held = new Map(
     users.map((id) => [
       id,
@@ -292,6 +298,7 @@ export function projectBackendSubjects(input: {
           sub,
           telegramId: telegramIds.get(sub) ?? null,
           entraObjectId: entraObjectIds.get(sub) ?? null,
+          nameVerified: verifiedNames.has(sub),
           roles: byKey(access.roles),
           permissions: byKey(access.permissions),
         },
@@ -310,7 +317,10 @@ export async function buildBackendSnapshot(): Promise<string> {
     );
     const now = new Date();
     const catalog = await readCatalog(transaction);
-    const users = await transaction.select({ id: user.id }).from(user).orderBy(user.id);
+    const users = await transaction
+      .select({ id: user.id, nameSource: user.nameSource, nameConfirmedAt: user.nameConfirmedAt })
+      .from(user)
+      .orderBy(user.id);
     const manualRoles = await transaction
       .select({ userId: userRole.userId, roleKey: role.key })
       .from(userRole)
@@ -349,6 +359,7 @@ export async function buildBackendSnapshot(): Promise<string> {
     }
     const subjects = projectBackendSubjects({
       users: users.map((row) => row.id),
+      verifiedNames: new Set(users.filter((row) => isNameVerified(row)).map((row) => row.id)),
       manualRoles,
       proofs,
       catalog,

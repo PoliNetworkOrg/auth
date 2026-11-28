@@ -71,7 +71,8 @@ The environment changes are:
 
 Authorization uses a fixed one-minute Graph cache and five-second lookup deadline, with
 no new environment knobs. Configure the PN application with Graph `GroupMember.Read.All`
-application permission and tenant admin consent. A failed lookup grants no group access;
+application permission and tenant admin consent (and `User.Read.All`, or the name optional
+claims, for [names](#names)). A failed lookup grants no group access;
 the local break-glass IDs remain usable. Partial provider/mail credentials and malformed
 security settings now fail validation before migrations run.
 
@@ -92,6 +93,19 @@ Register these callback URLs, replacing the origin with your deployment:
 PoliNetwork Entra uses a tenant-specific registration, not the `common` tenant. Only members of the tenant can use it: B2B guests (for example someone invited with a `@mail.polimi.it` address) get tokens from our tenant too, so the app registration must add the `acct` optional claim to the ID token, and sign-ins whose token lacks `acct: 0` are refused. Add the claim before deploying, or every PoliNetwork Entra sign-in fails. Google and PoliNetwork Entra are login providers. Telegram uses the official OIDC authorization-code flow with PKCE and RS256 ID tokens, but the server only permits it through the account-linking flow. Configure its allowed origin and callback in BotFather. Its bot user ID comes from the signed `id` claim, separately from its OIDC `sub`.
 
 Polimi verification accepts only the exact `mail.polimi.it` domain. Codes contain six digits, expire after 10 minutes, allow five attempts, and cannot be resent for 60 seconds. The cooldown applies to both the user and recipient and survives failed guesses, consumption, and failed delivery. The database stores only an HMAC of each code. Successful verification creates a `polimi-email` account link and grants student status for `STUDENT_VERIFICATION_TTL_DAYS`.
+
+### Names
+
+Every person has a first name (`given_name`), a last name (`family_name`) and a `name_source`; `name` stays their join. The rules are in `src/auth/names.ts`:
+
+- **PoliNetwork APS (`entra`):** while a PoliNetwork Entra account is linked, the names are the directory's `givenName` and `surname`, set again when the account is linked and at every sign-in (a PoliNetwork Entra sign-in reads the directory each time; Google and passkey sign-ins read it through Graph when the last read is over an hour old). Only names the directory supplied are verified (`name_confirmed_at` set); until then the stored parts are an unverified guess. The person can't edit them here: the account page shows them as managed by PoliNetwork APS. Unlinking the account keeps the name, as self-declared.
+- **Self-declared (`self`):** everyone else. Google's profile name is only a suggestion. The first app sign-in stops at `/setup` (before the passkey offer, keeping the app's sign-in going) to confirm a real first and last name, prefilled from Google's `given_name`/`family_name`; someone signing in to this site directly confirms it on the account page. Afterwards **Edit name** on the account page changes it at most 3 times in 30 days. `/update-user` stays closed.
+
+Names typed by people accept letters of any script with their accents, spaces, apostrophes, hyphens and periods, up to 50 characters each. Every change is in the audit log with the names before and after: `user.name.confirm` and `user.name.edit` by the person, `user.name.entra` (actor `system`) when the directory set it, `user.name.release` on unlinking.
+
+The directory's names come from the ID token's `given_name` and `family_name` optional claims when the app registration adds them (Token configuration › Add optional claim › ID), otherwise from Microsoft Graph (`/users/{id}?$select=givenName,surname`), which needs the **User.Read.All** application permission with admin consent on the PN app. Configure at least one. When neither answers, the stored names stay, and a new account starts from a guess at Entra's display name, unverified until a later sign-in reads the directory.
+
+The `0027` migration splits every existing `name` as a best guess (the last word, with particles such as "De" or "van der", is the last name). People with a PoliNetwork Entra account become `entra`, unverified: the first sign-in whose directory read succeeds (ID token claims or Graph) replaces the guess with the directory's names and marks them verified. Until then the guess stays. Everyone else confirms theirs at their next app sign-in.
 
 Email delivery uses the same Microsoft Graph client-credential setup as the current backend. The Azure application needs the Graph `Mail.Send` application permission and permission to send as `AZURE_EMAIL_SENDER`. These Azure credentials belong to the mail sender; they do not require access to Polimi Entra.
 
@@ -303,7 +317,7 @@ snapshot for the future backend integration; no current caller uses it yet.
 
 The production issuer is `https://auth.polinetwork.org/api/auth`. Discovery is available at `https://auth.polinetwork.org/api/auth/.well-known/openid-configuration`.
 
-Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_access`. The custom scope adds the identity endpoint URL from `BETTER_AUTH_URL` to ID tokens, access tokens, and UserInfo. It also adds top-level claims for consumers that cannot read the URL-named object. Access tokens carry them only when they are JWTs, which happens when the request names a resource (audience); without one the access token is opaque and clients cannot read it, so read the claims from the ID token (request `openid`) or from UserInfo instead. With the default public origin, the claims are:
+Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_access`. `profile` gives `name`, `picture`, and `given_name` and `family_name` from the stored names ([Names](#names)), not a split of `name`. The custom scope adds the identity endpoint URL from `BETTER_AUTH_URL` to ID tokens, access tokens, and UserInfo. It also adds top-level claims for consumers that cannot read the URL-named object. Access tokens carry them only when they are JWTs, which happens when the request names a resource (audience); without one the access token is opaque and clients cannot read it, so read the claims from the ID token (request `openid`) or from UserInfo instead. With the default public origin, the claims are:
 
 ```json
 {
@@ -318,6 +332,7 @@ Supported scopes are `openid`, `profile`, `polinetwork:identity`, and `offline_a
   "polinetwork_permissions": "membership:read student:verified",
   "polinetwork_permission_list": ["membership:read", "student:verified"],
   "polinetwork_telegram_id": "123456789",
+  "polinetwork_name_verified": true,
   "groups": ["socio", "student"]
 }
 ```
@@ -330,6 +345,8 @@ capability and treat `roles` as a coarser label. The string `polinetwork_*` clai
 spaces between values and are empty strings when no values apply, as is
 `polinetwork_telegram_id` when no Telegram account is linked. The `/api/identity` response
 keeps the object format shown inside the URL-named claim.
+
+`polinetwork_name_verified` is `true` only when the name was read from the association's directory (PoliNetwork APS), and `false` when the person declared it or it's still a guess: show such a name as self-declared wherever it matters who someone is.
 
 `polinetwork_permission_list` repeats `permissions` as a top-level array for consumers
 that can match only a flat list claim, such as oauth2-proxy (`--oidc-groups-claim`), which
@@ -345,7 +362,7 @@ Dynamic registration is open to AI agents only, for the [MCP server](#mcp-server
 
 ### Phase 1 backend access snapshot
 
-Set `OAUTH_BACKEND_RESOURCE_URI` and `OAUTH_INTERNAL_RESOURCE_URI` to distinct HTTPS audience identifiers, then set `OAUTH_BACKEND_CLIENT_ID` to the registered backend snapshot-pull client's ID. A client-credentials token for the internal resource needs `idp:access:read`; the authenticated client ID selects the reviewed `backend` projection. `GET /api/internal/access-snapshot` returns a versioned list of subjects with backend permissions and effective roles, their individual expiry times, linked Telegram IDs and Microsoft 365 object IDs, plus the names of every role and backend permission. An exact `If-None-Match` match returns `304`; a new Graph observation changes the ETag even if membership is unchanged. Unknown clients and missing audience or scope are rejected.
+Set `OAUTH_BACKEND_RESOURCE_URI` and `OAUTH_INTERNAL_RESOURCE_URI` to distinct HTTPS audience identifiers, then set `OAUTH_BACKEND_CLIENT_ID` to the registered backend snapshot-pull client's ID. A client-credentials token for the internal resource needs `idp:access:read`; the authenticated client ID selects the reviewed `backend` projection. `GET /api/internal/access-snapshot` returns a versioned list of subjects with backend permissions and effective roles, their individual expiry times, linked Telegram IDs and Microsoft 365 object IDs, whether their name is verified (`nameVerified`), plus the names of every role and backend permission. An exact `If-None-Match` match returns `304`; a new Graph observation changes the ETag even if membership is unchanged. Unknown clients and missing audience or scope are rejected.
 
 Entra direct-membership observations are stored by group. A pull lists a group through Graph only if no replica has observed it in the last 15 seconds, and concurrent pulls on one replica share that listing. A failed Graph request preserves the last observation, marks that source degraded, and lets its permissions expire one hour after the last success. Student rights expire at the verification timestamp. Manual assignments do not expire. Telegram IDs are included only while the linked account exists, regardless of the Telegram ID token's expiry. Duplicate Telegram IDs are excluded from the projection.
 
@@ -363,7 +380,7 @@ New services follow [docs/service-integration-guide.md](docs/service-integration
 
 The admin dashboard's People register gives people predetermined roles: those bound, on the role's page (People register card), to what holding them means in People. A role's holders are admins of the Telegram groups (`admin`), Capo Admins (`capo`), or members or the Lead of a team (`team:<key>:member`, `team:<key>:lead`, where the key is the dashboard's team key: `it`, `hr`, `design` or `events`). Binding a role needs `idp:people:bind`, and, as when editing a role, only Master Admin can bind or unbind a role granting permissions they don't hold. Only Master Admin can bind a role that inherits a built-in role (`socio`, `direttivo`, …), though anyone with `idp:people:bind` may unbind it. Managed roles, and roles that carry any `idp:*` permission directly, through a parent or through an implication, can't be bound, and saving a role or permission that would give a bound role one is refused. Bind only one role to each meaning: `trusted-admin` inherits `admin`, so binding it as `admin` too makes giving `admin` ambiguous (409).
 
-`GET /api/internal/people-roles` (backend client, `idp:access:read`) lists the bound roles, each with every permission it grants (`permissions`, through parent roles too), its own binding followed by those it inherits (`bindings`) and the built-in roles it also gives through inheritance (`builtInRoles`, sorted, usually empty), and everyone holding them by hand or through a parent role, with their name, directory email, Telegram ID and username, which of those roles they were given directly, and since when they hold each one (`since`, `YYYY-MM-DD`: the earliest of their current assignments conferring it). Unlike the access snapshot it includes roles that grant no permission. People without a login account are the backend's own: they never appear here.
+`GET /api/internal/people-roles` (backend client, `idp:access:read`) lists the bound roles, each with every permission it grants (`permissions`, through parent roles too), its own binding followed by those it inherits (`bindings`) and the built-in roles it also gives through inheritance (`builtInRoles`, sorted, usually empty), and everyone holding them by hand or through a parent role, with their name, first and last name (`givenName`, `familyName`), whether that name is verified (`nameVerified`: false when self-declared), directory email, Telegram ID and username, which of those roles they were given directly, and since when they hold each one (`since`, `YYYY-MM-DD`: the earliest of their current assignments conferring it). Unlike the access snapshot it includes roles that grant no permission. People without a login account are the backend's own: they never appear here.
 
 `POST /api/internal/people-roles` (backend client, `idp:people:roles`) applies one People command `{ id, actor, sub, reason, changes }` on behalf of the dashboard user the backend authenticated. `sub` is always a login account. Each change names a desired state: `{ kind: "admin" | "capo", active }` or `{ kind: "team", team, role: "member" | "lead" | null }`. This IdP plans the concrete assignments against its own role graph and applies all of them or none: a concept with no bound role stays People's own and is skipped; it refuses with 409 when the mapping is ambiguous (not exactly one bound role to give), or when the requested state would still be held through another role (ending `admin` for a Capo Admin, say), rather than reporting a change that did not happen.
 
