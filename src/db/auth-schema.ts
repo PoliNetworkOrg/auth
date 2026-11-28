@@ -29,7 +29,9 @@ export const user = pgTable(
     nameSource: text("name_source", { enum: ["entra", "self"] })
       .notNull()
       .default("self"),
-    // When the person confirmed a self-declared name, or Entra set it. Null asks them to confirm it.
+    // When the person confirmed a self-declared name, or when the directory supplied an `entra`
+    // one. Null means the stored parts are a guess: a `self` name is then asked to be confirmed,
+    // and an `entra` one isn't verified until the directory is read.
     nameConfirmedAt: timestamp("name_confirmed_at"),
     // When the person skipped the passkey offer during an app sign-in; it is never shown again.
     passkeyPromptDeclinedAt: timestamp("passkey_prompt_declined_at"),

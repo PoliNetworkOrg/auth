@@ -22,7 +22,8 @@ export function NameForm({
 }: {
   initial: PersonName;
   submitLabel: string;
-  onSaved: () => Promise<boolean | void> | boolean | void;
+  /** `changed` is false when the name was already this (nothing stored, nothing counted). */
+  onSaved: (changed: boolean) => Promise<boolean | void> | boolean | void;
   footer?: ReactNode;
 }) {
   const id = useId();
@@ -39,8 +40,8 @@ export function NameForm({
     if (local.givenName || local.familyName) return;
     setBusy(true);
     try {
-      await saveNameFn({ data: name });
-      if (await onSaved()) return;
+      const result = await saveNameFn({ data: name });
+      if (await onSaved(result.saved)) return;
     } catch (cause) {
       const fields = errorFields<Fields>(cause);
       if (fields) setErrors(fields);

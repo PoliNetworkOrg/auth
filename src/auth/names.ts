@@ -42,9 +42,10 @@ export function normalizeNamePart(value: string) {
   return value.normalize("NFC").replace(/\s+/gu, " ").trim();
 }
 
-// Words of letters (any script, with their combining accents) joined by one space, hyphen,
-// apostrophe or period: "Anne-Marie", "D'Angelo", "O’Brien", "De Luca", "J. R.".
-const WORD = String.raw`\p{L}[\p{L}\p{M}]*`;
+// Words of letters (any script, with their combining accents, and the zero-width joiners some
+// scripts need inside a word, as in Persian) joined by one space, hyphen, apostrophe or period:
+// "Anne-Marie", "D'Angelo", "O’Brien", "De Luca", "J. R.".
+const WORD = String.raw`\p{L}(?:[\p{L}\p{M}]|[\u200C\u200D]\p{L})*`;
 const NAME_PART = new RegExp(String.raw`^${WORD}(?:(?:\.?[ \-'’]|\.)${WORD})*\.?$`, "u");
 
 /** Why a first or last name the person typed can't be used, or null when it can. */
@@ -147,18 +148,32 @@ export function needsNameConfirmation(state: NameState) {
   return state.nameSource === "self" && state.nameConfirmedAt === null;
 }
 
-/** Whether applications may rely on the name: only the association's directory's. */
-export function isNameVerified(nameSource: string) {
-  return nameSource === "entra";
+/**
+ * Whether applications may rely on the name: only one the association's directory supplied. An
+ * `entra` name still unconfirmed is a guess (a backfilled split, or Entra's display name when the
+ * directory couldn't be read), so it isn't verified yet.
+ */
+export function isNameVerified(state: NameState) {
+  return state.nameSource === "entra" && state.nameConfirmedAt !== null;
+}
+
+/**
+ * How an administrator should read a name: from the directory, declared by the person, or not
+ * confirmed by anyone yet (a Google profile name, a backfilled guess, or a PoliNetwork APS name
+ * the directory hasn't supplied yet).
+ */
+export function nameStatus(state: NameState): "verified" | "self-declared" | "unconfirmed" {
+  if (isNameVerified(state)) return "verified";
+  return state.nameSource === "self" && state.nameConfirmedAt ? "self-declared" : "unconfirmed";
 }
 
 /**
  * The OIDC `given_name` and `family_name` claims from the stored names. They replace the
- * provider's own, which split `name` at its last space.
+ * provider's own, which split `name` at its last space: so both are sent, an empty part as an
+ * empty string, or UserInfo would fill it from that split ("Mary Jane" with no family name would
+ * come back with `family_name: "Jane"`).
  */
-export function nameClaims(name: Partial<PersonName>) {
-  const claims: Record<string, string> = {};
-  if (name.givenName) claims.given_name = name.givenName;
-  if (name.familyName) claims.family_name = name.familyName;
-  return claims;
+export function nameClaims(name: Partial<PersonName>): Record<string, string> {
+  if (!name.givenName && !name.familyName) return {};
+  return { given_name: name.givenName ?? "", family_name: name.familyName ?? "" };
 }

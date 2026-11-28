@@ -31,7 +31,7 @@ vi.mock("./membership", () => ({
 
 import { ActionError } from "../lib/action-error";
 import { disconnectAccount } from "./accounts";
-import { getNameClaims, getOidcClaims } from "./identity";
+import { getOidcClaims, getUserClaims } from "./identity";
 import { readNameDetails, saveSelfDeclaredName, syncNames } from "./name-store";
 
 const ENTRA_ISSUER = "https://login.microsoftonline.com/11111111-1111-4111-8111-111111111111/v2.0";
@@ -72,16 +72,22 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("names with PostgreSQL", ()
     );
   }
 
-  async function linkEntra(userId: string, names: { given: string; family: string } | null) {
+  /** `checkedMinutesAgo`: when the directory last answered with `names` (default: just now). */
+  async function linkEntra(
+    userId: string,
+    names: { given: string; family: string } | null,
+    checkedMinutesAgo = 0,
+  ) {
     await pool.query(
       `INSERT INTO account (id, account_id, provider_id, issuer, user_id, created_at, updated_at)
        VALUES ($1 || ':entra', $1 || '-entra', 'pn-entra', $2, $1, now(), now())`,
       [userId, ENTRA_ISSUER],
     );
     await pool.query(
-      `INSERT INTO identity_evidence (issuer, subject, provider_id, external_id, states, valid_until, given_name, family_name)
-       VALUES ($2, $1 || '-entra', 'pn-entra', $1 || '-oid', '{}', now() + interval '1 day', $3, $4)`,
-      [userId, ENTRA_ISSUER, names?.given ?? null, names?.family ?? null],
+      `INSERT INTO identity_evidence (issuer, subject, provider_id, external_id, states, valid_until, given_name, family_name, names_checked_at)
+       VALUES ($2, $1 || '-entra', 'pn-entra', $1 || '-oid', '{}', now() + interval '1 day', $3, $4,
+         CASE WHEN $3::text IS NOT NULL THEN now() - make_interval(mins => $5) END)`,
+      [userId, ENTRA_ISSUER, names?.given ?? null, names?.family ?? null, checkedMinutesAgo],
     );
     return `${userId}:entra`;
   }
@@ -159,12 +165,19 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("names with PostgreSQL", ()
     await linkEntra(id, { given: "Maria", family: "De Luca" });
     await syncNames(id);
 
-    expect(await getNameClaims(id, ["openid", "profile"])).toEqual({
+    // The ID token and UserInfo take the names and the flag from one read.
+    expect(await getUserClaims(id, ["openid", "profile"])).toEqual({
       given_name: "Maria",
       family_name: "De Luca",
     });
-    expect(await getNameClaims(id, ["openid"])).toEqual({});
-    expect(await getOidcClaims(id, ["openid", "polinetwork:identity"])).toMatchObject({
+    expect(await getUserClaims(id, ["openid"])).toEqual({});
+    // A UserInfo request naming one claim without `profile` gets that one, from the stored parts.
+    expect(await getUserClaims(id, ["openid"], ["family_name"])).toEqual({
+      family_name: "De Luca",
+    });
+    expect(await getUserClaims(id, ["openid", "profile", "polinetwork:identity"])).toMatchObject({
+      given_name: "Maria",
+      family_name: "De Luca",
       polinetwork_name_verified: true,
     });
 
@@ -190,7 +203,8 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("names with PostgreSQL", ()
     expect(rows[0]).toEqual({ given_name: "Luca Maria", family_name: "Verdi" });
   });
 
-  it("keeps the stored name, still verified, when the directory can't be read", async () => {
+  it("keeps the stored name, unverified, when the directory can't be read", async () => {
+    // A confirmed self-declared name, then PoliNetwork APS is linked while Graph is down.
     const id = await person("Paolo Neri", { given: "Paolo", family: "Neri" });
     await linkEntra(id, null);
     graph.readEntraUserNames.mockResolvedValue(null);
@@ -202,9 +216,82 @@ describe.skipIf(!process.env.RBAC_TEST_DATABASE_URL)("names with PostgreSQL", ()
       given_name: "Paolo",
       family_name: "Neri",
       name_source: "entra",
+      name_confirmed_at: null,
+    });
+    // Not the directory's name, so applications aren't told it's verified.
+    expect(await getOidcClaims(id, ["polinetwork:identity"])).toMatchObject({
+      polinetwork_name_verified: false,
     });
     // A failed read isn't retried on every sign-in.
     expect(graph.readEntraUserNames).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks a backfilled guess to be confirmed if PoliNetwork APS is unlinked before a read", async () => {
+    const id = await person("PoliNetwork user", {
+      given: "PoliNetwork",
+      family: "user",
+      source: "entra",
+      confirmed: false,
+    });
+    await linkGoogle(id);
+    const entra = await linkEntra(id, null);
+    graph.readEntraUserNames.mockResolvedValue(null);
+
+    await disconnectAccount(id, entra);
+
+    expect(await stored(id)).toMatchObject({ name_source: "self", name_confirmed_at: null });
+    expect(await readNameDetails(id)).toMatchObject({ needsConfirmation: true, managed: false });
+  });
+
+  it("tells the backend when a name becomes verified, and not for other saves", async () => {
+    const outbox = async () =>
+      (
+        await pool.query(
+          `SELECT count(*)::int AS n FROM access_outbox WHERE projection = 'backend'`,
+        )
+      ).rows[0].n as number;
+    const id = await person("Carla Moretti", { given: "Carla", family: "Moretti" });
+    await linkEntra(id, { given: "Carla", family: "Moretti" });
+    await pool.query(`DELETE FROM access_outbox`);
+
+    await syncNames(id);
+    expect(await outbox()).toBe(1);
+
+    await pool.query(`DELETE FROM access_outbox`);
+    await pool.query(`UPDATE "user" SET name_source = 'entra' WHERE id = $1`, [id]);
+    expect(await outbox()).toBe(0);
+  });
+
+  it("reads the directory again on other sign-ins once the saved names are an hour old", async () => {
+    const fresh = await person("Elena Costa", { given: "Elena", family: "Costa" });
+    await linkEntra(fresh, { given: "Elena", family: "Costa" }, 5);
+    await syncNames(fresh);
+    expect(graph.readEntraUserNames).not.toHaveBeenCalled();
+
+    const stale = await person("Marco Riva", { given: "Marco", family: "Riva" });
+    await linkEntra(stale, { given: "Marco", family: "Riva" }, 90);
+    graph.readEntraUserNames.mockResolvedValue({ givenName: "Marco", familyName: "Riva Bassi" });
+    await syncNames(stale);
+
+    expect(graph.readEntraUserNames).toHaveBeenCalledWith(`${stale}-oid`);
+    expect(await stored(stale)).toMatchObject({ family_name: "Riva Bassi", name_source: "entra" });
+    const { rows } = await pool.query(
+      `SELECT family_name, names_checked_at > now() - interval '1 minute' AS refreshed
+       FROM identity_evidence WHERE subject = $1`,
+      [`${stale}-entra`],
+    );
+    expect(rows[0]).toEqual({ family_name: "Riva Bassi", refreshed: true });
+  });
+
+  it("keeps the saved directory names when a refresh fails", async () => {
+    const id = await person("Sara Fontana", { given: "Sara", family: "Fontana" });
+    await linkEntra(id, { given: "Sara", family: "Fontana Gialli" }, 90);
+    graph.readEntraUserNames.mockResolvedValue(null);
+
+    await syncNames(id);
+
+    expect(await stored(id)).toMatchObject({ family_name: "Fontana Gialli", name_source: "entra" });
+    expect((await stored(id)).name_confirmed_at).not.toBeNull();
   });
 
   it("refuses edits while PoliNetwork APS is linked, and allows them once it's unlinked", async () => {

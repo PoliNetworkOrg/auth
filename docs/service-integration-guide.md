@@ -23,7 +23,7 @@ Most new services are level 1, or level 1 + 2. Level 3 needs changes to the IdP'
      - **Public (PKCE only)** for single-page and native apps.
      - **Client secret** or **private key** (`private_key_jwt`) for a server.
    - **Redirect URIs:** "Public https URLs only" for web apps; "Also localhost and app schemes" for native apps and local development.
-   - **Scopes:** `openid`, plus `profile`, `email` and `offline_access` as needed, and `polinetwork:identity` only if the app needs permissions or the Telegram ID.
+   - **Scopes:** `openid`, plus `profile`, `email` and `offline_access` as needed, and `polinetwork:identity` only if the app needs permissions, the Telegram ID, or whether a name is verified (`polinetwork_name_verified`, §2.2).
 2. **Use authorization code with PKCE.** Discovery is at `https://auth.polinetwork.org/api/auth/.well-known/openid-configuration`, and the issuer is `https://auth.polinetwork.org/api/auth`.
 3. **Validate every token:** signature, `iss`, `aud`, `exp`. Use an OIDC library, not hand-written checks.
 4. **Authorize with permissions.** `polinetwork:identity` adds:
@@ -58,14 +58,14 @@ Some failures never reach the application:
 
 ### 2.2 Names
 
-`profile` gives `name`, `given_name` and `family_name`. Auth stores the first and last name separately, so `given_name` and `family_name` are exact ("Maria" and "De Luca"), never a split of `name`; `name` is their join. Read the two parts rather than splitting `name` yourself.
+`profile` gives `name`, `given_name` and `family_name`. Auth stores the first and last name separately, and `name` is their join. Read the two parts rather than splitting `name` yourself: once the person confirmed their name or the directory supplied it, they're exact ("Maria" and "De Luca"). Until then (accounts that existed before names were stored separately) they're Auth's best guess at splitting the old name. An empty part comes as an empty string.
 
 Where a name comes from decides how far to trust it:
 
-- **Verified** (`polinetwork_name_verified: true`): the person has a PoliNetwork APS account, and the name is the directory's. The association created that account with their real name, and they can't change it in Auth.
-- **Self-declared** (`false`): anyone else, Google users included. The person confirmed it at their first sign-in, and can change it a few times a month; every change is audited. Mark it as self-declared wherever it matters who someone is (an approval, a signature, a list administrators act on), and don't treat it as proof of identity.
+- **Verified** (`polinetwork_name_verified: true`): the person has a PoliNetwork APS account, and Auth read the name from the directory. The association created that account with their real name, and they can't change it in Auth.
+- **Not verified** (`false`): anyone else, Google users included. The person declared the name (confirmed at their first sign-in, then changed at most a few times a month, every change audited), or it's still a guess. A PoliNetwork APS account whose names Auth hasn't been able to read from the directory yet is also `false`. Mark such a name as self-declared wherever it matters who someone is (an approval, a signature, a list administrators act on), and don't treat it as proof of identity.
 
-Names can change, verified ones included (after a change in the directory, or when someone links or unlinks PoliNetwork APS). Refresh them like permissions: re-read UserInfo, or take them from the next token.
+Names can change, verified ones included: after a change in the directory, or when someone links or unlinks PoliNetwork APS. UserInfo and tokens return the name Auth has stored; they don't ask the directory. A change in the directory reaches the stored name at the person's next sign-in (within an hour when they sign in with Google or a passkey), or when they link the account. Refresh names like permissions, by re-reading UserInfo or taking them from the next token, knowing they're only as fresh as that.
 
 The backend gets the same information from the access snapshot and the internal People and e-signing endpoints, as `nameVerified` (and `givenName`/`familyName` where names are listed).
 
@@ -203,7 +203,7 @@ https://auth.polinetwork.org/link?method=telegram&client_id=<client id>&return_t
 - [ ] Private key, if any, stored in Key Vault and mounted only into this service.
 - [ ] Tokens validated with a library or `auth-kit`.
 - [ ] Authorization checks permissions, never roles.
-- [ ] Names read from `given_name`/`family_name`, and shown as self-declared when `polinetwork_name_verified` is false (§2.2).
+- [ ] Names read from `given_name`/`family_name`, and shown as self-declared when `polinetwork_name_verified` is false; that claim needs `polinetwork:identity` (§2.2).
 - [ ] Level 2: service added to the backend NetworkPolicy in `polinetwork-cd`.
 - [ ] Level 3: IdP change reviewed (§5).
 

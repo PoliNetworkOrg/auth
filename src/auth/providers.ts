@@ -154,7 +154,7 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
       email: telegram ? null : (claimEmail(payload) ?? null),
       // The directory's names, which `syncNames` gives the person once the sign-in ends. Left out
       // when they couldn't be read, so the last ones read stay.
-      ...names,
+      ...(names ? { ...names, namesCheckedAt: new Date() } : {}),
     };
     await persistVerifiedEvidence(proof);
     return {

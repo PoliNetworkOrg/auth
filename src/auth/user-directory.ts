@@ -1,5 +1,5 @@
 import { type SQL, and, asc, count, desc, eq, exists, inArray, not, or, sql } from "drizzle-orm";
-import { isNameVerified } from "./names";
+import { isNameVerified, nameStatus } from "./names";
 import { alias } from "drizzle-orm/pg-core";
 import { account, identityEvidence, passkey, role, user, userRole } from "../db/schema";
 import { contactEmails } from "./contact-email";
@@ -201,6 +201,7 @@ export async function getUserDetail(actorId: string, userId: string): Promise<Us
           id: user.id,
           name: user.name,
           nameSource: user.nameSource,
+          nameConfirmedAt: user.nameConfirmedAt,
           email: user.email,
           image: user.image,
           createdAt: user.createdAt,
@@ -267,7 +268,8 @@ export async function getUserDetail(actorId: string, userId: string): Promise<Us
       return {
         id: person.id,
         name: person.name,
-        nameVerified: isNameVerified(person.nameSource),
+        nameVerified: isNameVerified(person),
+        nameStatus: nameStatus(person),
         email: emails.get(person.id) ?? null,
         image: person.image,
         createdAt: person.createdAt.toISOString(),

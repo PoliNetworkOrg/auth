@@ -146,6 +146,8 @@ export type UserDetail = {
   name: string;
   /** From the association's directory (PoliNetwork APS); otherwise the person declared it. */
   nameVerified: boolean;
+  /** `nameVerified`, or whether the person confirmed a name they declared (`nameStatus`). */
+  nameStatus: "verified" | "self-declared" | "unconfirmed";
   email: string | null;
   image: string | null;
   createdAt: string;

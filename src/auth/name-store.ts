@@ -184,22 +184,27 @@ export async function saveSelfDeclaredName(userId: string, name: PersonName, now
 
 /**
  * After a PoliNetwork APS account is unlinked, inside the same transaction: the person keeps
- * the name, now as self-declared and already confirmed. Nothing changes while another one is
- * still linked.
+ * the name, now as self-declared. One the directory supplied counts as confirmed; a guess it
+ * never replaced is asked to be confirmed at the next sign-in. Nothing changes while another
+ * one is still linked.
  */
-export async function releaseEntraName(tx: Transaction, userId: string, now = new Date()) {
+export async function releaseEntraName(tx: Transaction, userId: string) {
   if (await hasEntraAccount(tx, userId)) return;
   const current = await lockName(tx, userId);
   if (!current || current.nameSource !== "entra") return;
-  await tx
-    .update(user)
-    .set({ nameSource: "self", nameConfirmedAt: current.nameConfirmedAt ?? now })
-    .where(eq(user.id, userId));
+  await tx.update(user).set({ nameSource: "self" }).where(eq(user.id, userId));
   await audit(tx, NAME_AUDIT_OPERATIONS.release, userId, userId, current, {
     ...current,
     nameSource: "self",
   });
 }
+
+/**
+ * How old the directory's names saved in the evidence may be before a sign-in with another
+ * method (passkey, Google) reads them again through Graph. A PoliNetwork APS sign-in always
+ * reads them afresh.
+ */
+export const ENTRA_NAME_REFRESH_MS = 60 * 60_000;
 
 // Entra object IDs whose Graph read failed recently, so one sign-in doesn't wait on Graph twice
 // (once for the ID token, again when the session starts) and an outage doesn't slow every one.
@@ -212,7 +217,12 @@ async function lookUpEntraNames(objectId: string) {
   if (failedAt && Date.now() - failedAt < LOOKUP_RETRY_MS) return null;
   const names = await readEntraUserNames(objectId);
   if (names) failedLookups.delete(objectId);
-  else failedLookups.set(objectId, Date.now());
+  else {
+    // Forget failures past their wait, so the map holds only the last few minutes' outages.
+    const now = Date.now();
+    for (const [id, at] of failedLookups) if (now - at >= LOOKUP_RETRY_MS) failedLookups.delete(id);
+    failedLookups.set(objectId, now);
+  }
   return names;
 }
 
@@ -244,8 +254,9 @@ function googleNames(idToken: string | null) {
  * new linked account (database hooks in `index.ts`):
  *
  * - With a PoliNetwork APS account: the directory's names, from the evidence its sign-in saved,
- *   or from Graph when none was saved yet (people backfilled by the migration). When neither has
- *   them, the stored names stay, still as `entra`.
+ *   read again through Graph when none was saved yet (people backfilled by the migration) or they
+ *   are older than `ENTRA_NAME_REFRESH_MS`. When Graph doesn't answer, the saved ones apply; when
+ *   there are none, the stored names stay, as an unverified `entra` guess.
  * - Without one, a name still marked `entra` (the account was removed some other way) becomes
  *   self-declared, as on unlinking.
  * - An unconfirmed self-declared name takes Google's first and last names when a Google
@@ -260,6 +271,7 @@ export async function syncNames(userId: string, now = new Date()) {
       objectId: identityEvidence.externalId,
       givenName: identityEvidence.givenName,
       familyName: identityEvidence.familyName,
+      namesCheckedAt: identityEvidence.namesCheckedAt,
       issuer: identityEvidence.issuer,
     })
     .from(account)
@@ -279,18 +291,24 @@ export async function syncNames(userId: string, now = new Date()) {
       entra.givenName !== null || entra.familyName !== null
         ? { givenName: entra.givenName ?? "", familyName: entra.familyName ?? "" }
         : null;
-    if (!names && entra.objectId) {
-      names = await lookUpEntraNames(entra.objectId);
-      if (names && entra.issuer)
+    const stale =
+      !names ||
+      !entra.namesCheckedAt ||
+      now.getTime() - entra.namesCheckedAt.getTime() > ENTRA_NAME_REFRESH_MS;
+    if (stale && entra.objectId && entra.issuer) {
+      const fresh = await lookUpEntraNames(entra.objectId);
+      if (fresh) {
+        names = fresh;
         await db
           .update(identityEvidence)
-          .set(names)
+          .set({ ...fresh, namesCheckedAt: now })
           .where(
             and(
               eq(identityEvidence.issuer, entra.issuer),
               eq(identityEvidence.subject, entra.subject),
             ),
           );
+      }
     }
     await applyEntraName(userId, names, now);
     return;
@@ -300,7 +318,7 @@ export async function syncNames(userId: string, now = new Date()) {
       const current = await lockName(tx, userId);
       if (!current) return;
       if (current.nameSource === "entra") {
-        await releaseEntraName(tx, userId, now);
+        await releaseEntraName(tx, userId);
         return;
       }
       if (!needsNameConfirmation(current)) return;
@@ -321,7 +339,11 @@ export async function syncNames(userId: string, now = new Date()) {
   );
 }
 
-/** Sets the directory's names, or keeps the stored ones when there are none, as `entra`. */
+/**
+ * Sets the directory's names as `entra`, verified (`nameConfirmedAt` set). Without them it keeps
+ * the stored names as `entra`, verified only if the directory supplied them before: a name the
+ * person declared, or a guess, isn't the directory's.
+ */
 async function applyEntraName(userId: string, names: PersonName | null, now: Date) {
   await db.transaction(
     async (tx) => {
@@ -329,9 +351,17 @@ async function applyEntraName(userId: string, names: PersonName | null, now: Dat
       // Unlinked meanwhile: `releaseEntraName` ran, or the next sign-in sorts it out.
       if (!current || !(await hasEntraAccount(tx, userId))) return;
       const next = names ?? current;
+      const wasDirectory = current.nameSource === "entra" && current.nameConfirmedAt !== null;
+      const confirmedAt = names
+        ? wasDirectory
+          ? current.nameConfirmedAt
+          : now
+        : current.nameSource === "entra"
+          ? current.nameConfirmedAt
+          : null;
       if (
         current.nameSource === "entra" &&
-        current.nameConfirmedAt !== null &&
+        current.nameConfirmedAt?.getTime() === confirmedAt?.getTime() &&
         current.givenName === next.givenName &&
         current.familyName === next.familyName
       )
@@ -343,7 +373,7 @@ async function applyEntraName(userId: string, names: PersonName | null, now: Dat
           familyName: next.familyName,
           name: joinName(next) || sql`${user.name}`,
           nameSource: "entra",
-          nameConfirmedAt: current.nameConfirmedAt ?? now,
+          nameConfirmedAt: confirmedAt,
         })
         .where(eq(user.id, userId));
       await audit(tx, NAME_AUDIT_OPERATIONS.entra, "system", userId, current, {

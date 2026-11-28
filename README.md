@@ -98,14 +98,14 @@ Polimi verification accepts only the exact `mail.polimi.it` domain. Codes contai
 
 Every person has a first name (`given_name`), a last name (`family_name`) and a `name_source`; `name` stays their join. The rules are in `src/auth/names.ts`:
 
-- **PoliNetwork APS (`entra`):** while a PoliNetwork Entra account is linked, the names are the directory's `givenName` and `surname`, set again at every sign-in, whatever the method, and when the account is linked. The person can't edit them here: the account page shows them as managed by PoliNetwork APS. Unlinking the account keeps the name, as self-declared.
+- **PoliNetwork APS (`entra`):** while a PoliNetwork Entra account is linked, the names are the directory's `givenName` and `surname`, set again when the account is linked and at every sign-in (a PoliNetwork Entra sign-in reads the directory each time; Google and passkey sign-ins read it through Graph when the last read is over an hour old). Only names the directory supplied are verified (`name_confirmed_at` set); until then the stored parts are an unverified guess. The person can't edit them here: the account page shows them as managed by PoliNetwork APS. Unlinking the account keeps the name, as self-declared.
 - **Self-declared (`self`):** everyone else. Google's profile name is only a suggestion. The first app sign-in stops at `/setup` (before the passkey offer, keeping the app's sign-in going) to confirm a real first and last name, prefilled from Google's `given_name`/`family_name`; someone signing in to this site directly confirms it on the account page. Afterwards **Edit name** on the account page changes it at most 3 times in 30 days. `/update-user` stays closed.
 
 Names typed by people accept letters of any script with their accents, spaces, apostrophes, hyphens and periods, up to 50 characters each. Every change is in the audit log with the names before and after: `user.name.confirm` and `user.name.edit` by the person, `user.name.entra` (actor `system`) when the directory set it, `user.name.release` on unlinking.
 
-The directory's names come from the ID token's `given_name` and `family_name` optional claims when the app registration adds them (Token configuration › Add optional claim › ID), otherwise from Microsoft Graph (`/users/{id}?$select=givenName,surname`), which needs the **User.Read.All** application permission with admin consent on the PN app. Configure at least one. When neither answers, the stored names stay, and a new account starts from a guess at Entra's display name.
+The directory's names come from the ID token's `given_name` and `family_name` optional claims when the app registration adds them (Token configuration › Add optional claim › ID), otherwise from Microsoft Graph (`/users/{id}?$select=givenName,surname`), which needs the **User.Read.All** application permission with admin consent on the PN app. Configure at least one. When neither answers, the stored names stay, and a new account starts from a guess at Entra's display name, unverified until a later sign-in reads the directory.
 
-The `0027` migration splits every existing `name` as a best guess (the last word, with particles such as "De" or "van der", is the last name). People with a PoliNetwork Entra account become `entra`, and their next sign-in replaces the guess with the directory's names; everyone else confirms theirs at their next app sign-in.
+The `0027` migration splits every existing `name` as a best guess (the last word, with particles such as "De" or "van der", is the last name). People with a PoliNetwork Entra account become `entra`, unverified: the first sign-in whose directory read succeeds (ID token claims or Graph) replaces the guess with the directory's names and marks them verified. Until then the guess stays. Everyone else confirms theirs at their next app sign-in.
 
 Email delivery uses the same Microsoft Graph client-credential setup as the current backend. The Azure application needs the Graph `Mail.Send` application permission and permission to send as `AZURE_EMAIL_SENDER`. These Azure credentials belong to the mail sender; they do not require access to Polimi Entra.
 
@@ -346,7 +346,7 @@ spaces between values and are empty strings when no values apply, as is
 `polinetwork_telegram_id` when no Telegram account is linked. The `/api/identity` response
 keeps the object format shown inside the URL-named claim.
 
-`polinetwork_name_verified` is `true` only when the name is the association's directory's (PoliNetwork APS), and `false` when the person declared it: show such a name as self-declared wherever it matters who someone is.
+`polinetwork_name_verified` is `true` only when the name was read from the association's directory (PoliNetwork APS), and `false` when the person declared it or it's still a guess: show such a name as self-declared wherever it matters who someone is.
 
 `polinetwork_permission_list` repeats `permissions` as a top-level array for consumers
 that can match only a flat list claim, such as oauth2-proxy (`--oidc-groups-claim`), which

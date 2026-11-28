@@ -133,12 +133,18 @@ function UserDetailPage() {
               {person.email ?? "No email on file"}
             </p>
             <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-              {person.nameVerified ? (
+              {person.nameStatus === "verified" ? (
                 <BadgeCheck className="size-4 text-primary" aria-hidden="true" />
               ) : (
                 <UserRound className="size-4" aria-hidden="true" />
               )}
-              {person.nameVerified ? "Name from PoliNetwork APS" : "Self-declared name"}
+              {
+                {
+                  verified: "Name from PoliNetwork APS",
+                  "self-declared": "Self-declared name",
+                  unconfirmed: "Name not confirmed yet",
+                }[person.nameStatus]
+              }
             </p>
           </div>
         </div>

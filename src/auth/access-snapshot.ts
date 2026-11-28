@@ -318,7 +318,7 @@ export async function buildBackendSnapshot(): Promise<string> {
     const now = new Date();
     const catalog = await readCatalog(transaction);
     const users = await transaction
-      .select({ id: user.id, nameSource: user.nameSource })
+      .select({ id: user.id, nameSource: user.nameSource, nameConfirmedAt: user.nameConfirmedAt })
       .from(user)
       .orderBy(user.id);
     const manualRoles = await transaction
@@ -359,9 +359,7 @@ export async function buildBackendSnapshot(): Promise<string> {
     }
     const subjects = projectBackendSubjects({
       users: users.map((row) => row.id),
-      verifiedNames: new Set(
-        users.filter((row) => isNameVerified(row.nameSource)).map((row) => row.id),
-      ),
+      verifiedNames: new Set(users.filter((row) => isNameVerified(row)).map((row) => row.id)),
       manualRoles,
       proofs,
       catalog,

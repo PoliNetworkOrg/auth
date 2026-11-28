@@ -73,9 +73,11 @@ export function NameStatus({ name }: { name: AccountDetails["name"] }) {
           <NameForm
             initial={{ givenName: name.givenName, familyName: name.familyName }}
             submitLabel="Save"
-            onSaved={async () => {
-              await router.invalidate({ sync: true });
-              toast.success("Your name is saved.");
+            onSaved={async (changed) => {
+              if (changed) {
+                await router.invalidate({ sync: true });
+                toast.success("Your name is saved.");
+              } else toast("Your name is unchanged.");
               setEditing(false);
             }}
           />

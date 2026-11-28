@@ -42,12 +42,22 @@ describe("self-declared names", () => {
   it("accepts letters of any script, accents, apostrophes, hyphens and initials", () => {
     for (const value of ["José", "D'Angelo", "O’Brien", "Anne-Marie", "De Luca", "J. R.", "Zoë"])
       expect(namePartProblem(value, "first name")).toBeNull();
-    for (const value of ["Ελένη", "Юлия", "李", "محمد"])
+    for (const value of ["Ελένη", "Юлия", "李", "محمد", "می\u200Cخواهم"])
       expect(namePartProblem(value, "first name")).toBeNull();
   });
 
   it("refuses digits, symbols, emoji and stray separators", () => {
-    for (const value of ["R2D2", "Mario!", "Ana 😀", "-Ana", "Ana--Maria", "'s", "@admin"])
+    // A joiner only between letters: a trailing one would be an invisible copy of "Ana".
+    for (const value of [
+      "R2D2",
+      "Mario!",
+      "Ana 😀",
+      "-Ana",
+      "Ana--Maria",
+      "'s",
+      "@admin",
+      "Ana\u200C",
+    ])
       expect(namePartProblem(value, "last name")).toMatch(/only letters/);
   });
 
@@ -81,12 +91,20 @@ describe("names apps receive", () => {
       given_name: "Maria",
       family_name: "De Luca",
     });
-    expect(nameClaims({ givenName: "Cher", familyName: "" })).toEqual({ given_name: "Cher" });
+    // An empty part is sent empty, so UserInfo can't fill it from a split of `name`.
+    expect(nameClaims({ givenName: "Mary Jane", familyName: "" })).toEqual({
+      given_name: "Mary Jane",
+      family_name: "",
+    });
+    expect(nameClaims({ givenName: "", familyName: "" })).toEqual({});
   });
 
   it("calls only the directory's name verified", () => {
-    expect(isNameVerified("entra")).toBe(true);
-    expect(isNameVerified("self")).toBe(false);
+    const read = new Date();
+    expect(isNameVerified({ nameSource: "entra", nameConfirmedAt: read })).toBe(true);
+    expect(isNameVerified({ nameSource: "self", nameConfirmedAt: read })).toBe(false);
+    // A guess the directory never supplied (backfill, or Graph unreachable) isn't verified.
+    expect(isNameVerified({ nameSource: "entra", nameConfirmedAt: null })).toBe(false);
   });
 });
 

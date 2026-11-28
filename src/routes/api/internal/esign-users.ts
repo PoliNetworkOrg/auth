@@ -32,6 +32,7 @@ export const Route = createFileRoute("/api/internal/esign-users")({
             givenName: user.givenName,
             familyName: user.familyName,
             nameSource: user.nameSource,
+            nameConfirmedAt: user.nameConfirmedAt,
           })
           .from(user)
           .orderBy(asc(user.name), asc(user.id));
@@ -43,7 +44,7 @@ export const Route = createFileRoute("/api/internal/esign-users")({
             givenName: person.givenName,
             familyName: person.familyName,
             // False for a self-declared name, which the picker marks as such.
-            nameVerified: isNameVerified(person.nameSource),
+            nameVerified: isNameVerified(person),
             email: emails.get(person.id) ?? null,
           })),
           { headers },

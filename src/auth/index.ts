@@ -17,7 +17,7 @@ import { appEmail } from "./contact-email";
 import { ERROR_PAGE_URL, routeCallbackError } from "./callback-errors";
 import { startAccessDispatcher } from "./access-dispatcher";
 import { startDataRetention } from "./data-retention";
-import { getNameClaims, getOidcClaims } from "./identity";
+import { getOidcClaims, getUserClaims } from "./identity";
 import { initialNames, syncNamesQuietly } from "./name-store";
 import { userNameFields } from "./names";
 import {
@@ -358,13 +358,11 @@ export const auth = betterAuth({
       idTokenExpiresIn: tokenLifetimes.idToken,
       customIdTokenClaims: async ({ user, scopes }) => ({
         ...standardIdTokenClaims(await withAppEmail(user, scopes), scopes),
-        ...(await getNameClaims(user.id, scopes)),
-        ...(await getOidcClaims(user.id, scopes)),
+        ...(await getUserClaims(user.id, scopes)),
       }),
-      customUserInfoClaims: async ({ user, scopes }) => ({
+      customUserInfoClaims: async ({ user, scopes, requestedClaims }) => ({
         ...standardIdTokenClaims(await withAppEmail(user, scopes), scopes),
-        ...(await getNameClaims(user.id, scopes)),
-        ...(await getOidcClaims(user.id, scopes)),
+        ...(await getUserClaims(user.id, scopes, requestedClaims ?? [])),
       }),
       customAccessTokenClaims: async ({ user, scopes }) => ({
         pn_subject_type: user ? "user" : "client",

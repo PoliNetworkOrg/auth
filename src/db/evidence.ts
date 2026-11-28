@@ -31,6 +31,9 @@ export const identityEvidence = pgTable(
     // Microsoft Graph. Null until read; a failed read keeps the last ones. See `entraNames`.
     givenName: text("given_name"),
     familyName: text("family_name"),
+    // When the directory last answered with them, so other sign-ins refresh them through Graph
+    // once they're older than `ENTRA_NAME_REFRESH_MS`.
+    namesCheckedAt: timestamp("names_checked_at", { withTimezone: true }),
   },
   (table) => [
     primaryKey({ columns: [table.issuer, table.subject] }),

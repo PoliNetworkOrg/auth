@@ -1,5 +1,5 @@
 {
-  "id": "c69357c5-0e19-4dd6-8cbf-9992b827037d",
+  "id": "74c853c8-1b85-4506-ab06-92ff5819a567",
   "prevId": "6887cdd8-4dbc-44cf-90d1-0ef63e5c5c1c",
   "version": "7",
   "dialect": "postgresql",
@@ -1786,6 +1786,12 @@
         "family_name": {
           "name": "family_name",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "names_checked_at": {
+          "name": "names_checked_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         }

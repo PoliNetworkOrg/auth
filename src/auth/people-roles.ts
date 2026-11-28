@@ -96,6 +96,7 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
           givenName: user.givenName,
           familyName: user.familyName,
           nameSource: user.nameSource,
+          nameConfirmedAt: user.nameConfirmedAt,
         })
         .from(user)
         .where(inArray(user.id, ids))
@@ -126,7 +127,7 @@ export async function readPeopleDirectory(): Promise<PeopleDirectory> {
           name: person.name,
           givenName: person.givenName,
           familyName: person.familyName,
-          nameVerified: isNameVerified(person.nameSource),
+          nameVerified: isNameVerified(person),
           email: emails.get(person.id) ?? null,
           telegramId: telegramByUser.get(person.id)?.telegramId ?? null,
           telegramUsername: telegramByUser.get(person.id)?.telegramUsername ?? null,
