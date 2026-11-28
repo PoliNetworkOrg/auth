@@ -141,7 +141,14 @@ function makeProvider(id: string, settings: ProviderSettings): GenericOAuthConfi
       try {
         return await verifiedUserInfo(tokens);
       } catch (error) {
-        console.error(`Refused a ${id} account`, error);
+        // The reason only: jose's claim errors carry the whole ID token payload (name, email,
+        // object ID), which must not reach the logs for someone who was refused.
+        const code = error instanceof Error && "code" in error ? error.code : undefined;
+        const reason =
+          error instanceof Error
+            ? `${typeof code === "string" ? code : error.name}: ${error.message}`
+            : "non-error value thrown";
+        console.error(`Refused a ${id} account: ${reason}`);
         return null;
       }
     },

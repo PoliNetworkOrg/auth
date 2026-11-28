@@ -14,7 +14,7 @@ import {
   type LinkOutcome,
   type LinkRequest,
 } from "@/auth/link-request";
-import { getLinkRequest, type LinkRequestDetails } from "@/auth/link.functions";
+import { getLinkRequest, startLinkAttempt, type LinkRequestDetails } from "@/auth/link.functions";
 import { useViewer } from "@/components/access";
 import { LoginLayout, LoginPage } from "@/components/login-page";
 import { Button } from "@/components/ui/button";
@@ -55,8 +55,13 @@ export const Route = createFileRoute("/link")({
   loader: async ({ context, deps }): Promise<LinkPageData> => {
     const { method } = deps;
     if (!isLinkMethod(method)) return { status: "invalid" };
-    const details = await getLinkRequest({
-      data: { method, clientId: deps.client_id, returnTo: deps.return_to },
+    const { attempted, ...details } = await getLinkRequest({
+      data: {
+        method,
+        clientId: deps.client_id,
+        returnTo: deps.return_to,
+        returning: deps.result !== undefined,
+      },
     });
     // Carries the application on only when its return address is trusted.
     const request: LinkRequest = details.returnTo
@@ -67,7 +72,10 @@ export const Route = createFileRoute("/link")({
       const outcome = callbackOutcome(method, deps.result, details.linked, deps.error);
       // A login that belongs to someone else is explained here first: the application can't.
       const explainFirst = "error" in outcome && outcome.error === "account_in_use";
-      if (details.returnTo && !explainFirst)
+      // Back to the application by itself only when this browser just started this link here.
+      // Anyone can write `result=` into an address; without the attempt, the outcome shows on
+      // Auth with a button back, so the page can't bounce someone to the application unasked.
+      if (details.returnTo && attempted && !explainFirst)
         throw redirect({ href: withLinkOutcome(details.returnTo, outcome) });
       return { status: "outcome", request, outcome, ...details };
     }
@@ -114,6 +122,8 @@ function LinkStep({ data }: { data: Extract<LinkPageData, { request: LinkRequest
   async function link() {
     setBusy("link");
     try {
+      // Without it the person still links; the outcome then shows here, with a way back.
+      if (returnTo) await startLinkAttempt({ data: request }).catch(() => undefined);
       const result = await authClient.linkSocial({
         provider: request.method,
         callbackURL: linkPagePath(request, "linked"),
@@ -299,7 +309,10 @@ const METHOD_PURPOSE: Record<LinkMethod, string> = {
   google: "You'll be able to sign in with this Google account too.",
 };
 
-/** The result, when there is no application to take it back to, or it needs explaining first. */
+/**
+ * The result, when there is no application to take it back to, the link wasn't started from
+ * this browser just now, or it needs explaining first.
+ */
 function Outcome({
   data,
   back,
@@ -313,9 +326,7 @@ function Outcome({
     return (
       <Notice icon={<BadgeCheck />} title={`${method.name} linked`}>
         Your {method.name} account is now linked to your PoliNetwork account.
-        <Actions>
-          <AccountButton primary />
-        </Actions>
+        <Actions>{back(outcome) ?? <AccountButton primary />}</Actions>
       </Notice>
     );
   }
@@ -343,7 +354,7 @@ function Outcome({
           You cancelled on {method.name}. Try again when you're ready.
           <Actions>
             {retry}
-            <AccountButton primary />
+            {back(outcome) ?? <AccountButton primary />}
           </Actions>
         </Notice>
       );
@@ -354,7 +365,7 @@ function Outcome({
           happening, ask the IT team.
           <Actions>
             {retry}
-            <AccountButton primary />
+            {back(outcome) ?? <AccountButton primary />}
           </Actions>
         </Notice>
       );

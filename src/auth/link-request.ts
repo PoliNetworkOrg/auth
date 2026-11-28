@@ -140,6 +140,18 @@ export function withLinkOutcome(returnTo: string, outcome: LinkOutcome) {
   return url.href;
 }
 
+/** How long a started link may take at the provider before the page stops returning by itself. */
+export const LINK_ATTEMPT_MAX_AGE_SECONDS = 10 * 60;
+
+/**
+ * The link attempt cookie's value for `method` and the trusted `returnTo`. The way back counts
+ * only for the same method and address the person started from, so an address with
+ * `result=` written into it can't send them anywhere by itself.
+ */
+export function linkAttemptValue(method: LinkMethod, returnTo: string) {
+  return encodeURIComponent(`${method} ${returnTo}`);
+}
+
 export type LinkRequest = {
   method: LinkMethod;
   clientId?: string;

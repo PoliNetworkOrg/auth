@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   callbackOutcome,
   isLinkMethod,
+  linkAttemptValue,
   linkErrorFromCallback,
   linkPagePath,
   linkReturn,
@@ -178,6 +179,18 @@ describe("isLinkMethod", () => {
     expect(["telegram", "pn-entra", "google"].every(isLinkMethod)).toBe(true);
     for (const value of ["polimi-email", "toString", "__proto__", "", 1, null])
       expect(isLinkMethod(value)).toBe(false);
+  });
+});
+
+describe("linkAttemptValue", () => {
+  it("ties an attempt to its method and return address", () => {
+    const returnTo = "https://admin.polinetwork.org/me?tab=setup";
+    const value = linkAttemptValue("telegram", returnTo);
+    expect(value).toBe(linkAttemptValue("telegram", returnTo));
+    expect(value).not.toBe(linkAttemptValue("google", returnTo));
+    expect(value).not.toBe(linkAttemptValue("telegram", `${returnTo}&x=1`));
+    // Safe to store in a cookie as is.
+    expect(value).toMatch(/^[\w.!~*'()%-]+$/);
   });
 });
 
